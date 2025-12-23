@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Barbers - read público (para seleção no frontend), write apenas via Functions
+    match /barbers/{barberId} {
+      allow read: if true;
+      allow write: if false; // Apenas via Functions
+    }
+
+    // Customers - read/write apenas via Functions (admin via Functions)
+    match /customers/{customerId} {
+      allow read, write: if false; // Apenas via Functions
+    }
+
+    // Bookings - read/write apenas via Functions
+    match /bookings/{bookingId} {
+      allow read, write: if false; // Apenas via Functions
+    }
+
+    // Slots - read público (para verificar disponibilidade), write apenas via Functions
+    match /barbers/{barberId}/slots/{slotId} {
+      allow read: if true; // Frontend precisa ler para verificar disponibilidade
+      allow write: if false; // Apenas via Functions
+    }
+  }
+}
+

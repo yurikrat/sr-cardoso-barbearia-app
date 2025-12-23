@@ -1,13 +1,37 @@
-# Dependências
+# Dependencies
 node_modules/
 vendor/
+.pnp
+.pnp.js
+
+# Environment
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
+apps/*/.env
+apps/*/.env.local
 
-# Build
+# Build outputs
 dist/
 build/
 *.log
+.next/
+out/
+
+# Package builds
+packages/*/dist/
+packages/*/build/
+apps/*/dist/
+apps/*/build/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebaserc.local
 
 # IDE
 .vscode/
@@ -15,8 +39,16 @@ build/
 *.swp
 *.swo
 *~
+.DS_Store
 
 # OS
-.DS_Store
 Thumbs.db
+.DS_Store
 
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.pem
+.cache/

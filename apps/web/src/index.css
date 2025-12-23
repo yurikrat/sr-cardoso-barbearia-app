@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 11 12 13; /* #0B0C0D */
+    --foreground: 243 232 212; /* #F3E8D4 */
+    --card: 18 19 22; /* #121316 */
+    --card-foreground: 243 232 212;
+    --popover: 18 19 22;
+    --popover-foreground: 243 232 212;
+    --primary: 198 161 91; /* #C6A15B */
+    --primary-foreground: 11 12 13;
+    --secondary: 166 160 154; /* #A6A09A */
+    --secondary-foreground: 243 232 212;
+    --muted: 166 160 154;
+    --muted-foreground: 166 160 154;
+    --accent: 198 161 91;
+    --accent-foreground: 11 12 13;
+    --destructive: 208 84 84; /* #D05454 */
+    --destructive-foreground: 243 232 212;
+    --border: 166 160 154;
+    --input: 166 160 154;
+    --ring: 198 161 91;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Fraunces', serif;
+  }
+}
+
+/* Safe area para mobile */
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
