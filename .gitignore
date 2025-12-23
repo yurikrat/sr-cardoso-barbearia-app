@@ -1,0 +1,22 @@
+# Dependências
+node_modules/
+vendor/
+.env
+.env.local
+
+# Build
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
