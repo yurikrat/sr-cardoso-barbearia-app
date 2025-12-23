@@ -78,6 +78,8 @@ gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com \
   firestore.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  iam.googleapis.com \
   >/dev/null
 
 echo "== Garantindo Artifact Registry repo (idempotente) =="
