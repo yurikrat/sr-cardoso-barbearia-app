@@ -245,6 +245,45 @@ npm run serve
 - ✅ Transações Firestore para evitar duplo agendamento
 - ✅ Validação de timezone (America/Sao_Paulo)
 
+## 🔏 Privacidade (simples) + Opt-out
+
+Este projeto foi desenhado para **coletar o mínimo necessário** para operar o agendamento e dar visibilidade ao admin:
+
+- **Dados coletados no agendamento**: nome, sobrenome e WhatsApp.
+- **Finalidade**: registrar e gerenciar a reserva, permitir contato (confirmação/reativação/aniversário, se aplicável).
+- **Sem venda/compartilhamento**: os dados não devem ser compartilhados com terceiros fora do escopo operacional.
+- **Calendário (iCal)**: o feed do barbeiro **evita PII** no título; detalhes são mínimos.
+
+### Opt-out (manual)
+Se um cliente pedir para parar de receber mensagens, o admin deve:
+
+- Marcar/atualizar o cliente como **sem marketing** (`marketingOptIn=false`) no painel admin (ou não enviar mensagens).
+- Opcional: registrar uma observação em `profile.notes`.
+
+## 🧑‍💼 Runbook operacional (admin)
+
+### Confirmar agendamento via WhatsApp (MVP)
+- Abra a agenda do dia.
+- Clique na reserva.
+- Use o botão **“Enviar no WhatsApp”** (abre `wa.me` com mensagem pronta).
+- Após enviar, marque **“WhatsApp enviado”** para manter o CRM consistente.
+
+### Cancelar reserva
+- Abra a reserva.
+- Clique em **Cancelar**.
+- (Opcional) Envie mensagem ao cliente via WhatsApp e marque o contato.
+
+### Reagendar reserva
+- Abra a reserva.
+- Clique em **Reagendar**.
+- Selecione novo dia/horário disponível.
+- Confirme e (opcional) avise o cliente via WhatsApp.
+
+### Bloquear horários (ex.: almoço)
+- Abra a agenda do barbeiro.
+- Use **Bloquear horários** e selecione intervalo.
+- Informe um motivo (opcional).
+
 ## 📝 Padrões de Nomenclatura
 
 ### Arquivos
