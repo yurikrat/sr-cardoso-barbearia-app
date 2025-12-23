@@ -11,6 +11,8 @@ import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { generateReactivationMessage, generateBirthdayMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
 
+type FirestoreTimestampLike = { toDate: () => Date };
+
 interface Customer {
   id: string;
   identity: {
@@ -26,8 +28,8 @@ interface Customer {
     marketingOptIn: boolean;
   };
   stats: {
-    lastCompletedAt?: any;
-    lastBookingAt?: any;
+    lastCompletedAt?: FirestoreTimestampLike;
+    lastBookingAt?: FirestoreTimestampLike;
     noShowCount: number;
   };
 }

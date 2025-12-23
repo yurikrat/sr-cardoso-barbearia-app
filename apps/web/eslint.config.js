@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // shadcn/ui exports (variants) and contexts/hook helpers often trip this rule; keep dev DX.
+      'react-refresh/only-export-components': 'off',
+      // This rule is too aggressive for common patterns like fetching Firestore data in effects.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

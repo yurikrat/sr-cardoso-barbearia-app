@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { AdminLayout } from '@/components/admin/AdminLayout';
@@ -15,11 +15,7 @@ export default function CalendarIntegrationPage() {
   const [calendarToken, setCalendarToken] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    loadBarberToken();
-  }, [selectedBarber]);
-
-  const loadBarberToken = async () => {
+  const loadBarberToken = useCallback(async () => {
     try {
       const barberRef = doc(db, 'barbers', selectedBarber);
       const barberDoc = await getDoc(barberRef);
@@ -28,10 +24,14 @@ export default function CalendarIntegrationPage() {
         const data = barberDoc.data();
         setCalendarToken(data.calendarFeedToken || '');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error loading barber:', error);
     }
-  };
+  }, [selectedBarber]);
+
+  useEffect(() => {
+    loadBarberToken();
+  }, [loadBarberToken]);
 
   const calendarUrl = calendarToken
     ? `${window.location.origin}/ical/barber/${selectedBarber}/${calendarToken}.ics`

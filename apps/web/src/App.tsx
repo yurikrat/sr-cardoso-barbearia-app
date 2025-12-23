@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BookingProvider } from './contexts/BookingContext';
@@ -27,17 +28,19 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  // #region agent log
-  debugLog({
-    sessionId: 'debug-session',
-    runId: 'run4',
-    hypothesisId: 'H5',
-    location: 'apps/web/src/App.tsx:App',
-    message: 'App rendered (should appear on every page load)',
-    data: {},
-    timestamp: Date.now(),
-  });
-  // #endregion
+  useEffect(() => {
+    // #region agent log
+    debugLog({
+      sessionId: 'debug-session',
+      runId: 'run4',
+      hypothesisId: 'H5',
+      location: 'apps/web/src/App.tsx:App',
+      message: 'App mounted (should appear on every full page load)',
+      data: {},
+      timestamp: Date.now(),
+    });
+    // #endregion
+  }, []);
 
   return (
     <ErrorBoundary>

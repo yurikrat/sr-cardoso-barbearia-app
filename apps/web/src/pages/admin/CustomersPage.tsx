@@ -8,6 +8,8 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
 
+type FirestoreTimestampLike = { toDate: () => Date };
+
 interface Customer {
   id: string;
   identity: {
@@ -22,7 +24,7 @@ interface Customer {
   };
   stats: {
     totalBookings: number;
-    lastBookingAt?: any;
+    lastBookingAt?: FirestoreTimestampLike;
     noShowCount: number;
   };
 }

@@ -35,7 +35,7 @@ interface Booking {
   barberId?: string;
   customer: { firstName: string; lastName: string; whatsappE164: string };
   serviceType: string;
-  slotStart: any;
+  slotStart: Date;
   status: string;
   whatsappStatus: string;
 }
@@ -84,8 +84,9 @@ export default function AgendaDayPage() {
       });
 
       setBookings(bookingsMap);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error loading bookings:', error);
+      const err = error as { name?: unknown; code?: unknown; message?: unknown };
       // #region agent log
       debugLog({
         sessionId: 'debug-session',
@@ -96,9 +97,9 @@ export default function AgendaDayPage() {
         data: {
           selectedBarber,
           dateKey,
-          errorName: (error as any)?.name ?? null,
-          errorCode: (error as any)?.code ?? null,
-          errorMessage: (error as any)?.message ?? null,
+          errorName: typeof err?.name === 'string' ? err.name : null,
+          errorCode: typeof err?.code === 'string' ? err.code : null,
+          errorMessage: typeof err?.message === 'string' ? err.message : null,
         },
         timestamp: Date.now(),
       });
@@ -127,10 +128,11 @@ export default function AgendaDayPage() {
         description: 'Reserva cancelada com sucesso.',
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : null;
       toast({
         title: 'Erro',
-        description: error.message || 'Erro ao cancelar reserva.',
+        description: message || 'Erro ao cancelar reserva.',
         variant: 'destructive',
       });
     },

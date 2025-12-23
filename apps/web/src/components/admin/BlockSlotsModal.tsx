@@ -53,10 +53,11 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate }: BlockSlots
         description: 'Horários bloqueados com sucesso.',
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : null;
       toast({
         title: 'Erro',
-        description: error.message || 'Erro ao bloquear horários.',
+        description: message || 'Erro ao bloquear horários.',
         variant: 'destructive',
       });
     },

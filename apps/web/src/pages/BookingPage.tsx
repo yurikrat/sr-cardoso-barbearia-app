@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBookingState } from '@/contexts/BookingContext';
 import { useMutation } from '@tanstack/react-query';
@@ -58,13 +58,7 @@ export default function BookingPage() {
   }, [searchParams, bookingState]);
 
   // Carregar slots quando barbeiro e data são selecionados
-  useEffect(() => {
-    if (bookingState.barberId && selectedDate) {
-      loadAvailableSlots();
-    }
-  }, [bookingState.barberId, selectedDate]);
-
-  const loadAvailableSlots = async () => {
+  const loadAvailableSlots = useCallback(async () => {
     if (!bookingState.barberId || !selectedDate) return;
 
     setLoadingSlots(true);
@@ -88,7 +82,7 @@ export default function BookingPage() {
       const blocked = new Set<string>();
 
       snapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as { kind?: unknown };
         const slotId = doc.id;
         if (data.kind === 'booking') {
           booked.add(slotId);
@@ -118,8 +112,9 @@ export default function BookingPage() {
 
       setBookedSlots(booked);
       setBlockedSlots(blocked);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error loading slots:', error);
+      const err = error as { name?: unknown; code?: unknown; message?: unknown };
       // #region agent log
       debugLog({
         sessionId: 'debug-session',
@@ -129,9 +124,9 @@ export default function BookingPage() {
         message: 'slots load failed',
         data: {
           barberId: bookingState.barberId,
-          errorName: (error as any)?.name ?? null,
-          errorCode: (error as any)?.code ?? null,
-          errorMessage: (error as any)?.message ?? null,
+          errorName: typeof err?.name === 'string' ? err.name : null,
+          errorCode: typeof err?.code === 'string' ? err.code : null,
+          errorMessage: typeof err?.message === 'string' ? err.message : null,
         },
         timestamp: Date.now(),
       });
@@ -144,7 +139,14 @@ export default function BookingPage() {
     } finally {
       setLoadingSlots(false);
     }
-  };
+  }, [bookingState.barberId, selectedDate, toast]);
+
+  useEffect(() => {
+    if (bookingState.barberId && selectedDate) {
+      loadAvailableSlots();
+    }
+  }, [bookingState.barberId, selectedDate, loadAvailableSlots]);
+  type CreateBookingResponse = { success: boolean; bookingId: string; message?: string };
 
   const createBookingMutation = useMutation({
     mutationFn: async (data: {
@@ -158,13 +160,14 @@ export default function BookingPage() {
       };
     }) => {
       const result = await createBookingFn(data);
-      return result.data;
+      return result.data as CreateBookingResponse;
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
       bookingState.clearBooking();
       navigate(`/sucesso?bookingId=${data.bookingId}`);
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
+      const err = error as { code?: unknown; message?: unknown };
       // #region agent log
       debugLog({
         sessionId: 'debug-session',
@@ -173,14 +176,14 @@ export default function BookingPage() {
         location: 'apps/web/src/pages/BookingPage.tsx:createBooking:onError',
         message: 'createBooking failed',
         data: {
-          errorCode: error?.code ?? null,
-          errorMessage: error?.message ?? null,
+          errorCode: typeof err?.code === 'string' ? err.code : null,
+          errorMessage: typeof err?.message === 'string' ? err.message : null,
         },
         timestamp: Date.now(),
       });
       // #endregion
       const message =
-        error.message || 'Erro ao criar agendamento. Tente novamente.';
+        (typeof err?.message === 'string' && err.message) || 'Erro ao criar agendamento. Tente novamente.';
       toast({
         title: 'Erro',
         description: message,
@@ -290,10 +293,11 @@ export default function BookingPage() {
           whatsapp: whatsappE164,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
       toast({
         title: 'Erro',
-        description: error.message || 'Erro ao processar dados.',
+        description: message || 'Erro ao processar dados.',
         variant: 'destructive',
       });
     }

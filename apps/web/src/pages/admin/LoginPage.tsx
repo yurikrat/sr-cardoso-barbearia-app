@@ -22,10 +22,11 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       navigate('/admin/agenda');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
       toast({
         title: 'Erro ao fazer login',
-        description: error.message || 'Credenciais inválidas',
+        description: message || 'Credenciais inválidas',
         variant: 'destructive',
       });
     } finally {

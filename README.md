@@ -304,16 +304,23 @@ Se um cliente pedir para parar de receber mensagens, o admin deve:
 
 **Frontend:**
 - [ ] Fluxo completo de agendamento funciona
+- [ ] Domingo bloqueado no calendário + mensagem “Domingo fechado”
+- [ ] Último horário disponível é 18:30 (encerra 19:00)
+- [ ] “Hoje”: horários no passado não podem ser selecionados
+- [ ] Corrida: dois clientes no mesmo slot → segundo recebe erro amigável e volta para escolher outro
 - [ ] Login admin funciona
 - [ ] Agenda admin carrega corretamente
 - [ ] Bloqueio de horários funciona
 - [ ] WhatsApp deep links funcionam
+- [ ] PWA instalável (Android + iOS “Adicionar à Tela de Início”)
+- [ ] Indicador offline aparece quando sem rede
 
 **Backend:**
 - [ ] Functions deployadas corretamente
 - [ ] Firestore rules funcionam
 - [ ] Validações funcionam
 - [ ] Transações funcionam
+- [ ] Feed iCal do barbeiro funciona (`/ical/barber/{barberId}/{token}.ics`)
 
 ## 🚀 Deploy Manual
 
