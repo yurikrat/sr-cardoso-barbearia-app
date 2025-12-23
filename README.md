@@ -447,6 +447,22 @@ Comandos (exemplo):
 
 > O container é construído usando `apps/server/Dockerfile` e já inclui o build do `apps/web`.
 
+### Deploy SEM Cloud Build (script shell)
+Se você não quer Cloud Build, use o script que faz **build local + docker push + deploy**:
+
+- Script: `scripts/deploy-cloudrun.sh`
+- Exemplo:
+  - `./scripts/deploy-cloudrun.sh --project sr-cardoso-barbearia-prd --region us-central1 --service sr-cardoso-barbearia --admin-password '...' --admin-jwt-secret '...'`
+
+### Índices do Firestore (obrigatório na 1ª vez)
+O Firestore vai pedir índices para algumas queries do backend. Crie no Console:
+- Firebase/GCP Console → Firestore → Indexes → Composite indexes
+
+Crie pelo menos:
+- **bookings**: `barberId ASC`, `dateKey ASC`, `slotStart ASC`
+- **bookings**: `barberId ASC`, `slotStart ASC`, `status ASC` *(para o iCal: status in + orderBy slotStart)*
+- **slots (subcoleção barbers/{barberId}/slots)**: `dateKey ASC`, `slotStart ASC` *(para queries por intervalo/data, se necessário)*
+
 ---
 
 ## ↩️ Rollback: Caminho A (Firebase)
