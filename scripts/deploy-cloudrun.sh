@@ -100,10 +100,27 @@ npm run build:web >/dev/null
 npm run build:server >/dev/null
 
 echo "== Docker build (local) =="
-docker build -f apps/server/Dockerfile -t "$IMAGE_URI" .
+if ! docker buildx version >/dev/null 2>&1; then
+  die "docker buildx não está disponível. Atualize o Docker Desktop."
+fi
 
-echo "== Docker push =="
-docker push "$IMAGE_URI" >/dev/null
+# Cloud Run exige linux/amd64. Em Macs ARM, o build padrão gera arm64 e falha no deploy.
+echo "== Docker buildx (linux/amd64) + push =="
+# Garante que existe um builder ativo
+if ! docker buildx inspect sr-cardoso-builder >/dev/null 2>&1; then
+  docker buildx create --name sr-cardoso-builder --use >/dev/null
+else
+  docker buildx use sr-cardoso-builder >/dev/null
+fi
+
+# --provenance=false evita gerar manifest list/attestations que podem confundir alguns runtimes
+docker buildx build \
+  --platform linux/amd64 \
+  --provenance=false \
+  -f apps/server/Dockerfile \
+  -t "$IMAGE_URI" \
+  --push \
+  .
 
 echo "== Service Account dedicada (idempotente) =="
 SA_NAME="${SERVICE_NAME}-run"
