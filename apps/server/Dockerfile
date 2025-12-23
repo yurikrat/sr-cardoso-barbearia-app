@@ -17,6 +17,7 @@ ENV PORT=8080
 ENV STATIC_DIR=/app/web-dist
 
 COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/shared ./packages/shared
 COPY --from=build /app/apps/server/dist ./dist
 COPY --from=build /app/apps/web/dist ./web-dist
 COPY --from=build /app/apps/server/package.json ./package.json
