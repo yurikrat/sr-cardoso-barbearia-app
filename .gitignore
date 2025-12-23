@@ -19,12 +19,15 @@ build/
 *.log
 .next/
 out/
+*.tsbuildinfo
 
 # Package builds
 packages/*/dist/
 packages/*/build/
 apps/*/dist/
 apps/*/build/
+apps/*/lib/
+apps/functions/lib/
 
 # Firebase
 .firebase/
