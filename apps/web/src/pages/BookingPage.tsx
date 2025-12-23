@@ -21,8 +21,7 @@ import { disabledDays } from '@/utils/calendar';
 import { isValidName, isValidBrazilianPhone } from '@/utils/validation';
 import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import type { ServiceType } from '@sr-cardoso/shared';
 import { BARBERS } from '@/utils/constants';
 
@@ -70,26 +69,11 @@ export default function BookingPage() {
       const allSlots = generateDaySlots(selectedDate);
       setAvailableSlots(allSlots);
 
-      // Buscar slots ocupados/bloqueados no Firestore
-      const slotsRef = collection(
-        db,
-        `barbers/${bookingState.barberId}/slots`
-      );
-      const q = query(slotsRef, where('dateKey', '==', dateKey));
-      const snapshot = await getDocs(q);
-
       const booked = new Set<string>();
       const blocked = new Set<string>();
-
-      snapshot.forEach((doc) => {
-        const data = doc.data() as { kind?: unknown };
-        const slotId = doc.id;
-        if (data.kind === 'booking') {
-          booked.add(slotId);
-        } else if (data.kind === 'block') {
-          blocked.add(slotId);
-        }
-      });
+      const availability = await api.availability(bookingState.barberId, dateKey);
+      availability.bookedSlotIds.forEach((id) => booked.add(id));
+      availability.blockedSlotIds.forEach((id) => blocked.add(id));
 
       // #region agent log
       debugLog({
@@ -102,7 +86,7 @@ export default function BookingPage() {
           barberId: bookingState.barberId,
           dateKey,
           totalSlots: allSlots.length,
-          firestoreDocs: snapshot.size,
+          firestoreDocs: availability.bookedSlotIds.length + availability.blockedSlotIds.length,
           bookedCount: booked.size,
           blockedCount: blocked.size,
         },

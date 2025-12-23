@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,46 +27,9 @@ export default function AgendaWeekPage() {
       const today = DateTime.now().setZone('America/Sao_Paulo');
       const weekStart = today.startOf('week'); // Segunda-feira
       
-      const weekDays: Record<string, { bookings: number; blocks: number }> = {};
-      
-      // Inicializar todos os dias da semana (segunda a sábado, domingo não conta)
-      for (let i = 0; i < 6; i++) {
-        const day = weekStart.plus({ days: i });
-        const dateKey = day.toFormat('yyyy-MM-dd');
-        weekDays[dateKey] = { bookings: 0, blocks: 0 };
-      }
-
-      // Buscar bookings da semana
-      const bookingsRef = collection(db, 'bookings');
-      const bookingsQuery = query(
-        bookingsRef,
-        where('barberId', '==', selectedBarber),
-        where('dateKey', '>=', weekStart.toFormat('yyyy-MM-dd')),
-        where('dateKey', '<=', weekStart.plus({ days: 5 }).toFormat('yyyy-MM-dd'))
-      );
-
-      const bookingsSnapshot = await getDocs(bookingsQuery);
-      bookingsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const dateKey = data.dateKey;
-        if (weekDays[dateKey]) {
-          weekDays[dateKey].bookings++;
-        }
-      });
-
-      // Buscar blocks da semana
-      const slotsRef = collection(db, `barbers/${selectedBarber}/slots`);
-      const slotsQuery = query(slotsRef);
-      const slotsSnapshot = await getDocs(slotsQuery);
-      
-      slotsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.kind === 'block' && weekDays[data.dateKey]) {
-          weekDays[data.dateKey].blocks++;
-        }
-      });
-
-      setWeekData(weekDays);
+      const startKey = weekStart.toFormat('yyyy-MM-dd');
+      const { items } = await api.admin.weekSummary(selectedBarber, startKey, 6);
+      setWeekData(items);
     } catch (error) {
       console.error('Error loading week data:', error);
       toast({

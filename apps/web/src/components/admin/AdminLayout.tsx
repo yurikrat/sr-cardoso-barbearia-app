@@ -24,7 +24,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-xl font-serif font-bold">Sr. Cardoso - Admin</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{user?.email}</span>
+            <span className="text-sm text-muted-foreground">{user ? 'Admin' : ''}</span>
             <Button variant="ghost" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4 mr-2" />
               Sair

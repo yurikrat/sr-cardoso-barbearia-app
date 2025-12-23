@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,13 +16,8 @@ export default function CalendarIntegrationPage() {
 
   const loadBarberToken = useCallback(async () => {
     try {
-      const barberRef = doc(db, 'barbers', selectedBarber);
-      const barberDoc = await getDoc(barberRef);
-      
-      if (barberDoc.exists()) {
-        const data = barberDoc.data();
-        setCalendarToken(data.calendarFeedToken || '');
-      }
+      const { calendarFeedToken } = await api.admin.getBarberCalendarToken(selectedBarber);
+      setCalendarToken(calendarFeedToken || '');
     } catch (error: unknown) {
       console.error('Error loading barber:', error);
     }

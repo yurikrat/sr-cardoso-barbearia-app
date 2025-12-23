@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,28 +58,31 @@ export default function AgendaDayPage() {
   const loadBookings = async () => {
     setLoading(true);
     try {
-      const bookingsRef = collection(db, 'bookings');
-      const q = query(
-        bookingsRef,
-        where('barberId', '==', selectedBarber),
-        where('dateKey', '==', dateKey),
-        orderBy('slotStart', 'asc')
-      );
-
-      const snapshot = await getDocs(q);
       const bookingsMap: Record<string, Booking> = {};
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const slotStart = data.slotStart?.toDate();
-        if (slotStart) {
-          const timeKey = DateTime.fromJSDate(slotStart, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm');
-          bookingsMap[timeKey] = {
-            id: doc.id,
-            ...data,
-            slotStart,
-          } as Booking;
-        }
+      const { items } = await api.admin.listBookings(selectedBarber, dateKey);
+      items.forEach((raw) => {
+        const data = raw as {
+          id?: unknown;
+          barberId?: unknown;
+          customer?: unknown;
+          serviceType?: unknown;
+          slotStart?: unknown;
+          status?: unknown;
+          whatsappStatus?: unknown;
+        };
+        const slotStartIso = typeof data.slotStart === 'string' ? data.slotStart : null;
+        if (!slotStartIso) return;
+        const slotStart = DateTime.fromISO(slotStartIso, { zone: 'America/Sao_Paulo' }).toJSDate();
+        const timeKey = DateTime.fromJSDate(slotStart, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm');
+        bookingsMap[timeKey] = {
+          id: String(data.id ?? ''),
+          barberId: typeof data.barberId === 'string' ? data.barberId : undefined,
+          customer: data.customer as Booking['customer'],
+          serviceType: String(data.serviceType ?? ''),
+          slotStart,
+          status: String(data.status ?? ''),
+          whatsappStatus: String(data.whatsappStatus ?? ''),
+        };
       });
 
       setBookings(bookingsMap);

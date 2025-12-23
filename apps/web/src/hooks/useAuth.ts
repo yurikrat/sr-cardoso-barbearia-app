@@ -1,22 +1,21 @@
 import { useState, useEffect } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { api } from '@/lib/api';
+
+type AdminUser = { role: 'admin' };
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    const token = api.admin.getToken();
+    setUser(token ? { role: 'admin' } : null);
+    setLoading(false);
   }, []);
 
   const logout = async () => {
-    await signOut(auth);
+    api.admin.logout();
+    setUser(null);
   };
 
   return { user, loading, logout };

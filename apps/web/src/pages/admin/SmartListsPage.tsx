@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,26 +47,21 @@ export default function SmartListsPage() {
   const loadLists = async () => {
     setLoading(true);
     try {
+      const { items } = await api.admin.listCustomers(500);
+      const customers = items as Customer[];
+
       // Inativos 30+ dias
       const thirtyDaysAgo = DateTime.now()
         .setZone('America/Sao_Paulo')
         .minus({ days: 30 })
         .toJSDate();
       
-      const inactiveQuery = query(
-        collection(db, 'customers'),
-        where('consent.marketingOptIn', '==', true)
-      );
-      
-      const inactiveSnapshot = await getDocs(inactiveQuery);
       const inactive: Customer[] = [];
       
-      inactiveSnapshot.forEach((doc) => {
-        const data = doc.data() as Customer;
+      customers.forEach((data) => {
+        if (!data.consent?.marketingOptIn) return;
         const lastDate = data.stats.lastCompletedAt?.toDate() || data.stats.lastBookingAt?.toDate();
-        if (lastDate && lastDate < thirtyDaysAgo) {
-          inactive.push({ ...data, id: doc.id });
-        }
+        if (lastDate && lastDate < thirtyDaysAgo) inactive.push(data);
       });
       
       setInactiveCustomers(inactive);
@@ -81,33 +75,20 @@ export default function SmartListsPage() {
         birthdayMmddSet.add(date.toFormat('MMdd'));
       }
 
-      const birthdayQuery = query(
-        collection(db, 'customers'),
-        where('consent.marketingOptIn', '==', true)
-      );
-      
-      const birthdaySnapshot = await getDocs(birthdayQuery);
       const birthdays: Customer[] = [];
       
-      birthdaySnapshot.forEach((doc) => {
-        const data = doc.data() as Customer;
-        if (data.profile.birthdayMmdd && birthdayMmddSet.has(data.profile.birthdayMmdd)) {
-          birthdays.push({ ...data, id: doc.id });
-        }
+      customers.forEach((data) => {
+        if (!data.consent?.marketingOptIn) return;
+        if (data.profile.birthdayMmdd && birthdayMmddSet.has(data.profile.birthdayMmdd)) birthdays.push(data);
       });
       
       setBirthdayCustomers(birthdays);
 
       // No-show (ranking)
-      const noShowQuery = query(collection(db, 'customers'));
-      const noShowSnapshot = await getDocs(noShowQuery);
       const noShows: Customer[] = [];
       
-      noShowSnapshot.forEach((doc) => {
-        const data = doc.data() as Customer;
-        if (data.stats.noShowCount > 0) {
-          noShows.push({ ...data, id: doc.id });
-        }
+      customers.forEach((data) => {
+        if (data.stats.noShowCount > 0) noShows.push(data);
       });
       
       noShows.sort((a, b) => b.stats.noShowCount - a.stats.noShowCount);

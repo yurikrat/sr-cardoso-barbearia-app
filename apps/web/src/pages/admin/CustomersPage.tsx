@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -42,19 +41,8 @@ export default function CustomersPage() {
   const loadCustomers = async () => {
     setLoading(true);
     try {
-      const customersRef = collection(db, 'customers');
-      const q = query(customersRef, orderBy('stats.lastBookingAt', 'desc'), limit(100));
-      const snapshot = await getDocs(q);
-
-      const customersList: Customer[] = [];
-      snapshot.forEach((doc) => {
-        customersList.push({
-          id: doc.id,
-          ...doc.data(),
-        } as Customer);
-      });
-
-      setCustomers(customersList);
+      const { items } = await api.admin.listCustomers(100);
+      setCustomers(items as Customer[]);
     } catch (error) {
       console.error('Error loading customers:', error);
       toast({

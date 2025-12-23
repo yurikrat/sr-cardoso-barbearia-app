@@ -407,6 +407,58 @@ Privado - Barbearia Sr. Cardoso
 
 ---
 
+## ✅ Caminho B (ATUAL): GCP puro (Cloud Run + Firestore via IAM)
+
+### O que muda no Caminho B
+- O **frontend não usa Firebase SDK** (sem `firebase/auth` e sem `firebase/firestore` no browser).
+- O frontend chama uma **API REST** (Cloud Run) em:
+  - `POST /api/bookings` (público)
+  - `GET /api/availability?barberId=...&dateKey=YYYY-MM-DD` (público)
+  - `POST /api/admin/login` + endpoints admin (protegidos por token)
+  - `GET /ical/barber/{barberId}/{token}.ics` (feed iCal)
+- O acesso ao Firestore é feito **no servidor** usando **IAM da Service Account do Cloud Run** (sem Firestore Rules).
+
+### Variáveis de ambiente (server)
+No Cloud Run (ou local), configure:
+- `ADMIN_PASSWORD`: senha do painel admin (simples)
+- `ADMIN_JWT_SECRET`: segredo para assinar tokens (JWT)
+- `GCP_PROJECT_ID` (opcional): project id (em Cloud Run normalmente não precisa)
+- `WEB_ORIGIN` (opcional): se quiser restringir CORS
+
+### Rodar local (Caminho B)
+1. Build do web (opcional, se quiser servir estático pelo server):
+   - `npm run build:web`
+2. Rodar o server:
+   - `npm run dev:server`
+3. (Opcional) setar base da API no web em dev:
+   - `VITE_API_BASE_URL=http://127.0.0.1:8080`
+
+### Deploy no Cloud Run (manual)
+Pré-requisitos:
+- Firestore habilitado no projeto (modo nativo)
+- APIs: Cloud Run, Cloud Build, Firestore
+- Service Account do Cloud Run com permissão no Firestore (ex.: `roles/datastore.user`)
+
+Comandos (exemplo):
+- `gcloud config set project <SEU_PROJECT_ID>`
+- `gcloud services enable run.googleapis.com cloudbuild.googleapis.com firestore.googleapis.com`
+- Deploy via Dockerfile:
+  - `gcloud run deploy sr-cardoso-barbearia --source . --region us-central1 --allow-unauthenticated --set-env-vars ADMIN_PASSWORD=...,ADMIN_JWT_SECRET=...`
+
+> O container é construído usando `apps/server/Dockerfile` e já inclui o build do `apps/web`.
+
+---
+
+## ↩️ Rollback: Caminho A (Firebase)
+
+O caminho A (Firebase Hosting + Firebase Auth + Cloud Functions) está preservado em `apps/functions/` e nas configurações `firebase/` e `firebase.json`.
+
+Para voltar ao caminho A rapidamente:
+- **Rollback via git**: volte para o commit **`9957b25`** (antes do caminho B), onde `apps/web/src/lib/firebase.ts` usa Firebase SDK.
+- Depois, siga o setup do Firebase no próprio README (seções de Firebase e Deploy).
+
+---
+
 ## 🧠 Planejamento (UX + Arquitetura GCP/Firebase)
 
 ### Objetivo

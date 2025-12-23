@@ -1,0 +1,32 @@
+{
+  "name": "@sr-cardoso/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "echo \"(server) lint handled at root\""
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.11.0",
+    "@sr-cardoso/shared": "*",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "jose": "^6.1.0",
+    "luxon": "^3.4.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.22",
+    "@types/node": "^20.11.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.3.3"
+  }
+}
+
+
