@@ -58,14 +58,21 @@ export default function UsersPage() {
     void loadAll();
   }, []);
 
+  // For barbeiro accounts, lock the login username to the selected barberId.
+  useEffect(() => {
+    if (newRole !== 'barber') return;
+    setNewUsername(newBarberId || '');
+  }, [newRole, newBarberId]);
+
   const handleCreate = async () => {
     try {
-      if (!newUsername.trim()) throw new Error('Usuário é obrigatório');
+      const username = (newRole === 'barber' ? newBarberId : newUsername).trim();
+      if (!username) throw new Error('Usuário é obrigatório');
       if (!newPassword) throw new Error('Senha é obrigatória');
       if (newRole === 'barber' && !newBarberId) throw new Error('Selecione o barbeiro');
 
       await api.admin.createAdminUser({
-        username: newUsername.trim(),
+        username,
         password: newPassword,
         role: newRole,
         barberId: newRole === 'barber' ? newBarberId : null,
@@ -123,9 +130,12 @@ export default function UsersPage() {
                 onChange={(e) => setNewUsername(e.target.value)}
                 placeholder="ex: emanuel"
                 autoComplete="username"
+                disabled={newRole === 'barber'}
               />
               <p className="text-xs text-muted-foreground">
-                Esse é o usuário que será digitado no login (não é o nome do cliente).
+                {newRole === 'barber'
+                  ? 'Para barbeiro, o login é automático e fica igual ao barberId do profissional selecionado.'
+                  : 'Esse é o usuário que será digitado no login (não é o nome do cliente).'}
               </p>
             </div>
             <div className="space-y-2">
