@@ -430,6 +430,20 @@ app.delete('/api/admin/users/:username', requireAdmin, requireMaster, async (req
       }
     }
 
+    // If this is a barber login, also deactivate the corresponding professional so it disappears
+    // from agenda tabs, while keeping booking history intact.
+    if (data.role === 'barber') {
+      const barberId = typeof data.barberId === 'string' ? data.barberId : null;
+      if (barberId && barberId !== OWNER_BARBER_ID) {
+        try {
+          const barberRef = db.collection('barbers').doc(barberId);
+          await barberRef.set({ active: false }, { merge: true });
+        } catch (e) {
+          console.warn('[server] Failed to deactivate barber on user delete (continuing):', e);
+        }
+      }
+    }
+
     await ref.delete();
     return res.json({ success: true });
   } catch (e) {

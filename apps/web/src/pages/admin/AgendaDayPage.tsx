@@ -258,103 +258,131 @@ export default function AgendaDayPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
-          <div className="flex flex-col lg:flex-row gap-4 items-start justify-between">
-            <div className="space-y-3 w-full">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
-              <TabsList className="w-full justify-start flex-wrap">
+            </div>
+
+            <div className="w-full overflow-x-auto">
+              <TabsList className="w-max min-w-full justify-start flex-nowrap">
                 {barbers.map((barber) => (
-                  <TabsTrigger key={barber.id} value={barber.id}>
+                  <TabsTrigger key={barber.id} value={barber.id} className="whitespace-nowrap">
                     {barber.name}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </div>
-            <div className="flex gap-2 lg:justify-end w-full lg:w-auto">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(date) => date && setSelectedDate(date)}
-                className="rounded-md border"
-              />
-              <Button
-                variant="outline"
-                onClick={() => setBlockModalOpen(true)}
-                className="flex items-center gap-2"
-              >
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+            <div>
+              {barbers.map((barber) => (
+                <TabsContent key={barber.id} value={barber.id} className="space-y-4">
+                  {loading ? (
+                    <div className="flex justify-center py-8">
+                      <LoadingSpinner />
+                    </div>
+                  ) : (
+                    <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                      <CardContent className="p-0">
+                        <div className="divide-y">
+                          {TIME_SLOTS.map((time) => {
+                            const booking = bookings[time];
+                            const clickable = Boolean(booking);
+
+                            return (
+                              <div
+                                key={time}
+                                className={
+                                  'grid grid-cols-[72px_1fr_auto] items-center gap-3 px-3 py-2 ' +
+                                  (clickable
+                                    ? 'cursor-pointer hover:bg-accent/40 transition-colors'
+                                    : 'text-muted-foreground')
+                                }
+                                onClick={() => booking && setSelectedBooking(booking)}
+                                role={clickable ? 'button' : undefined}
+                                tabIndex={clickable ? 0 : -1}
+                                onKeyDown={(e) => {
+                                  if (!booking) return;
+                                  if (e.key === 'Enter' || e.key === ' ') setSelectedBooking(booking);
+                                }}
+                              >
+                                <span className="font-mono text-sm font-semibold tabular-nums text-foreground/80">
+                                  {time}
+                                </span>
+
+                                <div className="min-w-0">
+                                  {booking ? (
+                                    <div className="min-w-0">
+                                      <div className="font-medium truncate">
+                                        {booking.customer.firstName} {booking.customer.lastName}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground truncate">
+                                        {booking.serviceType === 'cabelo'
+                                          ? 'Cabelo'
+                                          : booking.serviceType === 'barba'
+                                          ? 'Barba'
+                                          : 'Cabelo + Barba'}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs">Livre</span>
+                                  )}
+                                </div>
+
+                                {booking ? (
+                                  <div className="flex items-center gap-2 justify-end">
+                                    <Badge
+                                      variant={
+                                        booking.status === 'completed' || booking.status === 'confirmed'
+                                          ? 'default'
+                                          : booking.status === 'no_show'
+                                          ? 'destructive'
+                                          : booking.status === 'cancelled'
+                                          ? 'destructive'
+                                          : 'secondary'
+                                      }
+                                    >
+                                      {formatBookingStatusPtBr(booking.status)}
+                                    </Badge>
+                                    {booking.whatsappStatus === 'sent' ? (
+                                      <Badge variant="outline">WhatsApp ✓</Badge>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+              ))}
+            </div>
+
+            <aside className="space-y-3">
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardContent className="p-3">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(date) => date && setSelectedDate(date)}
+                    className="rounded-md border w-full"
+                  />
+                </CardContent>
+              </Card>
+
+              <Button variant="outline" onClick={() => setBlockModalOpen(true)} className="w-full flex items-center gap-2">
                 <CalendarIcon className="h-4 w-4" />
                 Bloquear Horários
               </Button>
-            </div>
+            </aside>
           </div>
-
-          {barbers.map((barber) => (
-            <TabsContent key={barber.id} value={barber.id} className="space-y-4">
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner />
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {TIME_SLOTS.map((time) => {
-                    const booking = bookings[time];
-                    return (
-                      <Card
-                        key={time}
-                        className={`cursor-pointer transition-colors ${
-                          booking ? 'hover:bg-accent' : 'opacity-50'
-                        }`}
-                        onClick={() => booking && setSelectedBooking(booking)}
-                      >
-                        <CardContent className="p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <span className="font-mono text-lg font-semibold w-20">{time}</span>
-                            {booking ? (
-                              <div>
-                                <p className="font-medium">
-                                  {booking.customer.firstName} {booking.customer.lastName}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  {booking.serviceType === 'cabelo'
-                                    ? 'Cabelo'
-                                    : booking.serviceType === 'barba'
-                                    ? 'Barba'
-                                    : 'Cabelo + Barba'}
-                                </p>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">Livre</span>
-                            )}
-                          </div>
-                          {booking && (
-                            <div className="flex gap-2">
-                              <Badge
-                                variant={
-                                  booking.status === 'completed' || booking.status === 'confirmed'
-                                    ? 'default'
-                                    : booking.status === 'no_show'
-                                    ? 'destructive'
-                                    : booking.status === 'cancelled'
-                                    ? 'destructive'
-                                    : 'secondary'
-                                }
-                              >
-                                {formatBookingStatusPtBr(booking.status)}
-                              </Badge>
-                              {booking.whatsappStatus === 'sent' && (
-                                <Badge variant="outline">WhatsApp ✓</Badge>
-                              )}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </TabsContent>
-          ))}
         </Tabs>
       </div>
 

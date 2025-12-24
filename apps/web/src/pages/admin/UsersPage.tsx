@@ -127,7 +127,7 @@ export default function UsersPage() {
 
   const handleDeleteUser = async (username: string) => {
     const ok = confirm(
-      `Excluir o usuário "${username}"?\n\nIsso remove o login do painel. (O profissional na agenda pode continuar existindo.)`
+      `Excluir o usuário "${username}"?\n\nIsso remove o login do painel. Se for barbeiro, também remove o profissional da agenda (sem apagar histórico).`
     );
     if (!ok) return;
     try {
