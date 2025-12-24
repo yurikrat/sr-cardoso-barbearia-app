@@ -8,7 +8,28 @@ import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
 
-type FirestoreTimestampLike = { toDate: () => Date };
+type TimestampLike =
+  | { toDate?: () => Date }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+function toDateSafe(value: TimestampLike): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  const maybe = value as { toDate?: () => Date };
+  if (typeof maybe.toDate === 'function') {
+    const d = maybe.toDate();
+    return d instanceof Date && Number.isFinite(d.getTime()) ? d : null;
+  }
+  return null;
+}
 
 interface Customer {
   id: string;
@@ -25,7 +46,7 @@ interface Customer {
   stats: {
     totalBookings: number;
     totalCompleted?: number;
-    lastBookingAt?: FirestoreTimestampLike;
+    lastBookingAt?: TimestampLike;
     noShowCount: number;
   };
 }
@@ -154,7 +175,10 @@ export default function CustomersPage() {
                           )}
                           {customer.stats.lastBookingAt && (
                             <span>
-                              Último: {formatDate(customer.stats.lastBookingAt.toDate())}
+                              {(() => {
+                                const d = toDateSafe(customer.stats.lastBookingAt);
+                                return d ? `Último: ${formatDate(d)}` : null;
+                              })()}
                             </span>
                           )}
                           {customer.stats.noShowCount > 0 && (

@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, pbkdf2Sync, timingSafeEqual } from 'crypto';
 import { DateTime } from 'luxon';
 import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
 import { SignJWT, jwtVerify } from 'jose';
@@ -20,6 +20,7 @@ import {
 type Env = {
   PORT: string;
   GCP_PROJECT_ID?: string;
+  ADMIN_USERNAME?: string;
   ADMIN_PASSWORD?: string;
   ADMIN_JWT_SECRET?: string;
   WEB_ORIGIN?: string;
@@ -31,6 +32,7 @@ function getEnv(): Env {
   return {
     PORT: process.env.PORT ?? '8080',
     GCP_PROJECT_ID: process.env.GCP_PROJECT_ID,
+    ADMIN_USERNAME: process.env.ADMIN_USERNAME,
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
     ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET,
     WEB_ORIGIN: process.env.WEB_ORIGIN,
@@ -66,6 +68,108 @@ app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+type AdminRole = 'master' | 'barber';
+type AdminClaims = {
+  role: AdminRole;
+  username: string;
+  barberId?: string | null;
+};
+
+type AdminUserDoc = {
+  username: string;
+  usernameLower: string;
+  role: AdminRole;
+  barberId?: string | null;
+  active: boolean;
+  passwordHash: string;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  lastLoginAt?: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+};
+
+const OWNER_BARBER_ID = 'sr-cardoso';
+
+function normalizeUsername(input: string) {
+  return input.trim().toLowerCase();
+}
+
+const PBKDF2_ITERS = 200_000;
+const PBKDF2_KEYLEN = 32;
+const PBKDF2_DIGEST = 'sha256';
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const derived = pbkdf2Sync(password, salt, PBKDF2_ITERS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
+  return `pbkdf2$${PBKDF2_ITERS}$${salt.toString('base64')}$${derived.toString('base64')}`;
+}
+
+function verifyPassword(password: string, passwordHash: string): boolean {
+  try {
+    const parts = passwordHash.split('$');
+    if (parts.length !== 4) return false;
+    const [algo, itersStr, saltB64, hashB64] = parts;
+    if (algo !== 'pbkdf2') return false;
+    const iters = Number(itersStr);
+    if (!Number.isFinite(iters) || iters < 10_000) return false;
+    const salt = Buffer.from(saltB64, 'base64');
+    const expected = Buffer.from(hashB64, 'base64');
+    const actual = pbkdf2Sync(password, salt, iters, expected.length, PBKDF2_DIGEST);
+    return timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
+}
+
+async function signAdminToken(claims: AdminClaims) {
+  if (!env.ADMIN_JWT_SECRET) throw new Error('ADMIN_JWT_SECRET não configurado');
+  const key = new TextEncoder().encode(env.ADMIN_JWT_SECRET);
+  return new SignJWT({ role: claims.role, username: claims.username, barberId: claims.barberId ?? null })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(claims.username)
+    .setIssuedAt()
+    .setExpirationTime('7d')
+    .sign(key);
+}
+
+function getAdminFromReq(req: express.Request): AdminClaims {
+  const anyReq = req as any;
+  return anyReq.admin as AdminClaims;
+}
+
+function ensureRoleAllowed(role: AdminRole, allowed: readonly AdminRole[]) {
+  return allowed.includes(role);
+}
+
+async function bootstrapMasterUserIfNeeded() {
+  const username = normalizeUsername(env.ADMIN_USERNAME ?? OWNER_BARBER_ID);
+  const password = env.ADMIN_PASSWORD;
+  if (!username || !password) return;
+
+  try {
+    const ref = db.collection('adminUsers').doc(username);
+    const snap = await ref.get();
+    if (snap.exists) return;
+
+    const now = FieldValue.serverTimestamp();
+    const doc: AdminUserDoc = {
+      username,
+      usernameLower: username,
+      role: 'master',
+      barberId: null,
+      active: true,
+      passwordHash: hashPassword(password),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await ref.set(doc);
+    console.log('[server] Bootstrapped admin master user:', username);
+  } catch (e) {
+    console.warn('[server] Failed to bootstrap master user (continuing):', e);
+  }
+}
+
+void bootstrapMasterUserIfNeeded();
+
 function getAuthHeader(req: express.Request) {
   const h = req.headers.authorization;
   if (!h || typeof h !== 'string') return null;
@@ -81,7 +185,17 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
 
     const token = auth.slice('Bearer '.length);
     const key = new TextEncoder().encode(secret);
-    await jwtVerify(token, key, { algorithms: ['HS256'] });
+    const verified = await jwtVerify(token, key, { algorithms: ['HS256'] });
+    const payload = verified.payload as any;
+    const role = payload?.role;
+    const username = payload?.username;
+    const barberId = payload?.barberId;
+    if (role !== 'master' && role !== 'barber') return res.status(401).json({ error: 'Token inválido' });
+    if (typeof username !== 'string' || !username.trim()) return res.status(401).json({ error: 'Token inválido' });
+    if (role === 'barber' && (typeof barberId !== 'string' || !barberId.trim())) {
+      return res.status(401).json({ error: 'Token inválido' });
+    }
+    (req as any).admin = { role, username, barberId: typeof barberId === 'string' ? barberId : null } satisfies AdminClaims;
     return next();
   } catch {
     return res.status(401).json({ error: 'Token inválido/expirado' });
@@ -89,26 +203,145 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
 }
 
 app.post('/api/admin/login', async (req, res) => {
-  const password = (req.body as { password?: unknown })?.password;
-  if (typeof password !== 'string') return res.status(400).json({ error: 'password é obrigatório' });
+  try {
+    const body = req.body as { username?: unknown; password?: unknown };
+    const usernameRaw = typeof body.username === 'string' ? body.username : '';
+    const username = normalizeUsername(usernameRaw);
+    const password = typeof body.password === 'string' ? body.password : null;
+    if (!password) return res.status(400).json({ error: 'password é obrigatório' });
+    if (!env.ADMIN_JWT_SECRET) return res.status(500).json({ error: 'ADMIN_JWT_SECRET não configurado' });
 
-  if (!env.ADMIN_PASSWORD) return res.status(500).json({ error: 'ADMIN_PASSWORD não configurado' });
-  if (!env.ADMIN_JWT_SECRET) return res.status(500).json({ error: 'ADMIN_JWT_SECRET não configurado' });
+    // Back-compat bootstrap: if username not provided, accept legacy env password as master.
+    if (!username) {
+      if (!env.ADMIN_PASSWORD) return res.status(500).json({ error: 'ADMIN_PASSWORD não configurado' });
+      if (password !== env.ADMIN_PASSWORD) return res.status(401).json({ error: 'Credenciais inválidas' });
+      const masterUsername = normalizeUsername(env.ADMIN_USERNAME ?? OWNER_BARBER_ID);
+      const token = await signAdminToken({ role: 'master', username: masterUsername, barberId: null });
+      return res.json({ token });
+    }
 
-  if (password !== env.ADMIN_PASSWORD) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const userRef = db.collection('adminUsers').doc(username);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const user = userSnap.data() as AdminUserDoc;
+    if (!user.active) return res.status(401).json({ error: 'Usuário desativado' });
+    if (!verifyPassword(password, user.passwordHash)) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-  const key = new TextEncoder().encode(env.ADMIN_JWT_SECRET);
-  const token = await new SignJWT({ role: 'admin' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(key);
+    await userRef.update({ lastLoginAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
 
-  return res.json({ token });
+    const token = await signAdminToken({
+      role: user.role,
+      username: user.usernameLower,
+      barberId: user.role === 'barber' ? (user.barberId ?? null) : null,
+    });
+
+    return res.json({ token });
+  } catch (e) {
+    console.error('Error on admin login:', e);
+    return res.status(500).json({ error: 'Erro ao fazer login' });
+  }
+});
+
+function requireMaster(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const admin = getAdminFromReq(req);
+  if (!admin || admin.role !== 'master') return res.status(403).json({ error: 'Acesso restrito' });
+  return next();
+}
+
+app.get('/api/admin/users', requireAdmin, requireMaster, async (_req, res) => {
+  try {
+    const snapshot = await db.collection('adminUsers').get();
+    const items = snapshot.docs
+      .map((d) => {
+        const data = d.data() as AdminUserDoc;
+        return {
+          id: d.id,
+          username: data.username,
+          role: data.role,
+          barberId: data.barberId ?? null,
+          active: data.active,
+          lastLoginAt: (data as any)?.lastLoginAt?.toDate ? (data as any).lastLoginAt.toDate().toISOString() : null,
+        };
+      })
+      .sort((a, b) => a.username.localeCompare(b.username, 'pt-BR'));
+    return res.json({ items });
+  } catch (e) {
+    console.error('Error listing admin users:', e);
+    return res.status(500).json({ error: 'Erro ao listar usuários' });
+  }
+});
+
+app.post('/api/admin/users', requireAdmin, requireMaster, async (req, res) => {
+  try {
+    const body = req.body as { username?: unknown; password?: unknown; role?: unknown; barberId?: unknown; active?: unknown };
+    const username = typeof body.username === 'string' ? normalizeUsername(body.username) : null;
+    const password = typeof body.password === 'string' ? body.password : null;
+    const role = body.role === 'master' || body.role === 'barber' ? body.role : null;
+    const barberId = typeof body.barberId === 'string' ? body.barberId : null;
+    const active = typeof body.active === 'boolean' ? body.active : true;
+    if (!username || !password || !role) return res.status(400).json({ error: 'username, password e role são obrigatórios' });
+    if (role === 'barber' && !barberId) return res.status(400).json({ error: 'barberId é obrigatório para barbeiro' });
+
+    const ref = db.collection('adminUsers').doc(username);
+    const exists = await ref.get();
+    if (exists.exists) return res.status(409).json({ error: 'Usuário já existe' });
+
+    const now = FieldValue.serverTimestamp();
+    const doc: AdminUserDoc = {
+      username,
+      usernameLower: username,
+      role,
+      barberId: role === 'barber' ? barberId : null,
+      active,
+      passwordHash: hashPassword(password),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await ref.set(doc);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error creating admin user:', e);
+    return res.status(500).json({ error: 'Erro ao criar usuário' });
+  }
+});
+
+app.post('/api/admin/users/:username/reset-password', requireAdmin, requireMaster, async (req, res) => {
+  try {
+    const username = normalizeUsername(req.params.username || '');
+    const password = (req.body as { password?: unknown })?.password;
+    if (!username) return res.status(400).json({ error: 'username inválido' });
+    if (typeof password !== 'string' || !password) return res.status(400).json({ error: 'password é obrigatório' });
+    const ref = db.collection('adminUsers').doc(username);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+    await ref.update({ passwordHash: hashPassword(password), updatedAt: FieldValue.serverTimestamp() });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error resetting admin user password:', e);
+    return res.status(500).json({ error: 'Erro ao resetar senha' });
+  }
+});
+
+app.post('/api/admin/users/:username/active', requireAdmin, requireMaster, async (req, res) => {
+  try {
+    const username = normalizeUsername(req.params.username || '');
+    const active = (req.body as { active?: unknown })?.active;
+    if (!username) return res.status(400).json({ error: 'username inválido' });
+    if (typeof active !== 'boolean') return res.status(400).json({ error: 'active deve ser boolean' });
+    const ref = db.collection('adminUsers').doc(username);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+    await ref.update({ active, updatedAt: FieldValue.serverTimestamp() });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error toggling admin user:', e);
+    return res.status(500).json({ error: 'Erro ao atualizar usuário' });
+  }
 });
 
 app.get('/api/admin/barbers', requireAdmin, async (_req, res) => {
   try {
+    const admin = getAdminFromReq(_req);
     const snapshot = await db.collection('barbers').get();
     const items = snapshot.docs
       .map((doc) => {
@@ -119,8 +352,19 @@ app.get('/api/admin/barbers', requireAdmin, async (_req, res) => {
       })
       .filter((b) => b.active);
 
-    items.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    return res.json({ items });
+    const scopedItems =
+      admin?.role === 'barber'
+        ? items.filter((b) => b.id === admin.barberId)
+        : items;
+
+    scopedItems.sort((a, b) => {
+      const aIsOwner = a.id === OWNER_BARBER_ID;
+      const bIsOwner = b.id === OWNER_BARBER_ID;
+      if (aIsOwner && !bIsOwner) return -1;
+      if (!aIsOwner && bIsOwner) return 1;
+      return a.name.localeCompare(b.name, 'pt-BR');
+    });
+    return res.json({ items: scopedItems });
   } catch (err) {
     console.error('Error listing barbers:', err);
     return res.status(500).json({ error: 'Erro ao listar barbeiros' });
@@ -151,9 +395,11 @@ function getServicePriceCents(serviceType: string): number {
 
 app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const startDateKey = typeof req.query.startDateKey === 'string' ? req.query.startDateKey : null;
     const endDateKey = typeof req.query.endDateKey === 'string' ? req.query.endDateKey : null;
-    const barberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const requestedBarberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const barberId = admin.role === 'barber' ? (admin.barberId as string) : requestedBarberId;
 
     if (!startDateKey || !endDateKey) {
       return res.status(400).json({ error: 'startDateKey e endDateKey são obrigatórios' });
@@ -758,7 +1004,9 @@ app.post('/api/bookings', async (req, res) => {
 // --- Admin APIs (caminho B) ---
 app.get('/api/admin/bookings', requireAdmin, async (req, res) => {
   try {
-    const barberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const admin = getAdminFromReq(req);
+    const requestedBarberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const barberId = admin.role === 'barber' ? (admin.barberId as string) : requestedBarberId;
     const dateKey = typeof req.query.dateKey === 'string' ? req.query.dateKey : null;
     if (!barberId || !dateKey) return res.status(400).json({ error: 'barberId e dateKey são obrigatórios' });
 
@@ -786,11 +1034,15 @@ app.get('/api/admin/bookings', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/bookings/:bookingId/cancel', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const bookingId = req.params.bookingId;
     const bookingRef = db.collection('bookings').doc(bookingId);
     const bookingDoc = await bookingRef.get();
     if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
     const booking = bookingDoc.data() as any;
+    if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+      return res.status(403).json({ error: 'Acesso restrito' });
+    }
     const slotStartDate: Date | null = booking.slotStart?.toDate ? booking.slotStart.toDate() : null;
     if (!slotStartDate) return res.status(400).json({ error: 'slotStart inválido' });
 
@@ -814,6 +1066,7 @@ app.post('/api/admin/bookings/:bookingId/cancel', requireAdmin, async (req, res)
 
 app.post('/api/admin/bookings/:bookingId/reschedule', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const bookingId = req.params.bookingId;
     const newSlotStart = (req.body as { newSlotStart?: unknown })?.newSlotStart;
     if (typeof newSlotStart !== 'string') return res.status(400).json({ error: 'newSlotStart é obrigatório (ISO)' });
@@ -822,6 +1075,9 @@ app.post('/api/admin/bookings/:bookingId/reschedule', requireAdmin, async (req, 
     const bookingDoc = await bookingRef.get();
     if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
     const booking = bookingDoc.data() as any;
+    if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+      return res.status(403).json({ error: 'Acesso restrito' });
+    }
 
     const newSlot = DateTime.fromISO(newSlotStart, { zone: 'America/Sao_Paulo' });
     if (isSunday(newSlot)) return res.status(400).json({ error: 'Não é possível reagendar para domingo' });
@@ -871,11 +1127,15 @@ app.post('/api/admin/bookings/:bookingId/reschedule', requireAdmin, async (req, 
 
 app.post('/api/admin/bookings/:bookingId/whatsapp-sent', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const bookingId = req.params.bookingId;
     const bookingRef = db.collection('bookings').doc(bookingId);
     const bookingDoc = await bookingRef.get();
     if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
     const booking = bookingDoc.data() as any;
+    if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+      return res.status(403).json({ error: 'Acesso restrito' });
+    }
     const customerId = booking.customerId as string | undefined;
     const customerRef = customerId ? db.collection('customers').doc(customerId) : null;
     const now = Timestamp.now();
@@ -899,6 +1159,7 @@ app.post('/api/admin/bookings/:bookingId/whatsapp-sent', requireAdmin, async (re
 
 app.post('/api/admin/bookings/:bookingId/status', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const bookingId = req.params.bookingId;
     const nextStatus = (req.body as { status?: unknown })?.status;
     if (typeof nextStatus !== 'string') return res.status(400).json({ error: 'status é obrigatório' });
@@ -910,6 +1171,9 @@ app.post('/api/admin/bookings/:bookingId/status', requireAdmin, async (req, res)
     const bookingDoc = await bookingRef.get();
     if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
     const booking = bookingDoc.data() as any;
+    if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+      return res.status(403).json({ error: 'Acesso restrito' });
+    }
 
     const currentStatus = typeof booking.status === 'string' ? booking.status : 'booked';
     if (['cancelled', 'rescheduled'].includes(currentStatus)) {
@@ -966,7 +1230,9 @@ app.post('/api/admin/bookings/:bookingId/status', requireAdmin, async (req, res)
 
 app.get('/api/admin/week-summary', requireAdmin, async (req, res) => {
   try {
-    const barberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const admin = getAdminFromReq(req);
+    const requestedBarberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+    const barberId = admin.role === 'barber' ? (admin.barberId as string) : requestedBarberId;
     const startDateKey = typeof req.query.startDateKey === 'string' ? req.query.startDateKey : null;
     const days = typeof req.query.days === 'string' ? Number(req.query.days) : 6;
     const daysN = Number.isFinite(days) ? Math.min(Math.max(days, 1), 14) : 6;
@@ -1015,13 +1281,15 @@ app.get('/api/admin/week-summary', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/blocks', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const body = req.body as {
       barberId?: unknown;
       startTime?: unknown;
       endTime?: unknown;
       reason?: unknown;
     };
-    const barberId = typeof body.barberId === 'string' ? body.barberId : null;
+    const requestedBarberId = typeof body.barberId === 'string' ? body.barberId : null;
+    const barberId = admin.role === 'barber' ? (admin.barberId as string) : requestedBarberId;
     const startTime = typeof body.startTime === 'string' ? body.startTime : null;
     const endTime = typeof body.endTime === 'string' ? body.endTime : null;
     const reason = typeof body.reason === 'string' ? body.reason : 'Horário bloqueado';
@@ -1065,10 +1333,74 @@ app.post('/api/admin/blocks', requireAdmin, async (req, res) => {
 
 app.get('/api/admin/customers', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const lim = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
     const limitN = Number.isFinite(lim) ? Math.min(Math.max(lim, 1), 500) : 100;
-    const snapshot = await db.collection('customers').orderBy('stats.lastBookingAt', 'desc').limit(limitN).get();
-    const items = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+    if (admin.role === 'master') {
+      const snapshot = await db.collection('customers').orderBy('stats.lastBookingAt', 'desc').limit(limitN).get();
+      const items = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      return res.json({ items });
+    }
+
+    const barberId = admin.barberId as string;
+    // Avoid composite indexes: no orderBy in Firestore; sort in-memory.
+    const bookingsSnap = await db.collection('bookings').where('barberId', '==', barberId).limit(2000).get();
+    const byCustomer = new Map<string, {
+      customerId: string;
+      identity?: { firstName?: string; lastName?: string; whatsappE164?: string };
+      totalBookings: number;
+      totalCompleted: number;
+      noShowCount: number;
+      lastBookingAtMs: number;
+    }>();
+
+    bookingsSnap.forEach((d) => {
+      const data = d.data() as any;
+      const customerId = typeof data.customerId === 'string' ? data.customerId : null;
+      if (!customerId) return;
+      const status = typeof data.status === 'string' ? data.status : 'booked';
+      const slotStart: Date | null = data.slotStart?.toDate ? data.slotStart.toDate() : null;
+      const ms = slotStart ? slotStart.getTime() : 0;
+      const cur = byCustomer.get(customerId) ?? {
+        customerId,
+        totalBookings: 0,
+        totalCompleted: 0,
+        noShowCount: 0,
+        lastBookingAtMs: 0,
+      };
+      cur.totalBookings += 1;
+      if (status === 'completed') cur.totalCompleted += 1;
+      if (status === 'no_show') cur.noShowCount += 1;
+      if (ms > cur.lastBookingAtMs) cur.lastBookingAtMs = ms;
+      byCustomer.set(customerId, cur);
+    });
+
+    const customerIds = Array.from(byCustomer.keys())
+      .sort((a, b) => (byCustomer.get(b)?.lastBookingAtMs ?? 0) - (byCustomer.get(a)?.lastBookingAtMs ?? 0))
+      .slice(0, limitN);
+
+    const refs = customerIds.map((id) => db.collection('customers').doc(id));
+    const snaps = refs.length > 0 ? await db.getAll(...refs) : [];
+
+    const items = snaps
+      .filter((s) => s.exists)
+      .map((s) => {
+        const data = s.data() as any;
+        const stats = byCustomer.get(s.id);
+        return {
+          id: s.id,
+          identity: data?.identity ?? {},
+          profile: { birthday: data?.profile?.birthday ?? undefined },
+          stats: {
+            totalBookings: stats?.totalBookings ?? 0,
+            totalCompleted: stats?.totalCompleted ?? 0,
+            noShowCount: stats?.noShowCount ?? 0,
+            lastBookingAt: stats?.lastBookingAtMs ? new Date(stats.lastBookingAtMs).toISOString() : null,
+          },
+        };
+      });
+
     return res.json({ items });
   } catch {
     return res.status(500).json({ error: 'Erro ao carregar clientes' });
@@ -1077,16 +1409,30 @@ app.get('/api/admin/customers', requireAdmin, async (req, res) => {
 
 app.get('/api/admin/customers/:customerId', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const customerId = req.params.customerId;
     if (!customerId) return res.status(400).json({ error: 'customerId é obrigatório' });
+
+    if (admin.role === 'barber') {
+      const snap = await db.collection('bookings').where('customerId', '==', customerId).limit(50).get();
+      const ok = snap.docs.some((d) => (d.data() as any)?.barberId === admin.barberId);
+      if (!ok) return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
 
     const customerDoc = await db.collection('customers').doc(customerId).get();
     if (!customerDoc.exists) return res.status(404).json({ error: 'Cliente não encontrado' });
 
+    const data = customerDoc.data() as any;
+    if (admin.role === 'master') {
+      return res.json({ item: { id: customerDoc.id, ...data } });
+    }
+
     return res.json({
       item: {
         id: customerDoc.id,
-        ...(customerDoc.data() as any),
+        identity: data?.identity ?? {},
+        profile: { birthday: data?.profile?.birthday ?? undefined },
+        stats: data?.stats ?? {},
       },
     });
   } catch {
@@ -1096,6 +1442,7 @@ app.get('/api/admin/customers/:customerId', requireAdmin, async (req, res) => {
 
 app.get('/api/admin/customers/:customerId/bookings', requireAdmin, async (req, res) => {
   try {
+    const admin = getAdminFromReq(req);
     const customerId = req.params.customerId;
     if (!customerId) return res.status(400).json({ error: 'customerId é obrigatório' });
 
@@ -1114,6 +1461,7 @@ app.get('/api/admin/customers/:customerId/bookings', requireAdmin, async (req, r
           slotStart: data.slotStart?.toDate ? data.slotStart.toDate().toISOString() : null,
         };
       })
+      .filter((b) => (admin.role === 'barber' ? b.barberId === admin.barberId : true))
       .sort((a, b) => {
         const aMs = typeof a.slotStart === 'string' ? Date.parse(a.slotStart) : 0;
         const bMs = typeof b.slotStart === 'string' ? Date.parse(b.slotStart) : 0;

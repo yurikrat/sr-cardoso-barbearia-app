@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { LogOut, Calendar, Users, List, Wallet } from 'lucide-react';
+import { LogOut, Calendar, Users, List, Wallet, UserCog } from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -12,12 +12,18 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
 
-  const navItems = [
-    { path: '/admin/agenda', label: 'Agenda', icon: Calendar },
-    { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet },
-    { path: '/admin/clientes', label: 'Clientes', icon: Users },
-    { path: '/admin/listas', label: 'Listas', icon: List },
-  ];
+  type Role = 'master' | 'barber';
+
+  const navItems: Array<{ path: string; label: string; icon: any; roles: Role[] }> = [
+    { path: '/admin/agenda', label: 'Agenda', icon: Calendar, roles: ['master', 'barber'] as Role[] },
+    { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet, roles: ['master', 'barber'] as Role[] },
+    { path: '/admin/clientes', label: 'Clientes', icon: Users, roles: ['master', 'barber'] as Role[] },
+    { path: '/admin/listas', label: 'Listas', icon: List, roles: ['master'] as Role[] },
+    { path: '/admin/usuarios', label: 'Usuários', icon: UserCog, roles: ['master'] as Role[] },
+  ].filter((i) => {
+    if (!user) return false;
+    return i.roles.includes(user.role);
+  });
 
   return (
     <div className="min-h-[100dvh] bg-background bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed safe-top-p4 safe-bottom-p4 overflow-x-hidden">
@@ -35,7 +41,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-xs font-sans text-muted-foreground uppercase tracking-widest">{user ? 'Administrador' : ''}</span>
+            <span className="text-xs font-sans text-muted-foreground uppercase tracking-widest">
+              {user ? (user.role === 'master' ? 'Administrador' : 'Barbeiro') : ''}
+            </span>
             <Button variant="ghost" size="sm" onClick={logout} className="hover:bg-primary/10 hover:text-primary">
               <LogOut className="h-4 w-4 mr-2" />
               Sair

@@ -39,6 +39,23 @@ interface Booking {
   whatsappStatus: string;
 }
 
+function formatBookingStatusPtBr(status: string) {
+  switch (status) {
+    case 'booked':
+      return 'Agendado';
+    case 'confirmed':
+      return 'Confirmado';
+    case 'completed':
+      return 'Concluído';
+    case 'no_show':
+      return 'Falta';
+    case 'cancelled':
+      return 'Cancelado';
+    default:
+      return status;
+  }
+}
+
 export default function AgendaDayPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -58,14 +75,22 @@ export default function AgendaDayPage() {
       try {
         const { items } = await api.admin.listBarbers();
         const normalized = (items ?? []).map((b) => ({ id: b.id, name: b.name }));
-        setBarbers(normalized);
+        const sorted = [...normalized].sort((a, b) => {
+          const aIsOwner = a.id === 'sr-cardoso';
+          const bIsOwner = b.id === 'sr-cardoso';
+          if (aIsOwner && !bIsOwner) return -1;
+          if (!aIsOwner && bIsOwner) return 1;
+          return a.name.localeCompare(b.name, 'pt-BR');
+        });
+        setBarbers(sorted);
 
         const qsBarber = searchParams.get('barber');
         const qsDate = searchParams.get('date');
 
-        const nextBarber = qsBarber && normalized.some((b) => b.id === qsBarber)
-          ? qsBarber
-          : normalized[0]?.id ?? '';
+        const nextBarber =
+          qsBarber && sorted.some((b) => b.id === qsBarber)
+            ? qsBarber
+            : sorted.find((b) => b.id === 'sr-cardoso')?.id ?? sorted[0]?.id ?? '';
 
         if (nextBarber && nextBarber !== selectedBarber) setSelectedBarber(nextBarber);
 
@@ -234,34 +259,35 @@ export default function AgendaDayPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
-          <div className="flex gap-2">
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => date && setSelectedDate(date)}
-              className="rounded-md border"
-            />
-            <Button
-              variant="outline"
-              onClick={() => setBlockModalOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <CalendarIcon className="h-4 w-4" />
-              Bloquear Horários
-            </Button>
-          </div>
-        </div>
-
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
-          <TabsList>
-            {barbers.map((barber) => (
-              <TabsTrigger key={barber.id} value={barber.id}>
-                {barber.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <div className="flex flex-col lg:flex-row gap-4 items-start justify-between">
+            <div className="space-y-3 w-full">
+              <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
+              <TabsList className="w-full justify-start flex-wrap">
+                {barbers.map((barber) => (
+                  <TabsTrigger key={barber.id} value={barber.id}>
+                    {barber.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+            <div className="flex gap-2 lg:justify-end w-full lg:w-auto">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => date && setSelectedDate(date)}
+                className="rounded-md border"
+              />
+              <Button
+                variant="outline"
+                onClick={() => setBlockModalOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                Bloquear Horários
+              </Button>
+            </div>
+          </div>
 
           {barbers.map((barber) => (
             <TabsContent key={barber.id} value={barber.id} className="space-y-4">
@@ -314,7 +340,7 @@ export default function AgendaDayPage() {
                                     : 'secondary'
                                 }
                               >
-                                {booking.status}
+                                {formatBookingStatusPtBr(booking.status)}
                               </Badge>
                               {booking.whatsappStatus === 'sent' && (
                                 <Badge variant="outline">WhatsApp ✓</Badge>
@@ -362,7 +388,7 @@ export default function AgendaDayPage() {
                 </p>
                 <p>
                   <span className="font-medium">Status:</span>{' '}
-                  <Badge>{selectedBooking.status}</Badge>
+                  <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge>
                 </p>
               </div>
               <div className="flex gap-2">

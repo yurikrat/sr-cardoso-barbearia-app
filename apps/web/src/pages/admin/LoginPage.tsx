@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function LoginPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,8 +19,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await api.admin.login(password);
-      navigate('/admin/agenda');
+      if (username.trim()) {
+        await api.admin.loginWithUsername(username.trim(), password);
+      } else {
+        // Fallback for environments still using only ADMIN_PASSWORD.
+        await api.admin.login(password);
+      }
+      navigate('/admin');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({
@@ -47,6 +53,20 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="username">Usuário</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="ex: sr-cardoso / emanuel"
+                autoComplete="username"
+                className="mt-1"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Cada barbeiro entra com seu próprio usuário.
+              </p>
+            </div>
             <div>
               <Label htmlFor="password">Senha</Label>
               <Input

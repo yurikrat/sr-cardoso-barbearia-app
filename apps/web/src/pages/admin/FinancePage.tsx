@@ -12,6 +12,23 @@ function formatMoneyBRLFromCents(cents: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function formatStatusPtBr(status: string): string {
+  switch (status) {
+    case 'booked':
+      return 'Agendado';
+    case 'confirmed':
+      return 'Confirmado';
+    case 'completed':
+      return 'Concluído';
+    case 'no_show':
+      return 'Falta';
+    case 'cancelled':
+      return 'Cancelado';
+    default:
+      return status;
+  }
+}
+
 export default function FinancePage() {
   const { toast } = useToast();
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
@@ -167,7 +184,7 @@ export default function FinancePage() {
                   <span className="font-medium">{formatMoneyBRLFromCents(summary.revenueCents)}</span>
                 </div>
                 <div className="pt-2 text-xs text-muted-foreground">
-                  Previsto = booked/confirmed. Realizado = completed. Projeção usa histórico + show-up rate.
+                  Previsto = agendado/confirmado. Realizado = concluído. Projeção usa histórico + taxa de comparecimento.
                 </div>
               </CardContent>
             </Card>
@@ -199,7 +216,7 @@ export default function FinancePage() {
                   .sort((a, b) => b[1] - a[1])
                   .map(([status, count]) => (
                     <div key={status} className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">{status}</span>
+                      <span className="text-sm text-muted-foreground">{formatStatusPtBr(status)}</span>
                       <span className="font-medium">{count}</span>
                     </div>
                   ))}

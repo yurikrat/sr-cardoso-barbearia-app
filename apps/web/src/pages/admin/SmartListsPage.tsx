@@ -10,7 +10,28 @@ import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { generateReactivationMessage, generateBirthdayMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
 
-type FirestoreTimestampLike = { toDate: () => Date };
+type TimestampLike =
+  | { toDate?: () => Date }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+function toDateSafe(value: TimestampLike): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  const maybe = value as { toDate?: () => Date };
+  if (typeof maybe.toDate === 'function') {
+    const d = maybe.toDate();
+    return d instanceof Date && Number.isFinite(d.getTime()) ? d : null;
+  }
+  return null;
+}
 
 interface Customer {
   id: string;
@@ -27,8 +48,8 @@ interface Customer {
     marketingOptIn: boolean;
   };
   stats: {
-    lastCompletedAt?: FirestoreTimestampLike;
-    lastBookingAt?: FirestoreTimestampLike;
+    lastCompletedAt?: TimestampLike;
+    lastBookingAt?: TimestampLike;
     noShowCount: number;
   };
 }
@@ -60,7 +81,7 @@ export default function SmartListsPage() {
       
       customers.forEach((data) => {
         if (!data.consent?.marketingOptIn) return;
-        const lastDate = data.stats.lastCompletedAt?.toDate() || data.stats.lastBookingAt?.toDate();
+        const lastDate = toDateSafe(data.stats.lastCompletedAt) || toDateSafe(data.stats.lastBookingAt);
         if (lastDate && lastDate < thirtyDaysAgo) inactive.push(data);
       });
       
@@ -154,7 +175,10 @@ export default function SmartListsPage() {
                         </p>
                         {customer.stats.lastCompletedAt && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            Último atendimento: {formatDate(customer.stats.lastCompletedAt.toDate())}
+                            {(() => {
+                              const d = toDateSafe(customer.stats.lastCompletedAt);
+                              return d ? `Último atendimento: ${formatDate(d)}` : null;
+                            })()}
                           </p>
                         )}
                       </div>

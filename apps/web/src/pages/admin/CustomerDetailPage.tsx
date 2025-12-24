@@ -42,7 +42,13 @@ function formatServiceLabel(serviceType: string | undefined) {
 }
 
 function formatStatusLabel(status: string | undefined) {
-  return status || '—';
+  if (!status) return '—';
+  if (status === 'booked') return 'Agendado';
+  if (status === 'confirmed') return 'Confirmado';
+  if (status === 'completed') return 'Concluído';
+  if (status === 'no_show') return 'Falta';
+  if (status === 'cancelled') return 'Cancelado';
+  return status;
 }
 
 export default function CustomerDetailPage() {

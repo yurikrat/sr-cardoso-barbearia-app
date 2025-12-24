@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 
-type AdminUser = { role: 'admin' };
+type AdminUser = { role: 'master' | 'barber'; barberId?: string | null; username: string };
 
 export function useAuth() {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = api.admin.getToken();
-    setUser(token ? { role: 'admin' } : null);
+    const claims = api.admin.getClaims();
+    setUser(claims ? { role: claims.role, barberId: claims.barberId ?? null, username: claims.username } : null);
     setLoading(false);
   }, []);
 

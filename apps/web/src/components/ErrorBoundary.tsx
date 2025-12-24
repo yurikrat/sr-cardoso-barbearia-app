@@ -28,6 +28,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   handleReset = () => {
     this.setState({ hasError: false, error: null });
+    try {
+      const path = window.location.pathname || '/';
+      const isAdmin = path === '/admin' || path.startsWith('/admin/');
+      if (isAdmin) {
+        const token = localStorage.getItem('sr_admin_token');
+        window.location.href = token ? '/admin/agenda' : '/admin/login';
+        return;
+      }
+    } catch {
+      // ignore
+    }
     window.location.href = '/';
   };
 
