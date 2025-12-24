@@ -270,7 +270,8 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
       for (let i = 1; i <= 3; i++) {
         const mStart = selectedStart.minus({ months: i }).startOf('month');
         const mEnd = mStart.endOf('month');
-        const mCutoffDay = Math.min(dayN, mStart.daysInMonth);
+        const daysInMonth = mStart.daysInMonth ?? 31;
+        const mCutoffDay = Math.max(1, Math.min(dayN, daysInMonth));
         const cutoffKey = mStart.plus({ days: mCutoffDay - 1 }).toFormat('yyyy-MM-dd');
 
         const hist = await sumCompletedRevenueByDateKeyRange({
