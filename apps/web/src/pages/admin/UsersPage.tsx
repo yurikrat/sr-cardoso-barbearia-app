@@ -23,6 +23,10 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
 
+  const [newProfessionalName, setNewProfessionalName] = useState('');
+  const [newProfessionalId, setNewProfessionalId] = useState('');
+  const [generatedCredentials, setGeneratedCredentials] = useState<null | { username: string; password: string }>(null);
+
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'barber' | 'master'>('barber');
@@ -66,18 +70,30 @@ export default function UsersPage() {
 
   const handleCreate = async () => {
     try {
+      setGeneratedCredentials(null);
       const username = (newRole === 'barber' ? newBarberId : newUsername).trim();
       if (!username) throw new Error('Usuário é obrigatório');
-      if (!newPassword) throw new Error('Senha é obrigatória');
       if (newRole === 'barber' && !newBarberId) throw new Error('Selecione o barbeiro');
 
-      await api.admin.createAdminUser({
+      // For barber accounts we auto-generate the password server-side (simpler for non-technical users).
+      if (newRole === 'master' && !newPassword) throw new Error('Senha é obrigatória');
+
+      const result = await api.admin.createAdminUser({
         username,
-        password: newPassword,
+        password: newRole === 'master' ? newPassword : null,
         role: newRole,
         barberId: newRole === 'barber' ? newBarberId : null,
         active: true,
       });
+
+      if (result.password) {
+        setGeneratedCredentials({ username, password: result.password });
+        try {
+          await navigator.clipboard.writeText(`${username}:${result.password}`);
+        } catch {
+          // ignore
+        }
+      }
 
       toast({ title: 'Sucesso', description: 'Usuário criado.' });
       setNewUsername('');
@@ -87,6 +103,42 @@ export default function UsersPage() {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({ title: 'Erro', description: message || 'Erro ao criar usuário.', variant: 'destructive' });
+    }
+  };
+
+  const handleCreateProfessionalAndLogin = async () => {
+    setGeneratedCredentials(null);
+    setLoading(true);
+    try {
+      const name = newProfessionalName.trim();
+      const id = newProfessionalId.trim();
+      if (!name) throw new Error('Nome do profissional é obrigatório');
+      if (!id) throw new Error('ID do profissional é obrigatório');
+
+      const result = await api.admin.createBarber({ id, name, active: true, createLogin: true });
+
+      if (result.username && result.password) {
+        setGeneratedCredentials({ username: result.username, password: result.password });
+        try {
+          await navigator.clipboard.writeText(`${result.username}:${result.password}`);
+        } catch {
+          // ignore
+        }
+      }
+
+      toast({
+        title: 'Sucesso',
+        description: 'Profissional cadastrado e login criado. A senha foi exibida e copiada (se permitido).',
+      });
+
+      setNewProfessionalName('');
+      setNewProfessionalId('');
+      await loadAll();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
+      toast({ title: 'Erro', description: message || 'Erro ao cadastrar profissional.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -101,11 +153,20 @@ export default function UsersPage() {
   };
 
   const handleResetPassword = async (username: string) => {
-    const next = prompt(`Nova senha para ${username}:`);
-    if (!next) return;
+    const ok = confirm(`Resetar a senha do usuário "${username}"? Uma nova senha será gerada.`);
+    if (!ok) return;
     try {
-      await api.admin.resetAdminUserPassword(username, next);
-      toast({ title: 'Sucesso', description: 'Senha atualizada.' });
+      const result = await api.admin.resetAdminUserPassword(username);
+      if (result.password) {
+        try {
+          await navigator.clipboard.writeText(result.password);
+        } catch {
+          // ignore
+        }
+        toast({ title: 'Senha resetada', description: `Nova senha: ${result.password} (copiada se permitido)` });
+      } else {
+        toast({ title: 'Sucesso', description: 'Senha atualizada.' });
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({ title: 'Erro', description: message || 'Erro ao resetar senha.', variant: 'destructive' });
@@ -116,6 +177,48 @@ export default function UsersPage() {
     <AdminLayout>
       <div className="space-y-6">
         <h2 className="text-2xl font-serif font-bold">Usuários</h2>
+
+        <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="font-serif">Cadastrar profissional (novo barbeiro)</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="pro-name">Nome do profissional</Label>
+              <Input
+                id="pro-name"
+                value={newProfessionalName}
+                onChange={(e) => setNewProfessionalName(e.target.value)}
+                placeholder="ex: João Fernandes"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pro-id">ID do profissional (vira login)</Label>
+              <Input
+                id="pro-id"
+                value={newProfessionalId}
+                onChange={(e) => setNewProfessionalId(e.target.value)}
+                placeholder="ex: joao"
+              />
+              <p className="text-xs text-muted-foreground">Use letras/números e hífen. Ex: joao, joao-2</p>
+            </div>
+            <div className="sm:col-span-2 flex flex-col gap-2">
+              <Button onClick={handleCreateProfessionalAndLogin} disabled={loading}>
+                Cadastrar e gerar senha
+              </Button>
+              {generatedCredentials ? (
+                <div className="text-sm rounded-md border p-3">
+                  <div className="font-medium">Credenciais geradas</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Usuário: <span className="font-medium">{generatedCredentials.username}</span>
+                    {' · '}Senha: <span className="font-medium">{generatedCredentials.password}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">(Copiada automaticamente, se o navegador permitir.)</div>
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
           <CardHeader>
@@ -146,7 +249,11 @@ export default function UsersPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
+                disabled={newRole === 'barber'}
               />
+              <p className="text-xs text-muted-foreground">
+                {newRole === 'barber' ? 'Para barbeiro, a senha é gerada automaticamente.' : 'Defina uma senha para o usuário master.'}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Perfil</Label>

@@ -97,6 +97,30 @@ const PBKDF2_ITERS = 200_000;
 const PBKDF2_KEYLEN = 32;
 const PBKDF2_DIGEST = 'sha256';
 
+function generatePassword(): string {
+  // Human-friendly enough, still random. Example: Kp9dQe3mN7sR
+  // Length ~12 chars.
+  return randomBytes(9)
+    .toString('base64')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 12);
+}
+
+function normalizeBarberId(input: string) {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function isValidBarberId(id: string) {
+  // Keep it simple/consistent for URLs and doc ids.
+  return /^[a-z0-9][a-z0-9-]{1,30}$/.test(id);
+}
+
 function hashPassword(password: string): string {
   const salt = randomBytes(16);
   const derived = pbkdf2Sync(password, salt, PBKDF2_ITERS, PBKDF2_KEYLEN, PBKDF2_DIGEST);
@@ -275,16 +299,18 @@ app.post('/api/admin/users', requireAdmin, requireMaster, async (req, res) => {
   try {
     const body = req.body as { username?: unknown; password?: unknown; role?: unknown; barberId?: unknown; active?: unknown };
     const username = typeof body.username === 'string' ? normalizeUsername(body.username) : null;
-    const password = typeof body.password === 'string' ? body.password : null;
+    const passwordProvided = typeof body.password === 'string' ? body.password : null;
     const role = body.role === 'master' || body.role === 'barber' ? body.role : null;
     const barberId = typeof body.barberId === 'string' ? body.barberId : null;
     const active = typeof body.active === 'boolean' ? body.active : true;
-    if (!username || !password || !role) return res.status(400).json({ error: 'username, password e role são obrigatórios' });
+    if (!username || !role) return res.status(400).json({ error: 'username e role são obrigatórios' });
     if (role === 'barber' && !barberId) return res.status(400).json({ error: 'barberId é obrigatório para barbeiro' });
 
     const ref = db.collection('adminUsers').doc(username);
     const exists = await ref.get();
     if (exists.exists) return res.status(409).json({ error: 'Usuário já existe' });
+
+    const password = passwordProvided && passwordProvided.trim() ? passwordProvided : generatePassword();
 
     const now = FieldValue.serverTimestamp();
     const doc: AdminUserDoc = {
@@ -298,7 +324,7 @@ app.post('/api/admin/users', requireAdmin, requireMaster, async (req, res) => {
       updatedAt: now,
     };
     await ref.set(doc);
-    return res.json({ success: true });
+    return res.json({ success: true, password: passwordProvided ? null : password });
   } catch (e) {
     console.error('Error creating admin user:', e);
     return res.status(500).json({ error: 'Erro ao criar usuário' });
@@ -308,17 +334,66 @@ app.post('/api/admin/users', requireAdmin, requireMaster, async (req, res) => {
 app.post('/api/admin/users/:username/reset-password', requireAdmin, requireMaster, async (req, res) => {
   try {
     const username = normalizeUsername(req.params.username || '');
-    const password = (req.body as { password?: unknown })?.password;
     if (!username) return res.status(400).json({ error: 'username inválido' });
-    if (typeof password !== 'string' || !password) return res.status(400).json({ error: 'password é obrigatório' });
+    const passwordProvided = (req.body as { password?: unknown })?.password;
+    const password = typeof passwordProvided === 'string' && passwordProvided.trim() ? passwordProvided : generatePassword();
     const ref = db.collection('adminUsers').doc(username);
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
     await ref.update({ passwordHash: hashPassword(password), updatedAt: FieldValue.serverTimestamp() });
-    return res.json({ success: true });
+    return res.json({ success: true, password: typeof passwordProvided === 'string' && passwordProvided.trim() ? null : password });
   } catch (e) {
     console.error('Error resetting admin user password:', e);
     return res.status(500).json({ error: 'Erro ao resetar senha' });
+  }
+});
+
+app.post('/api/admin/barbers', requireAdmin, requireMaster, async (req, res) => {
+  try {
+    const body = req.body as { id?: unknown; name?: unknown; active?: unknown; createLogin?: unknown };
+    const idRaw = typeof body.id === 'string' ? body.id : '';
+    const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : null;
+    const active = typeof body.active === 'boolean' ? body.active : true;
+    const createLogin = typeof body.createLogin === 'boolean' ? body.createLogin : true;
+
+    const id = normalizeBarberId(idRaw);
+    if (!id || !isValidBarberId(id)) return res.status(400).json({ error: 'id inválido (use letras/números e hífen)' });
+    if (!name) return res.status(400).json({ error: 'name é obrigatório' });
+
+    const barberRef = db.collection('barbers').doc(id);
+    const barberSnap = await barberRef.get();
+    if (barberSnap.exists) return res.status(409).json({ error: 'Barbeiro já existe' });
+
+    if (createLogin) {
+      const userRef = db.collection('adminUsers').doc(id);
+      const userSnap = await userRef.get();
+      if (userSnap.exists) return res.status(409).json({ error: 'Já existe um usuário com esse id' });
+    }
+
+    await barberRef.set({ name, active });
+
+    let generatedPassword: string | null = null;
+    if (createLogin) {
+      const password = generatePassword();
+      const now = FieldValue.serverTimestamp();
+      const doc: AdminUserDoc = {
+        username: id,
+        usernameLower: id,
+        role: 'barber',
+        barberId: id,
+        active: true,
+        passwordHash: hashPassword(password),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.collection('adminUsers').doc(id).set(doc);
+      generatedPassword = password;
+    }
+
+    return res.json({ success: true, id, username: createLogin ? id : null, password: generatedPassword });
+  } catch (e) {
+    console.error('Error creating barber:', e);
+    return res.status(500).json({ error: 'Erro ao criar barbeiro' });
   }
 });
 

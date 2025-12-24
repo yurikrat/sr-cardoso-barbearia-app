@@ -187,8 +187,8 @@ export const api = {
         { admin: true }
       );
     },
-    async createAdminUser(payload: { username: string; password: string; role: 'master' | 'barber'; barberId?: string | null; active?: boolean }) {
-      return apiFetch<{ success: boolean }>(`/api/admin/users`, {
+    async createAdminUser(payload: { username: string; password?: string | null; role: 'master' | 'barber'; barberId?: string | null; active?: boolean }) {
+      return apiFetch<{ success: boolean; password: string | null }>(`/api/admin/users`, {
         method: 'POST',
         admin: true,
         body: JSON.stringify(payload),
@@ -201,12 +201,23 @@ export const api = {
         body: JSON.stringify({ active }),
       });
     },
-    async resetAdminUserPassword(username: string, password: string) {
-      return apiFetch<{ success: boolean }>(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, {
+    async resetAdminUserPassword(username: string, password?: string | null) {
+      return apiFetch<{ success: boolean; password: string | null }>(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, {
         method: 'POST',
         admin: true,
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(password ? { password } : {}),
       });
+    },
+
+    async createBarber(payload: { id: string; name: string; active?: boolean; createLogin?: boolean }) {
+      return apiFetch<{ success: boolean; id: string; username: string | null; password: string | null }>(
+        `/api/admin/barbers`,
+        {
+          method: 'POST',
+          admin: true,
+          body: JSON.stringify(payload),
+        }
+      );
     },
     logout() {
       setAdminToken(null);
