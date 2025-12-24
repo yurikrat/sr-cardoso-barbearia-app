@@ -116,12 +116,27 @@ export default function UsersPage() {
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="u">Usuário</Label>
-              <Input id="u" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="emanuel" />
+              <Label htmlFor="u">Usuário (login)</Label>
+              <Input
+                id="u"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                placeholder="ex: emanuel"
+                autoComplete="username"
+              />
+              <p className="text-xs text-muted-foreground">
+                Esse é o usuário que será digitado no login (não é o nome do cliente).
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="p">Senha</Label>
-              <Input id="p" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <Input
+                id="p"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
             </div>
             <div className="space-y-2">
               <Label>Perfil</Label>
@@ -136,7 +151,7 @@ export default function UsersPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Barbeiro</Label>
+              <Label>Profissional (agenda)</Label>
               <Select value={newBarberId} onValueChange={setNewBarberId}>
                 <SelectTrigger disabled={newRole !== 'barber'}>
                   <SelectValue placeholder={newRole === 'barber' ? 'Selecione' : '—'} />
@@ -144,11 +159,14 @@ export default function UsersPage() {
                 <SelectContent>
                   {barbers.map((b) => (
                     <SelectItem key={b.id} value={b.id}>
-                      {b.name}
+                      {b.name} ({b.id})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                A conta do barbeiro fica vinculada ao <span className="font-medium">barberId</span> do profissional.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <Button onClick={handleCreate} disabled={loading}>
@@ -177,7 +195,7 @@ export default function UsersPage() {
                     <div className="text-xs text-muted-foreground">
                       {u.role === 'master'
                         ? 'Master'
-                        : `Barbeiro: ${u.barberId ? barberNameById.get(u.barberId) || u.barberId : '—'}`}
+                        : `Barbeiro: ${u.barberId ? `${barberNameById.get(u.barberId) || '—'} (${u.barberId})` : '—'}`}
                       {u.lastLoginAt ? ` · Último login: ${new Date(u.lastLoginAt).toLocaleString('pt-BR')}` : ''}
                     </div>
                   </div>
