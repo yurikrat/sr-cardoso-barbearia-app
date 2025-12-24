@@ -107,7 +107,10 @@ function generatePassword(): string {
 }
 
 function normalizeBarberId(input: string) {
-  return input
+  const ascii = input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return ascii
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '-')
@@ -119,6 +122,33 @@ function normalizeBarberId(input: string) {
 function isValidBarberId(id: string) {
   // Keep it simple/consistent for URLs and doc ids.
   return /^[a-z0-9][a-z0-9-]{1,30}$/.test(id);
+}
+
+async function generateUniqueBarberIdFromName(name: string) {
+  const parts = name
+    .trim()
+    .split(/\s+/g)
+    .filter(Boolean);
+  const baseSource = parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1]}` : name;
+  const base = normalizeBarberId(baseSource);
+  if (!base || !isValidBarberId(base)) return null;
+
+  // Ensure it doesn't collide with existing barbers or admin usernames.
+  const exists = async (id: string) => {
+    const [b, u] = await Promise.all([
+      db.collection('barbers').doc(id).get(),
+      db.collection('adminUsers').doc(id).get(),
+    ]);
+    return b.exists || u.exists;
+  };
+
+  if (!(await exists(base))) return base;
+  for (let i = 2; i <= 99; i++) {
+    const candidate = `${base}-${i}`;
+    if (candidate.length > 31) continue;
+    if (!(await exists(candidate))) return candidate;
+  }
+  return null;
 }
 
 function hashPassword(password: string): string {
@@ -348,6 +378,66 @@ app.post('/api/admin/users/:username/reset-password', requireAdmin, requireMaste
   }
 });
 
+app.post('/api/admin/me/password', requireAdmin, async (req, res) => {
+  try {
+    const admin = getAdminFromReq(req);
+    const body = req.body as { currentPassword?: unknown; newPassword?: unknown };
+    const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : null;
+    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : null;
+
+    if (!currentPassword) return res.status(400).json({ error: 'currentPassword é obrigatório' });
+    if (!newPassword || newPassword.trim().length < 6) {
+      return res.status(400).json({ error: 'newPassword inválido (mín. 6 caracteres)' });
+    }
+
+    const username = normalizeUsername(admin.username);
+    const ref = db.collection('adminUsers').doc(username);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+    const user = snap.data() as AdminUserDoc;
+    if (!user.active) return res.status(401).json({ error: 'Usuário desativado' });
+    if (!verifyPassword(currentPassword, user.passwordHash)) {
+      return res.status(401).json({ error: 'Senha atual incorreta' });
+    }
+
+    await ref.update({ passwordHash: hashPassword(newPassword.trim()), updatedAt: FieldValue.serverTimestamp() });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error changing own password:', e);
+    return res.status(500).json({ error: 'Erro ao alterar senha' });
+  }
+});
+
+app.delete('/api/admin/users/:username', requireAdmin, requireMaster, async (req, res) => {
+  try {
+    const admin = getAdminFromReq(req);
+    const username = normalizeUsername(req.params.username || '');
+    if (!username) return res.status(400).json({ error: 'username inválido' });
+    if (username === normalizeUsername(admin.username)) {
+      return res.status(400).json({ error: 'Não é possível excluir o próprio usuário' });
+    }
+
+    const ref = db.collection('adminUsers').doc(username);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+    const data = snap.data() as AdminUserDoc;
+
+    if (data.role === 'master') {
+      const all = await db.collection('adminUsers').get();
+      const masters = all.docs.filter((d) => (d.data() as AdminUserDoc).role === 'master');
+      if (masters.length <= 1) {
+        return res.status(400).json({ error: 'Não é possível excluir o último master' });
+      }
+    }
+
+    await ref.delete();
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Error deleting admin user:', e);
+    return res.status(500).json({ error: 'Erro ao excluir usuário' });
+  }
+});
+
 app.post('/api/admin/barbers', requireAdmin, requireMaster, async (req, res) => {
   try {
     const body = req.body as { id?: unknown; name?: unknown; active?: unknown; createLogin?: unknown };
@@ -356,9 +446,18 @@ app.post('/api/admin/barbers', requireAdmin, requireMaster, async (req, res) => 
     const active = typeof body.active === 'boolean' ? body.active : true;
     const createLogin = typeof body.createLogin === 'boolean' ? body.createLogin : true;
 
-    const id = normalizeBarberId(idRaw);
-    if (!id || !isValidBarberId(id)) return res.status(400).json({ error: 'id inválido (use letras/números e hífen)' });
     if (!name) return res.status(400).json({ error: 'name é obrigatório' });
+
+    const requestedId = normalizeBarberId(idRaw);
+    let id: string | null = null;
+
+    if (requestedId) {
+      if (!isValidBarberId(requestedId)) return res.status(400).json({ error: 'id inválido (use letras/números e hífen)' });
+      id = requestedId;
+    } else {
+      id = await generateUniqueBarberIdFromName(name);
+      if (!id) return res.status(400).json({ error: 'Não foi possível gerar um id a partir do nome' });
+    }
 
     const barberRef = db.collection('barbers').doc(id);
     const barberSnap = await barberRef.get();

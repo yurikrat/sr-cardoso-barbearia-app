@@ -21,6 +21,7 @@ import SmartListsPage from './pages/admin/SmartListsPage';
 import CalendarIntegrationPage from './pages/admin/CalendarIntegrationPage';
 import FinancePage from './pages/admin/FinancePage';
 import UsersPage from './pages/admin/UsersPage';
+import ChangePasswordPage from './pages/admin/ChangePasswordPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -70,6 +71,14 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/agendar" element={<BookingPage />} />
             <Route path="/sucesso" element={<SuccessPage />} />
+            <Route
+              path="/admin/senha"
+              element={
+                <ProtectedRoute>
+                  <ChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/cancelar/:cancelCode" element={<CancelBookingPage />} />
             <Route path="/admin" element={<AdminEntryRedirect />} />
             <Route path="/admin/" element={<AdminEntryRedirect />} />

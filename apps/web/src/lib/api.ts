@@ -209,7 +209,14 @@ export const api = {
       });
     },
 
-    async createBarber(payload: { id: string; name: string; active?: boolean; createLogin?: boolean }) {
+    async deleteAdminUser(username: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/users/${encodeURIComponent(username)}`, {
+        method: 'DELETE',
+        admin: true,
+      });
+    },
+
+    async createBarber(payload: { id?: string | null; name: string; active?: boolean; createLogin?: boolean }) {
       return apiFetch<{ success: boolean; id: string; username: string | null; password: string | null }>(
         `/api/admin/barbers`,
         {
@@ -218,6 +225,14 @@ export const api = {
           body: JSON.stringify(payload),
         }
       );
+    },
+
+    async changeMyPassword(currentPassword: string, newPassword: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/me/password`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
     },
     logout() {
       setAdminToken(null);

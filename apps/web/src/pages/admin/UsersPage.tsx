@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -24,13 +23,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
 
   const [newProfessionalName, setNewProfessionalName] = useState('');
-  const [newProfessionalId, setNewProfessionalId] = useState('');
   const [generatedCredentials, setGeneratedCredentials] = useState<null | { username: string; password: string }>(null);
-
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'barber' | 'master'>('barber');
-  const [newBarberId, setNewBarberId] = useState('');
 
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -62,60 +55,20 @@ export default function UsersPage() {
     void loadAll();
   }, []);
 
-  // For barbeiro accounts, lock the login username to the selected barberId.
-  useEffect(() => {
-    if (newRole !== 'barber') return;
-    setNewUsername(newBarberId || '');
-  }, [newRole, newBarberId]);
-
-  const handleCreate = async () => {
-    try {
-      setGeneratedCredentials(null);
-      const username = (newRole === 'barber' ? newBarberId : newUsername).trim();
-      if (!username) throw new Error('Usuário é obrigatório');
-      if (newRole === 'barber' && !newBarberId) throw new Error('Selecione o barbeiro');
-
-      // For barber accounts we auto-generate the password server-side (simpler for non-technical users).
-      if (newRole === 'master' && !newPassword) throw new Error('Senha é obrigatória');
-
-      const result = await api.admin.createAdminUser({
-        username,
-        password: newRole === 'master' ? newPassword : null,
-        role: newRole,
-        barberId: newRole === 'barber' ? newBarberId : null,
-        active: true,
-      });
-
-      if (result.password) {
-        setGeneratedCredentials({ username, password: result.password });
-        try {
-          await navigator.clipboard.writeText(`${username}:${result.password}`);
-        } catch {
-          // ignore
-        }
-      }
-
-      toast({ title: 'Sucesso', description: 'Usuário criado.' });
-      setNewUsername('');
-      setNewPassword('');
-      setNewBarberId('');
-      await loadAll();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : null;
-      toast({ title: 'Erro', description: message || 'Erro ao criar usuário.', variant: 'destructive' });
-    }
-  };
-
   const handleCreateProfessionalAndLogin = async () => {
     setGeneratedCredentials(null);
     setLoading(true);
     try {
       const name = newProfessionalName.trim();
-      const id = newProfessionalId.trim();
       if (!name) throw new Error('Nome do profissional é obrigatório');
-      if (!id) throw new Error('ID do profissional é obrigatório');
 
-      const result = await api.admin.createBarber({ id, name, active: true, createLogin: true });
+      const result = await api.admin.createBarber({
+        // id omitted -> server will generate from name and ensure uniqueness
+        id: '',
+        name,
+        active: true,
+        createLogin: true,
+      });
 
       if (result.username && result.password) {
         setGeneratedCredentials({ username: result.username, password: result.password });
@@ -132,7 +85,6 @@ export default function UsersPage() {
       });
 
       setNewProfessionalName('');
-      setNewProfessionalId('');
       await loadAll();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
@@ -173,6 +125,21 @@ export default function UsersPage() {
     }
   };
 
+  const handleDeleteUser = async (username: string) => {
+    const ok = confirm(
+      `Excluir o usuário "${username}"?\n\nIsso remove o login do painel. (O profissional na agenda pode continuar existindo.)`
+    );
+    if (!ok) return;
+    try {
+      await api.admin.deleteAdminUser(username);
+      toast({ title: 'Sucesso', description: 'Usuário excluído.' });
+      await loadAll();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
+      toast({ title: 'Erro', description: message || 'Erro ao excluir usuário.', variant: 'destructive' });
+    }
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -193,14 +160,10 @@ export default function UsersPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pro-id">ID do profissional (vira login)</Label>
-              <Input
-                id="pro-id"
-                value={newProfessionalId}
-                onChange={(e) => setNewProfessionalId(e.target.value)}
-                placeholder="ex: joao"
-              />
-              <p className="text-xs text-muted-foreground">Use letras/números e hífen. Ex: joao, joao-2</p>
+              <Label>ID do profissional (login)</Label>
+              <div className="text-xs text-muted-foreground pt-2">
+                O ID é gerado automaticamente a partir do nome (ex: "João Fernandes" → "joao-fernandes").
+              </div>
             </div>
             <div className="sm:col-span-2 flex flex-col gap-2">
               <Button onClick={handleCreateProfessionalAndLogin} disabled={loading}>
@@ -216,79 +179,6 @@ export default function UsersPage() {
                   <div className="text-xs text-muted-foreground mt-1">(Copiada automaticamente, se o navegador permitir.)</div>
                 </div>
               ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="font-serif">Criar usuário</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="u">Usuário (login)</Label>
-              <Input
-                id="u"
-                value={newUsername}
-                onChange={(e) => setNewUsername(e.target.value)}
-                placeholder="ex: emanuel"
-                autoComplete="username"
-                disabled={newRole === 'barber'}
-              />
-              <p className="text-xs text-muted-foreground">
-                {newRole === 'barber'
-                  ? 'Para barbeiro, o login é automático e fica igual ao barberId do profissional selecionado.'
-                  : 'Esse é o usuário que será digitado no login (não é o nome do cliente).'}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="p">Senha</Label>
-              <Input
-                id="p"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                autoComplete="new-password"
-                disabled={newRole === 'barber'}
-              />
-              <p className="text-xs text-muted-foreground">
-                {newRole === 'barber' ? 'Para barbeiro, a senha é gerada automaticamente.' : 'Defina uma senha para o usuário master.'}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Perfil</Label>
-              <Select value={newRole} onValueChange={(v) => setNewRole(v as any)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="barber">Barbeiro</SelectItem>
-                  <SelectItem value="master">Master</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Profissional (agenda)</Label>
-              <Select value={newBarberId} onValueChange={setNewBarberId}>
-                <SelectTrigger disabled={newRole !== 'barber'}>
-                  <SelectValue placeholder={newRole === 'barber' ? 'Selecione' : '—'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {barbers.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name} ({b.id})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                A conta do barbeiro fica vinculada ao <span className="font-medium">barberId</span> do profissional.
-              </p>
-            </div>
-            <div className="sm:col-span-2">
-              <Button onClick={handleCreate} disabled={loading}>
-                Criar
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -319,6 +209,9 @@ export default function UsersPage() {
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => handleResetPassword(u.username)}>
                       Resetar senha
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.username)}>
+                      Excluir
                     </Button>
                     <Button
                       variant={u.active ? 'destructive' : 'secondary'}
