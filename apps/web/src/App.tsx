@@ -10,12 +10,15 @@ import { debugLog } from '@/utils/debugLog';
 import HomePage from './pages/HomePage';
 import BookingPage from './pages/BookingPage';
 import SuccessPage from './pages/SuccessPage';
+import CancelBookingPage from './pages/CancelBookingPage';
 import LoginPage from './pages/admin/LoginPage';
 import AgendaDayPage from './pages/admin/AgendaDayPage';
 import AgendaWeekPage from './pages/admin/AgendaWeekPage';
 import CustomersPage from './pages/admin/CustomersPage';
+import CustomerDetailPage from './pages/admin/CustomerDetailPage';
 import SmartListsPage from './pages/admin/SmartListsPage';
 import CalendarIntegrationPage from './pages/admin/CalendarIntegrationPage';
+import FinancePage from './pages/admin/FinancePage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -52,6 +55,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/agendar" element={<BookingPage />} />
             <Route path="/sucesso" element={<SuccessPage />} />
+            <Route path="/cancelar/:cancelCode" element={<CancelBookingPage />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route
               path="/admin/agenda"
@@ -74,6 +78,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <CustomersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/clientes/:customerId"
+              element={
+                <ProtectedRoute>
+                  <CustomerDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/financeiro"
+              element={
+                <ProtectedRoute>
+                  <FinancePage />
                 </ProtectedRoute>
               }
             />

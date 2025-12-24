@@ -8,17 +8,33 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { BARBERS } from '@/utils/constants';
 
 export default function AgendaWeekPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [selectedBarber, setSelectedBarber] = useState<string>('sr-cardoso');
+  const [selectedBarber, setSelectedBarber] = useState<string>('');
+  const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [weekData, setWeekData] = useState<Record<string, { bookings: number; blocks: number }>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const { items } = await api.admin.listBarbers();
+        const normalized = (items ?? []).map((b) => ({ id: b.id, name: b.name }));
+        setBarbers(normalized);
+        setSelectedBarber(normalized[0]?.id ?? '');
+      } catch {
+        setBarbers([]);
+        setSelectedBarber('sr-cardoso');
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBarber) return;
     loadWeekData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBarber]);
 
   const loadWeekData = async () => {
@@ -76,14 +92,14 @@ export default function AgendaWeekPage() {
 
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
           <TabsList>
-            {BARBERS.map((barber) => (
+            {barbers.map((barber) => (
               <TabsTrigger key={barber.id} value={barber.id}>
                 {barber.name}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {BARBERS.map((barber) => (
+          {barbers.map((barber) => (
             <TabsContent key={barber.id} value={barber.id} className="space-y-4">
               {loading ? (
                 <div className="flex justify-center py-8">

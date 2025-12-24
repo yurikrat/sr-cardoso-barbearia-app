@@ -11,7 +11,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 safe-top-p4 safe-bottom-p4 overflow-x-hidden">
         <LoadingSpinner size="lg" />
       </div>
     );

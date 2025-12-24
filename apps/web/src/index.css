@@ -6,26 +6,26 @@
 
 @layer base {
   :root {
-    --background: 11 12 13; /* #0B0C0D */
-    --foreground: 243 232 212; /* #F3E8D4 */
-    --card: 18 19 22; /* #121316 */
-    --card-foreground: 243 232 212;
-    --popover: 18 19 22;
-    --popover-foreground: 243 232 212;
-    --primary: 198 161 91; /* #C6A15B */
-    --primary-foreground: 11 12 13;
-    --secondary: 166 160 154; /* #A6A09A */
-    --secondary-foreground: 243 232 212;
-    --muted: 166 160 154;
-    --muted-foreground: 166 160 154;
-    --accent: 198 161 91;
-    --accent-foreground: 11 12 13;
-    --destructive: 208 84 84; /* #D05454 */
-    --destructive-foreground: 243 232 212;
-    --border: 166 160 154;
-    --input: 166 160 154;
-    --ring: 198 161 91;
-    --radius: 0.5rem;
+    --background: 220 10% 10%; /* #17191A - Preto Carvão / Grafite Profundo */
+    --foreground: 40 30% 94%; /* #FAF7F2 - Marfim Envelhecido */
+    --card: 220 10% 12%; /* #1C1E1F */
+    --card-foreground: 40 30% 94%;
+    --popover: 220 10% 12%;
+    --popover-foreground: 40 30% 94%;
+    --primary: 38 45% 45%; /* #A6894A - Dourado Envelhecido / Bronze */
+    --primary-foreground: 220 10% 5%;
+    --secondary: 220 5% 25%; /* #3D4042 */
+    --secondary-foreground: 40 30% 94%;
+    --muted: 220 5% 40%;
+    --muted-foreground: 220 5% 60%;
+    --accent: 38 45% 45%;
+    --accent-foreground: 220 10% 5%;
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 40 30% 94%;
+    --border: 220 5% 20%;
+    --input: 220 5% 20%;
+    --ring: 38 45% 45%;
+    --radius: 0.15rem; /* Bordas quase retas, estilo clássico */
   }
 }
 
@@ -33,9 +33,28 @@
   * {
     @apply border-border;
   }
+  html {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', sans-serif;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+  }
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Fraunces', serif;
@@ -55,5 +74,13 @@
   }
   .safe-right {
     padding-right: env(safe-area-inset-right);
+  }
+
+  /* Use these with p-4 layouts so safe-area doesn't override padding */
+  .safe-top-p4 {
+    padding-top: calc(env(safe-area-inset-top) + 1rem);
+  }
+  .safe-bottom-p4 {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
   }
 }

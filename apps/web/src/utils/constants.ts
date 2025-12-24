@@ -24,6 +24,9 @@ export const SERVICE_LABELS: Record<string, string> = {
 
 export const TIMEZONE = 'America/Sao_Paulo';
 
+// WhatsApp oficial da barbearia (E.164)
+export const BARBERSHOP_WHATSAPP_E164 = '+557998016908';
+
 export const BUSINESS_HOURS = {
   START: 8,
   END: 19,

@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { LogOut, Calendar, Users, List } from 'lucide-react';
+import { LogOut, Calendar, Users, List, Wallet } from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -14,18 +14,29 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   const navItems = [
     { path: '/admin/agenda', label: 'Agenda', icon: Calendar },
+    { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet },
     { path: '/admin/clientes', label: 'Clientes', icon: Users },
     { path: '/admin/listas', label: 'Listas', icon: List },
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
+    <div className="min-h-[100dvh] bg-background bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed safe-top-p4 safe-bottom-p4 overflow-x-hidden">
+      <header className="border-b border-primary/10 bg-card/50 backdrop-blur-md">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-serif font-bold">Sr. Cardoso - Admin</h1>
+          <div className="flex items-center gap-3">
+            <img 
+              src="/logo.png" 
+              alt="Logo" 
+              className="h-10 w-auto drop-shadow-md"
+            />
+            <div className="hidden sm:block">
+              <h1 className="text-xl font-serif font-bold text-foreground">Sr. Cardoso</h1>
+              <p className="text-[10px] text-primary uppercase tracking-[0.3em] -mt-1">Painel Admin</p>
+            </div>
+          </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{user ? 'Admin' : ''}</span>
-            <Button variant="ghost" size="sm" onClick={logout}>
+            <span className="text-xs font-sans text-muted-foreground uppercase tracking-widest">{user ? 'Administrador' : ''}</span>
+            <Button variant="ghost" size="sm" onClick={logout} className="hover:bg-primary/10 hover:text-primary">
               <LogOut className="h-4 w-4 mr-2" />
               Sair
             </Button>
@@ -33,9 +44,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </div>
       </header>
 
-      <nav className="border-b bg-card">
+      <nav className="border-b border-primary/10 bg-card/30 backdrop-blur-sm">
         <div className="container mx-auto px-4">
-          <div className="flex gap-1 overflow-x-auto">
+          <div className="flex gap-1 overflow-x-auto py-2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -43,10 +54,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <Link key={item.path} to={item.path}>
                   <Button
                     variant={isActive ? 'secondary' : 'ghost'}
-                    className="flex items-center gap-2"
+                    className={`flex items-center gap-2 transition-all ${isActive ? 'bg-primary text-primary-foreground' : 'hover:text-primary'}`}
                   >
                     <Icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{item.label}</span>
+                    <span className="hidden sm:inline font-serif">{item.label}</span>
                   </Button>
                 </Link>
               );

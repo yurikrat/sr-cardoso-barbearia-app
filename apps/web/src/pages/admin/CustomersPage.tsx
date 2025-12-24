@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 type FirestoreTimestampLike = { toDate: () => Date };
 
@@ -23,6 +24,7 @@ interface Customer {
   };
   stats: {
     totalBookings: number;
+    totalCompleted?: number;
     lastBookingAt?: FirestoreTimestampLike;
     noShowCount: number;
   };
@@ -30,6 +32,7 @@ interface Customer {
 
 export default function CustomersPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,6 +68,10 @@ export default function CustomersPage() {
     );
   });
 
+  const topCustomers = [...customers]
+    .sort((a, b) => (b.stats.totalBookings ?? 0) - (a.stats.totalBookings ?? 0))
+    .slice(0, 10);
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -84,6 +91,36 @@ export default function CustomersPage() {
           </div>
         ) : (
           <div className="grid gap-4">
+            {!searchTerm && topCustomers.length > 0 && (
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">Top 10 (por agendamentos)</h3>
+                    <span className="text-sm text-muted-foreground">Atalho</span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {topCustomers.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => navigate(`/admin/clientes/${customer.id}`)}
+                        className="w-full text-left rounded-md border p-3 hover:bg-accent transition-colors"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium">
+                              {customer.identity.firstName} {customer.identity.lastName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{customer.identity.whatsappE164}</p>
+                          </div>
+                          <span className="text-sm text-muted-foreground">{customer.stats.totalBookings}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             {filteredCustomers.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
@@ -92,7 +129,11 @@ export default function CustomersPage() {
               </Card>
             ) : (
               filteredCustomers.map((customer) => (
-                <Card key={customer.id} className="cursor-pointer hover:bg-accent transition-colors">
+                <Card
+                  key={customer.id}
+                  className="cursor-pointer hover:bg-accent transition-colors"
+                  onClick={() => navigate(`/admin/clientes/${customer.id}`)}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -106,6 +147,11 @@ export default function CustomersPage() {
                           <span>
                             {customer.stats.totalBookings} agendamento(s)
                           </span>
+                          {typeof customer.stats.totalCompleted === 'number' && (
+                            <span>
+                              {customer.stats.totalCompleted} concluído(s)
+                            </span>
+                          )}
                           {customer.stats.lastBookingAt && (
                             <span>
                               Último: {formatDate(customer.stats.lastBookingAt.toDate())}

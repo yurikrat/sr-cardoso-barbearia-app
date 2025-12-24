@@ -71,11 +71,26 @@ export function generateGoogleCalendarUrl(
 export function downloadICSFile(icsContent: string, filename: string = 'agendamento.ics'): void {
   const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+
+  // Prefer Web Share on mobile when available
+  const nav = navigator as Navigator & {
+    share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+    canShare?: (data: { files?: File[] }) => boolean;
+  };
+
+  try {
+    const file = new File([blob], filename, { type: 'text/calendar' });
+    if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+      void nav.share({ files: [file], title: 'Agendamento' });
+      return;
+    }
+  } catch {
+    // ignore and fallback
+  }
+
+  // Fallback: open the ICS in the browser (works better than download on iOS)
+  window.location.href = url;
+
+  // Best-effort cleanup
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useBookingState } from '@/contexts/BookingContext';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,6 @@ import { createBookingFn } from '@/lib/firebase';
 import { applyPhoneMask, normalizeToE164 } from '@/utils/phone';
 import { generateDaySlots, isSlotPast } from '@/utils/slots';
 import { formatDate, formatTime, isToday } from '@/utils/dates';
-import { disabledDays } from '@/utils/calendar';
 import { isValidName, isValidBrazilianPhone } from '@/utils/validation';
 import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
@@ -27,34 +26,39 @@ import { BARBERS } from '@/utils/constants';
 
 export default function BookingPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const bookingState = useBookingState();
+  const { clearBooking } = bookingState;
+  const todayStart = DateTime.now()
+    .setZone('America/Sao_Paulo')
+    .startOf('day')
+    .toJSDate();
   const [step, setStep] = useState(1);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
-    bookingState.selectedDate || undefined
-  );
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [availableSlots, setAvailableSlots] = useState<DateTime[]>([]);
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [customerForm, setCustomerForm] = useState({
-    firstName: bookingState.customerData?.firstName || '',
-    lastName: bookingState.customerData?.lastName || '',
-    whatsapp: bookingState.customerData?.whatsapp || '',
+    firstName: '',
+    lastName: '',
+    whatsapp: '',
   });
 
-  // Verificar parâmetro de URL para barbeiro
-  useEffect(() => {
-    const barberParam = searchParams.get('barber');
-    if (barberParam && !bookingState.barberId) {
-      const barber = BARBERS.find((b) => b.id === barberParam);
-      if (barber) {
-        bookingState.setBarberId(barber.id);
-        setStep(2);
-      }
-    }
-  }, [searchParams, bookingState]);
+  const didInitRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
+    clearBooking();
+    setStep(1);
+    setSelectedDate(undefined);
+    setAvailableSlots([]);
+    setBookedSlots(new Set());
+    setBlockedSlots(new Set());
+    setCustomerForm({ firstName: '', lastName: '', whatsapp: '' });
+  }, [clearBooking]);
 
   // Carregar slots quando barbeiro e data são selecionados
   const loadAvailableSlots = useCallback(async () => {
@@ -130,7 +134,7 @@ export default function BookingPage() {
       loadAvailableSlots();
     }
   }, [bookingState.barberId, selectedDate, loadAvailableSlots]);
-  type CreateBookingResponse = { success: boolean; bookingId: string; message?: string };
+  type CreateBookingResponse = { success: boolean; bookingId: string; cancelCode?: string | null; message?: string };
 
   const createBookingMutation = useMutation({
     mutationFn: async (data: {
@@ -147,7 +151,7 @@ export default function BookingPage() {
       return result.data as CreateBookingResponse;
     },
     onSuccess: (data) => {
-      bookingState.clearBooking();
+      bookingState.setCancelCode(data.cancelCode ?? null);
       navigate(`/sucesso?bookingId=${data.bookingId}`);
     },
     onError: (error: unknown) => {
@@ -177,17 +181,31 @@ export default function BookingPage() {
   });
 
   const handleServiceSelect = (service: ServiceType) => {
+    bookingState.setBarberId(null);
+    bookingState.setSelectedDate(null);
+    bookingState.setSelectedSlot(null);
+    setSelectedDate(undefined);
+    setAvailableSlots([]);
+    setBookedSlots(new Set());
+    setBlockedSlots(new Set());
     bookingState.setServiceType(service);
     setStep(2);
   };
 
   const handleBarberSelect = (barberId: string) => {
+    bookingState.setSelectedDate(null);
+    bookingState.setSelectedSlot(null);
+    setSelectedDate(undefined);
+    setAvailableSlots([]);
+    setBookedSlots(new Set());
+    setBlockedSlots(new Set());
     bookingState.setBarberId(barberId);
     setStep(3);
   };
 
   const handleDateSelect = (date: Date | undefined) => {
     if (!date) return;
+    bookingState.setSelectedSlot(null);
     setSelectedDate(date);
     bookingState.setSelectedDate(date);
     setStep(4);
@@ -303,9 +321,12 @@ export default function BookingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 safe-top pb-32">
+    <div className="min-h-[100dvh] bg-background p-4 safe-top-p4 pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-x-hidden">
       <div className="max-w-md mx-auto space-y-6">
         <div className="text-center">
+          <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
+            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+          </Link>
           <h1 className="text-2xl font-serif font-bold">Agendar</h1>
           <Stepper currentStep={step} totalSteps={6} />
         </div>
@@ -358,13 +379,40 @@ export default function BookingPage() {
         {/* Step 3: Data */}
         {step === 3 && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Escolha a data</h2>
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">Escolha a data</h2>
+              <p className="text-sm text-muted-foreground">
+                {selectedDate ? `Selecionada: ${formatDate(selectedDate)}` : 'Selecione uma data disponível'}
+              </p>
+            </div>
             <Calendar
               mode="single"
+              required
               selected={selectedDate}
               onSelect={handleDateSelect}
-              disabled={disabledDays}
-              className="rounded-md border"
+              onDayClick={(day, modifiers) => {
+                if (modifiers?.disabled) return;
+                handleDateSelect(day);
+              }}
+              fromMonth={todayStart}
+              showOutsideDays={false}
+              disabled={[{ before: todayStart }, { dayOfWeek: [0] }]}
+              className="rounded-xl border border-primary/10 bg-card/50 backdrop-blur-sm"
+              classNames={{
+                caption_label: 'text-base font-serif tracking-wide',
+                button_previous: 'absolute left-1 h-9 w-9 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
+                button_next: 'absolute right-1 h-9 w-9 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
+                weekday:
+                  'text-muted-foreground/80 rounded-md w-11 h-9 flex items-center justify-center font-normal text-[0.75rem] uppercase tracking-wider',
+                day: 'h-11 w-11 p-0 text-center text-sm focus-within:relative focus-within:z-20',
+                day_button:
+                  'h-11 w-11 p-0 flex items-center justify-center font-normal rounded-md transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation',
+                selected:
+                  '[&>button]:bg-primary [&>button]:text-primary-foreground [&>button]:hover:bg-primary [&>button]:hover:text-primary-foreground',
+                today:
+                  '[&>button]:border [&>button]:border-primary/30 [&>button]:text-primary [&>button]:font-semibold [&>button]:bg-transparent',
+                disabled: '[&>button]:text-muted-foreground/40 [&>button]:opacity-40',
+              }}
             />
             <p className="text-sm text-muted-foreground text-center">
               Domingo: Fechado
@@ -384,11 +432,13 @@ export default function BookingPage() {
               <div className="grid grid-cols-3 gap-3">
                 {availableSlots.map((slot) => {
                   const status = getSlotStatus(slot);
+                  const isSelectedSlot = bookingState.selectedSlot?.toMillis() === slot.toMillis();
                   return (
                     <SlotPill
                       key={slot.toISO()}
                       slot={slot}
                       status={status}
+                      selected={isSelectedSlot}
                       onClick={() => status === 'available' && handleSlotSelect(slot)}
                       disabled={status !== 'available'}
                     />
@@ -458,7 +508,7 @@ export default function BookingPage() {
                     const masked = applyPhoneMask(e.target.value);
                     setCustomerForm({ ...customerForm, whatsapp: masked });
                   }}
-                  placeholder="(11) 98765-4321"
+                  placeholder="Seu WhatsApp"
                   required
                   className="mt-1"
                 />
@@ -502,7 +552,8 @@ export default function BookingPage() {
                 {customerForm.firstName} {customerForm.lastName}
               </p>
               <p>
-                <span className="font-medium">WhatsApp:</span> {customerForm.whatsapp}
+                <span className="font-medium">WhatsApp:</span>{' '}
+                {customerForm.whatsapp || '—'}
               </p>
             </div>
             <StickyFooter>

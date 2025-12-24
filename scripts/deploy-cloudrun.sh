@@ -13,11 +13,11 @@ set -euo pipefail
 #   ./scripts/deploy-cloudrun.sh \
 #     --project sr-cardoso-barbearia-prd \
 #     --region us-central1 \
-#     --service sr-cardoso-barbearia \
-#     --admin-password 'SENHA_FORTE' \
-#     --admin-jwt-secret 'SEGREDO_LONGO'
+#     --service sr-cardoso-barbearia
 #
-# Opcional:
+# Opcional (se não usar Secret Manager):
+#   --admin-password 'SENHA_FORTE' \
+#   --admin-jwt-secret 'SEGREDO_LONGO'
 #   --web-origin https://seu-dominio.com
 #
 
@@ -48,8 +48,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$PROJECT_ID" ]] || die "--project é obrigatório"
-[[ -n "$ADMIN_PASSWORD" ]] || die "--admin-password é obrigatório"
-[[ -n "$ADMIN_JWT_SECRET" ]] || die "--admin-jwt-secret é obrigatório"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -96,8 +94,10 @@ gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet >/dev/null
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:${IMAGE_TAG}"
 
 echo "== Build do monorepo (web + server) =="
-npm run build:web >/dev/null
-npm run build:server >/dev/null
+# Otimização: O build é feito dentro do Docker (multi-stage).
+# Não precisamos buildar localmente, pois o Dockerfile fará isso.
+# npm run build:web >/dev/null
+# npm run build:server >/dev/null
 
 echo "== Docker build (local) =="
 if ! docker buildx version >/dev/null 2>&1; then
@@ -137,9 +137,25 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --quiet >/dev/null
 
 echo "== Deploy Cloud Run =="
-ENV_VARS="ADMIN_PASSWORD=${ADMIN_PASSWORD},ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}"
+# Se as senhas foram passadas via flag, atualizamos as env vars (literal).
+# Caso contrário, o Cloud Run manterá as configurações atuais (ex: Secret Manager).
+EXTRA_FLAGS=""
+ENV_VARS=""
+
+if [[ -n "$ADMIN_PASSWORD" ]]; then
+  ENV_VARS="ADMIN_PASSWORD=${ADMIN_PASSWORD}"
+fi
+if [[ -n "$ADMIN_JWT_SECRET" ]]; then
+  if [[ -n "$ENV_VARS" ]]; then ENV_VARS="${ENV_VARS},"; fi
+  ENV_VARS="${ENV_VARS}ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}"
+fi
 if [[ -n "$WEB_ORIGIN" ]]; then
-  ENV_VARS="${ENV_VARS},WEB_ORIGIN=${WEB_ORIGIN}"
+  if [[ -n "$ENV_VARS" ]]; then ENV_VARS="${ENV_VARS},"; fi
+  ENV_VARS="${ENV_VARS}WEB_ORIGIN=${WEB_ORIGIN}"
+fi
+
+if [[ -n "$ENV_VARS" ]]; then
+  EXTRA_FLAGS="--update-env-vars=$ENV_VARS"
 fi
 
 gcloud run deploy "$SERVICE_NAME" \
@@ -148,7 +164,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
-  --set-env-vars="$ENV_VARS" \
+  $EXTRA_FLAGS \
   --quiet
 
 echo "== URL do serviço =="

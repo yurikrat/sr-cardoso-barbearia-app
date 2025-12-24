@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -33,8 +33,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 overflow-x-hidden">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
+            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+          </Link>
+        </div>
+        <Card>
         <CardHeader>
           <CardTitle>Login Admin</CardTitle>
           <CardDescription>Digite a senha do painel para acessar a agenda</CardDescription>
@@ -58,7 +64,8 @@ export default function LoginPage() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

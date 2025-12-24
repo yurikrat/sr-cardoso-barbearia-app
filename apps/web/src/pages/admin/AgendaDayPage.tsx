@@ -17,8 +17,8 @@ import { adminCancelBookingFn, adminMarkWhatsappSentFn } from '@/lib/firebase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { generateBookingConfirmationMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
 import { Calendar as CalendarIcon } from 'lucide-react';
-import { BARBERS } from '@/utils/constants';
 import { debugLog } from '@/utils/debugLog';
+import { useSearchParams } from 'react-router-dom';
 
 const TIME_SLOTS = Array.from({ length: 22 }, (_, i) => {
   const hour = 8 + Math.floor(i / 2);
@@ -42,8 +42,10 @@ interface Booking {
 export default function AgendaDayPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [selectedBarber, setSelectedBarber] = useState<string>('sr-cardoso');
+  const [selectedBarber, setSelectedBarber] = useState<string>('');
+  const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,37 @@ export default function AgendaDayPage() {
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const { items } = await api.admin.listBarbers();
+        const normalized = (items ?? []).map((b) => ({ id: b.id, name: b.name }));
+        setBarbers(normalized);
+
+        const qsBarber = searchParams.get('barber');
+        const qsDate = searchParams.get('date');
+
+        const nextBarber = qsBarber && normalized.some((b) => b.id === qsBarber)
+          ? qsBarber
+          : normalized[0]?.id ?? '';
+
+        if (nextBarber && nextBarber !== selectedBarber) setSelectedBarber(nextBarber);
+
+        if (qsDate) {
+          const parsed = DateTime.fromFormat(qsDate, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' });
+          if (parsed.isValid) setSelectedDate(parsed.toJSDate());
+        }
+      } catch {
+        setBarbers([]);
+        if (!selectedBarber) setSelectedBarber('sr-cardoso');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBarber) return;
     loadBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedBarber]);
 
   const loadBookings = async () => {
@@ -155,8 +187,35 @@ export default function AgendaDayPage() {
     },
   });
 
+  const setStatusMutation = useMutation({
+    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show' }) => {
+      return api.admin.setBookingStatus(payload.bookingId, payload.status);
+    },
+    onSuccess: (_data, variables) => {
+      loadBookings();
+      setSelectedBooking((prev) => (prev ? { ...prev, status: variables.status } : prev));
+      toast({
+        title: 'Sucesso',
+        description:
+          variables.status === 'completed'
+            ? 'Marcado como concluído.'
+            : variables.status === 'no_show'
+            ? 'Marcado como falta.'
+            : 'Status atualizado.',
+      });
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : null;
+      toast({
+        title: 'Erro',
+        description: message || 'Erro ao atualizar status.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSendWhatsApp = (booking: Booking) => {
-    const barberName = BARBERS.find((b) => b.id === booking.barberId)?.name || 'Barbeiro';
+    const barberName = barbers.find((b) => b.id === booking.barberId)?.name || 'Barbeiro';
     const slotStart = DateTime.fromJSDate(booking.slotStart, { zone: 'America/Sao_Paulo' });
     const customerName = `${booking.customer.firstName} ${booking.customer.lastName}`;
     
@@ -197,14 +256,14 @@ export default function AgendaDayPage() {
 
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
           <TabsList>
-            {BARBERS.map((barber) => (
+            {barbers.map((barber) => (
               <TabsTrigger key={barber.id} value={barber.id}>
                 {barber.name}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {BARBERS.map((barber) => (
+          {barbers.map((barber) => (
             <TabsContent key={barber.id} value={barber.id} className="space-y-4">
               {loading ? (
                 <div className="flex justify-center py-8">
@@ -246,8 +305,10 @@ export default function AgendaDayPage() {
                             <div className="flex gap-2">
                               <Badge
                                 variant={
-                                  booking.status === 'confirmed'
+                                  booking.status === 'completed' || booking.status === 'confirmed'
                                     ? 'default'
+                                    : booking.status === 'no_show'
+                                    ? 'destructive'
                                     : booking.status === 'cancelled'
                                     ? 'destructive'
                                     : 'secondary'
@@ -310,6 +371,20 @@ export default function AgendaDayPage() {
                   disabled={markWhatsappSentMutation.isPending}
                 >
                   Enviar WhatsApp
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'completed' })}
+                  disabled={setStatusMutation.isPending || selectedBooking.status === 'completed'}
+                >
+                  Concluir
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'no_show' })}
+                  disabled={setStatusMutation.isPending || selectedBooking.status === 'no_show'}
+                >
+                  Falta
                 </Button>
                 <Button
                   variant="destructive"

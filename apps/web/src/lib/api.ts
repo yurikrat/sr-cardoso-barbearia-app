@@ -98,6 +98,32 @@ export const api = {
         admin: true,
       });
     },
+    async listBarbers() {
+      return apiFetch<{ items: Array<{ id: string; name: string; active: boolean }> }>(
+        `/api/admin/barbers`,
+        { admin: true }
+      );
+    },
+    async financeSummary(payload: { startDateKey: string; endDateKey: string; barberId?: string | null }) {
+      const params = new URLSearchParams({
+        startDateKey: payload.startDateKey,
+        endDateKey: payload.endDateKey,
+      });
+      if (payload.barberId) params.set('barberId', payload.barberId);
+      return apiFetch<{
+        startDateKey: string;
+        endDateKey: string;
+        barberId: string | null;
+        totalBookings: number;
+        revenueCents: number;
+        estimatedRevenueCents?: number;
+        realizedRevenueCents?: number;
+        projectionRevenueCents?: number | null;
+        countsByServiceType: Record<string, number>;
+        countsByStatus: Record<string, number>;
+        pricingCents: { cabelo: number; barba: number; cabelo_barba: number };
+      }>(`/api/admin/finance/summary?${params.toString()}`, { admin: true });
+    },
     async blockSlots(payload: { barberId: string; startTime: string; endTime: string; reason: string }) {
       return apiFetch<{ success: boolean }>(`/api/admin/blocks`, {
         method: 'POST',
@@ -107,6 +133,22 @@ export const api = {
     },
     async listCustomers(limit = 100) {
       return apiFetch<{ items: unknown[] }>(`/api/admin/customers?limit=${limit}`, { admin: true });
+    },
+    async getCustomer(customerId: string) {
+      return apiFetch<{ item: unknown }>(`/api/admin/customers/${encodeURIComponent(customerId)}`, { admin: true });
+    },
+    async listCustomerBookings(customerId: string, limit = 50) {
+      return apiFetch<{ items: unknown[] }>(
+        `/api/admin/customers/${encodeURIComponent(customerId)}/bookings?limit=${limit}`,
+        { admin: true }
+      );
+    },
+    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show') {
+      return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify({ status }),
+      });
     },
     logout() {
       setAdminToken(null);
@@ -127,7 +169,7 @@ export const api = {
     slotStart: string;
     customer: { firstName: string; lastName: string; whatsapp: string };
   }) {
-    return apiFetch<{ success: boolean; bookingId: string }>(`/api/bookings`, {
+    return apiFetch<{ success: boolean; bookingId: string; cancelCode?: string | null }>(`/api/bookings`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
