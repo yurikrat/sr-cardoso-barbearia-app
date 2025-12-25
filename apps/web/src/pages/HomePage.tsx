@@ -49,6 +49,13 @@ export default function HomePage() {
         <p className="text-center text-[10px] text-muted-foreground/50 uppercase tracking-widest font-sans">
           Desde 2019 • Barbearia Sr. Cardoso
         </p>
+
+        <Link
+          to="/admin/login"
+          className="block text-center text-[10px] text-muted-foreground/50 hover:text-muted-foreground hover:underline"
+        >
+          Área administrativa para os barbeiros e Sr. Cardoso
+        </Link>
       </div>
     </div>
   );
