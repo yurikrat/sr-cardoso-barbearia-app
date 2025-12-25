@@ -12,6 +12,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,7 +60,7 @@ export default function LoginPage() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="ex: sr-cardoso / emanuel"
+                placeholder="Digite seu usuário"
                 autoComplete="username"
                 className="mt-1"
               />
@@ -69,15 +70,28 @@ export default function LoginPage() {
             </div>
             <div>
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="mt-1"
-              />
+              <div className="relative mt-1">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="pr-24"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-2 text-xs"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-pressed={showPassword}
+                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showPassword ? 'Ocultar' : 'Mostrar'}
+                </Button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Entrando...' : 'Entrar'}
