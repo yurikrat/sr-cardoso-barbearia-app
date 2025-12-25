@@ -1,21 +1,15 @@
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { ServiceType } from '@sr-cardoso/shared';
+import { SERVICE_LABELS } from '@/utils/constants';
 
 interface ServiceCardProps {
-  service: ServiceType;
+  serviceId: string;
   label: string;
   selected: boolean;
   onClick: () => void;
 }
 
-const serviceLabels: Record<ServiceType, string> = {
-  cabelo: 'Cabelo',
-  barba: 'Barba',
-  cabelo_barba: 'Cabelo + Barba',
-};
-
-export function ServiceCard({ service, label, selected, onClick }: ServiceCardProps) {
+export function ServiceCard({ serviceId, label, selected, onClick }: ServiceCardProps) {
   return (
     <Card
       className={cn(
@@ -26,7 +20,7 @@ export function ServiceCard({ service, label, selected, onClick }: ServiceCardPr
       )}
       onClick={onClick}
     >
-      <span className="text-lg font-medium">{label || serviceLabels[service]}</span>
+      <span className="text-lg font-medium">{label || SERVICE_LABELS[serviceId] || serviceId}</span>
     </Card>
   );
 }

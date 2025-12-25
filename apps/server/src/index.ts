@@ -89,6 +89,159 @@ type AdminUserDoc = {
 
 const OWNER_BARBER_ID = 'sr-cardoso';
 
+type ServiceCatalogItem = {
+  id: string;
+  label: string;
+  priceCents: number;
+  active: boolean;
+  sortOrder: number;
+};
+
+type FinanceConfig = {
+  commissions: {
+    defaultBarberPct: number; // ex.: 0.45
+    ownerBarberPct: number; // ex.: 0.00 (dono)
+  };
+  services: ServiceCatalogItem[];
+};
+
+const FINANCE_CONFIG_DOC_PATH = 'settings/finance';
+
+function normalizeServiceId(input: string): string | null {
+  const id = input.trim().toLowerCase();
+  if (!id) return null;
+  // Permitimos underscore por compat com "cabelo_barba".
+  if (!/^[a-z0-9][a-z0-9_-]{0,30}$/.test(id)) return null;
+  return id;
+}
+
+function clampPct(input: unknown, fallback: number): number {
+  const n = typeof input === 'number' ? input : Number(input);
+  if (!Number.isFinite(n)) return fallback;
+  // Aceita tanto 0.45 quanto 45.
+  const normalized = n > 1 ? n / 100 : n;
+  return Math.max(0, Math.min(1, normalized));
+}
+
+function getDefaultServicePriceCentsFromEnv(serviceId: string): number {
+  const cabelo = Number(process.env.PRICE_CABELO_CENTS ?? '4500');
+  const barba = Number(process.env.PRICE_BARBA_CENTS ?? '3500');
+  const combo = Number(process.env.PRICE_CABELO_BARBA_CENTS ?? '7000');
+  if (serviceId === 'cabelo') return Number.isFinite(cabelo) ? cabelo : 4500;
+  if (serviceId === 'barba') return Number.isFinite(barba) ? barba : 3500;
+  if (serviceId === 'cabelo_barba') return Number.isFinite(combo) ? combo : 7000;
+  return 0;
+}
+
+function getDefaultFinanceConfig(): FinanceConfig {
+  return {
+    commissions: {
+      defaultBarberPct: 0.45,
+      ownerBarberPct: 0,
+    },
+    services: [
+      {
+        id: 'cabelo',
+        label: 'Cabelo',
+        priceCents: getDefaultServicePriceCentsFromEnv('cabelo'),
+        active: true,
+        sortOrder: 10,
+      },
+      {
+        id: 'barba',
+        label: 'Barba',
+        priceCents: getDefaultServicePriceCentsFromEnv('barba'),
+        active: true,
+        sortOrder: 20,
+      },
+      {
+        id: 'cabelo_barba',
+        label: 'Cabelo + Barba',
+        priceCents: getDefaultServicePriceCentsFromEnv('cabelo_barba'),
+        active: true,
+        sortOrder: 30,
+      },
+    ],
+  };
+}
+
+function sanitizeFinanceConfig(input: unknown): FinanceConfig {
+  const base = getDefaultFinanceConfig();
+  const obj = (input && typeof input === 'object') ? (input as any) : {};
+
+  const commissionsObj = (obj.commissions && typeof obj.commissions === 'object') ? obj.commissions : {};
+  const defaultBarberPct = clampPct(commissionsObj.defaultBarberPct, base.commissions.defaultBarberPct);
+  const ownerBarberPct = clampPct(commissionsObj.ownerBarberPct, base.commissions.ownerBarberPct);
+
+  const servicesRaw = Array.isArray(obj.services) ? obj.services : base.services;
+  const services: ServiceCatalogItem[] = [];
+  const seen = new Set<string>();
+
+  for (const it of servicesRaw) {
+    const item = (it && typeof it === 'object') ? (it as any) : null;
+    const id = normalizeServiceId(typeof item?.id === 'string' ? item.id : '')
+      ?? normalizeServiceId(typeof item?.serviceType === 'string' ? item.serviceType : '');
+    if (!id || seen.has(id)) continue;
+    const label = typeof item?.label === 'string' && item.label.trim() ? item.label.trim() : id;
+    const priceCents = Math.max(0, Math.round(Number(item?.priceCents ?? 0)));
+    const active = typeof item?.active === 'boolean' ? item.active : true;
+    const sortOrder = Number.isFinite(Number(item?.sortOrder)) ? Math.round(Number(item?.sortOrder)) : 0;
+    services.push({ id, label, priceCents, active, sortOrder });
+    seen.add(id);
+  }
+
+  // Garantir que pelo menos os 3 padrões existem (compat)
+  for (const d of base.services) {
+    if (!seen.has(d.id)) {
+      services.push(d);
+      seen.add(d.id);
+    }
+  }
+
+  services.sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.label.localeCompare(b.label, 'pt-BR');
+  });
+
+  return { commissions: { defaultBarberPct, ownerBarberPct }, services };
+}
+
+let financeConfigCache: { value: FinanceConfig; fetchedAtMs: number } | null = null;
+const FINANCE_CONFIG_TTL_MS = 30_000;
+
+async function getFinanceConfig(): Promise<FinanceConfig> {
+  const now = Date.now();
+  if (financeConfigCache && now - financeConfigCache.fetchedAtMs < FINANCE_CONFIG_TTL_MS) {
+    return financeConfigCache.value;
+  }
+  try {
+    const ref = db.doc(FINANCE_CONFIG_DOC_PATH);
+    const snap = await ref.get();
+    const cfg = snap.exists ? sanitizeFinanceConfig(snap.data()) : getDefaultFinanceConfig();
+    financeConfigCache = { value: cfg, fetchedAtMs: now };
+    return cfg;
+  } catch (e) {
+    console.warn('[server] Failed to load finance config; using defaults:', e);
+    const cfg = getDefaultFinanceConfig();
+    financeConfigCache = { value: cfg, fetchedAtMs: now };
+    return cfg;
+  }
+}
+
+function getServiceFromConfig(config: FinanceConfig, serviceId: string): ServiceCatalogItem | null {
+  const normalized = normalizeServiceId(serviceId) ?? serviceId;
+  return config.services.find((s) => s.id === normalized) ?? null;
+}
+
+function getServicePriceCentsFromConfig(config: FinanceConfig, serviceId: string): number {
+  const s = getServiceFromConfig(config, serviceId);
+  return s ? s.priceCents : 0;
+}
+
+function getBarberCommissionPct(config: FinanceConfig, barberId: string): number {
+  return barberId === OWNER_BARBER_ID ? config.commissions.ownerBarberPct : config.commissions.defaultBarberPct;
+}
+
 function normalizeUsername(input: string) {
   return input.trim().toLowerCase();
 }
@@ -571,19 +724,55 @@ app.get('/api/admin/barbers/:barberId', requireAdmin, async (req, res) => {
   }
 });
 
-function getServicePriceCents(serviceType: string): number {
-  const cabelo = Number(process.env.PRICE_CABELO_CENTS ?? '4500');
-  const barba = Number(process.env.PRICE_BARBA_CENTS ?? '3500');
-  const combo = Number(process.env.PRICE_CABELO_BARBA_CENTS ?? '7000');
-  if (serviceType === 'cabelo') return Number.isFinite(cabelo) ? cabelo : 4500;
-  if (serviceType === 'barba') return Number.isFinite(barba) ? barba : 3500;
-  if (serviceType === 'cabelo_barba') return Number.isFinite(combo) ? combo : 7000;
-  return 0;
-}
+app.get('/api/services', async (_req, res) => {
+  try {
+    const config = await getFinanceConfig();
+    const items = config.services
+      .filter((s) => s.active)
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.label.localeCompare(b.label, 'pt-BR');
+      })
+      .map((s) => ({ id: s.id, label: s.label, priceCents: s.priceCents }));
+    return res.json({ items });
+  } catch (e) {
+    console.error('Error listing services:', e);
+    return res.status(500).json({ error: 'Erro ao listar serviços' });
+  }
+});
+
+app.get('/api/admin/finance/config', requireAdmin, async (req, res) => {
+  const admin = getAdminFromReq(req);
+  if (admin.role !== 'master') return res.status(403).json({ error: 'Sem permissão' });
+  try {
+    const config = await getFinanceConfig();
+    return res.json({ config });
+  } catch (e) {
+    console.error('Error loading finance config:', e);
+    return res.status(500).json({ error: 'Erro ao carregar configurações' });
+  }
+});
+
+app.put('/api/admin/finance/config', requireAdmin, async (req, res) => {
+  const admin = getAdminFromReq(req);
+  if (admin.role !== 'master') return res.status(403).json({ error: 'Sem permissão' });
+  try {
+    const incoming = req.body as unknown;
+    const config = sanitizeFinanceConfig(incoming);
+    const ref = db.doc(FINANCE_CONFIG_DOC_PATH);
+    await ref.set(config, { merge: true });
+    financeConfigCache = { value: config, fetchedAtMs: Date.now() };
+    return res.json({ success: true, config });
+  } catch (e) {
+    console.error('Error saving finance config:', e);
+    return res.status(500).json({ error: 'Erro ao salvar configurações' });
+  }
+});
 
 app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
   try {
     const admin = getAdminFromReq(req);
+    const financeConfig = await getFinanceConfig();
     const startDateKey = typeof req.query.startDateKey === 'string' ? req.query.startDateKey : null;
     const endDateKey = typeof req.query.endDateKey === 'string' ? req.query.endDateKey : null;
     const requestedBarberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
@@ -607,6 +796,10 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
     let totalBookings = 0;
     let estimatedRevenueCents = 0;
     let realizedRevenueCents = 0;
+    let estimatedBarberCents = 0;
+    let estimatedShopCents = 0;
+    let realizedBarberCents = 0;
+    let realizedShopCents = 0;
 
     const nowSP = DateTime.now().setZone('America/Sao_Paulo');
     const todayKey = nowSP.toFormat('yyyy-MM-dd');
@@ -615,17 +808,31 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
     const currentMonthKey = nowSP.toFormat('yyyy-MM');
 
     snap.forEach((doc) => {
-      const data = doc.data() as { serviceType?: unknown; status?: unknown };
+      const data = doc.data() as { serviceType?: unknown; status?: unknown; barberId?: unknown };
       const serviceType = typeof data.serviceType === 'string' ? data.serviceType : 'unknown';
       const status = typeof data.status === 'string' ? data.status : 'unknown';
+      const bId = typeof data.barberId === 'string' ? data.barberId : '';
 
       totalBookings += 1;
       countsByServiceType[serviceType] = (countsByServiceType[serviceType] ?? 0) + 1;
       countsByStatus[status] = (countsByStatus[status] ?? 0) + 1;
 
       // Previsto: booked/confirmed. Realizado: completed. Ignora cancelled/no_show/rescheduled.
-      if (['booked', 'confirmed'].includes(status)) estimatedRevenueCents += getServicePriceCents(serviceType);
-      if (status === 'completed') realizedRevenueCents += getServicePriceCents(serviceType);
+      const price = getServicePriceCentsFromConfig(financeConfig, serviceType);
+      if (['booked', 'confirmed'].includes(status)) {
+        estimatedRevenueCents += price;
+        const pct = getBarberCommissionPct(financeConfig, bId);
+        const barberShare = Math.round(price * pct);
+        estimatedBarberCents += barberShare;
+        estimatedShopCents += price - barberShare;
+      }
+      if (status === 'completed') {
+        realizedRevenueCents += price;
+        const pct = getBarberCommissionPct(financeConfig, bId);
+        const barberShare = Math.round(price * pct);
+        realizedBarberCents += barberShare;
+        realizedShopCents += price - barberShare;
+      }
     });
 
     async function sumCompletedRevenueByDateKeyRange(range: {
@@ -647,7 +854,7 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
         const status = typeof data.status === 'string' ? data.status : 'unknown';
         if (status !== 'completed') return;
         const serviceType = typeof data.serviceType === 'string' ? data.serviceType : 'unknown';
-        const price = getServicePriceCents(serviceType);
+        const price = getServicePriceCentsFromConfig(financeConfig, serviceType);
         total += price;
         const dk = typeof data.dateKey === 'string' ? data.dateKey : null;
         if (range.cutoffKey && dk && dk <= range.cutoffKey) toCutoff += price;
@@ -692,7 +899,7 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
         const status = typeof data.status === 'string' ? data.status : 'unknown';
         const serviceType = typeof data.serviceType === 'string' ? data.serviceType : 'unknown';
         const dk = typeof data.dateKey === 'string' ? data.dateKey : null;
-        const price = getServicePriceCents(serviceType);
+        const price = getServicePriceCentsFromConfig(financeConfig, serviceType);
         if (!dk) return;
         if (status === 'completed' && dk <= todayKey) realizedToDate += price;
         if (['booked', 'confirmed'].includes(status) && dk > todayKey) pipelineRemaining += price;
@@ -778,14 +985,24 @@ app.get('/api/admin/finance/summary', requireAdmin, async (req, res) => {
       revenueCents: estimatedRevenueCents + realizedRevenueCents,
       estimatedRevenueCents,
       realizedRevenueCents,
+      estimatedBarberCents,
+      estimatedShopCents,
+      realizedBarberCents,
+      realizedShopCents,
+      commissions: {
+        defaultBarberPct: financeConfig.commissions.defaultBarberPct,
+        ownerBarberPct: financeConfig.commissions.ownerBarberPct,
+      },
       projectionRevenueCents,
       countsByServiceType,
       countsByStatus,
-      pricingCents: {
-        cabelo: getServicePriceCents('cabelo'),
-        barba: getServicePriceCents('barba'),
-        cabelo_barba: getServicePriceCents('cabelo_barba'),
-      },
+      serviceCatalog: financeConfig.services.map((s) => ({
+        id: s.id,
+        label: s.label,
+        priceCents: s.priceCents,
+        active: s.active,
+        sortOrder: s.sortOrder,
+      })),
     });
   } catch (err) {
     console.error('Error building finance summary:', err);
@@ -873,13 +1090,9 @@ app.get('/api/calendar/booking.ics', (req, res) => {
         return res.status(410).send('Agendamento cancelado/indisponível');
       }
 
-      const SERVICE_LABELS: Record<string, string> = {
-        cabelo: 'Corte de Cabelo',
-        barba: 'Barba',
-        cabelo_barba: 'Corte de Cabelo + Barba',
-      };
-
-      const label = SERVICE_LABELS[booking.data.serviceType] ?? booking.data.serviceType;
+      const financeConfig = await getFinanceConfig();
+      const service = getServiceFromConfig(financeConfig, booking.data.serviceType);
+      const label = service?.label ?? booking.data.serviceType;
       const barberName = await getBarberName(booking.data.barberId);
       const customerName = `${booking.data.customer?.firstName ?? ''} ${booking.data.customer?.lastName ?? ''}`.trim();
       const customerWhatsApp = booking.data.customer?.whatsappE164 ?? '';
@@ -938,6 +1151,7 @@ app.get('/api/calendar/booking.ics', (req, res) => {
     return res.status(400).send('serviceType e slotStart são obrigatórios');
   }
 
+  // Sem acesso a Firestore aqui (path query) sem async; mantém fallback simples.
   const SERVICE_LABELS: Record<string, string> = {
     cabelo: 'Corte de Cabelo',
     barba: 'Barba',
@@ -1004,13 +1218,9 @@ app.get('/api/calendar/google', (req, res) => {
       return res.status(410).json({ error: 'Agendamento cancelado/indisponível' });
     }
 
-    const SERVICE_LABELS: Record<string, string> = {
-      cabelo: 'Corte de Cabelo',
-      barba: 'Barba',
-      cabelo_barba: 'Corte de Cabelo + Barba',
-    };
-
-    const label = SERVICE_LABELS[booking.data.serviceType] ?? booking.data.serviceType;
+    const financeConfig = await getFinanceConfig();
+    const service = getServiceFromConfig(financeConfig, booking.data.serviceType);
+    const label = service?.label ?? booking.data.serviceType;
     const barberName = await getBarberName(booking.data.barberId);
     const customerName = `${booking.data.customer?.firstName ?? ''} ${booking.data.customer?.lastName ?? ''}`.trim();
     const start = DateTime.fromJSDate(booking.data.slotStart.toDate(), { zone: 'America/Sao_Paulo' });
@@ -1087,6 +1297,12 @@ app.post('/api/public/cancel/:cancelCode', async (req, res) => {
 app.post('/api/bookings', async (req, res) => {
   try {
     const validated = createBookingRequestSchema.parse(req.body);
+
+    const financeConfig = await getFinanceConfig();
+    const service = getServiceFromConfig(financeConfig, validated.serviceType);
+    if (!service || !service.active) {
+      return res.status(400).json({ error: 'Serviço inválido' });
+    }
 
     const whatsappE164 = normalizeToE164(validated.customer.whatsapp);
     const slotStart = DateTime.fromISO(validated.slotStart, { zone: 'America/Sao_Paulo' });

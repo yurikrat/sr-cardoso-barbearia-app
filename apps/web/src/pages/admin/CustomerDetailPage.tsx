@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useToast } from '@/components/ui/use-toast';
+import { SERVICE_LABELS } from '@/utils/constants';
 
 type FirestoreTimestampLike = { toDate: () => Date };
 
@@ -35,10 +36,8 @@ type Booking = {
 };
 
 function formatServiceLabel(serviceType: string | undefined) {
-  if (serviceType === 'cabelo') return 'Cabelo';
-  if (serviceType === 'barba') return 'Barba';
-  if (serviceType === 'cabelo_barba') return 'Cabelo + Barba';
-  return serviceType || '—';
+  if (!serviceType) return '—';
+  return SERVICE_LABELS[serviceType] || serviceType;
 }
 
 function formatStatusLabel(status: string | undefined) {

@@ -1,4 +1,6 @@
-export type ServiceType = 'cabelo' | 'barba' | 'cabelo_barba';
+// Catálogo de serviços agora é dinâmico (configurável pelo master).
+// Mantemos o tipo como string; validação de "serviço existe/ativo" é feita no server.
+export type ServiceType = string;
 
 export type BookingStatus =
   | 'booked'

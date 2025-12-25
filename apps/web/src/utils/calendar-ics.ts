@@ -1,22 +1,17 @@
 import { DateTime } from 'luxon';
-import type { ServiceType } from '@sr-cardoso/shared';
-
-const SERVICE_LABELS: Record<ServiceType, string> = {
-  cabelo: 'Corte de Cabelo',
-  barba: 'Barba',
-  cabelo_barba: 'Corte de Cabelo + Barba',
-};
+import { SERVICE_LABELS } from './constants';
 
 /**
  * Gera arquivo ICS para download
  */
 export function generateICSFile(
-  serviceType: ServiceType,
+  serviceType: string,
   barberName: string,
   slotStart: DateTime,
-  customerName: string
+  customerName: string,
+  serviceLabelOverride?: string
 ): string {
-  const serviceLabel = SERVICE_LABELS[serviceType];
+  const serviceLabel = serviceLabelOverride || SERVICE_LABELS[serviceType] || serviceType;
   const slotEnd = slotStart.plus({ minutes: 30 });
   
   const icsContent = [
@@ -46,12 +41,13 @@ export function generateICSFile(
  * Gera URL do Google Calendar
  */
 export function generateGoogleCalendarUrl(
-  serviceType: ServiceType,
+  serviceType: string,
   barberName: string,
   slotStart: DateTime,
-  customerName: string
+  customerName: string,
+  serviceLabelOverride?: string
 ): string {
-  const serviceLabel = SERVICE_LABELS[serviceType];
+  const serviceLabel = serviceLabelOverride || SERVICE_LABELS[serviceType] || serviceType;
   const slotEnd = slotStart.plus({ minutes: 30 });
   
   const params = new URLSearchParams({

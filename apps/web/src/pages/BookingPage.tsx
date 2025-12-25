@@ -21,8 +21,7 @@ import { isValidName, isValidBrazilianPhone } from '@/utils/validation';
 import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
 import { api } from '@/lib/api';
-import type { ServiceType } from '@sr-cardoso/shared';
-import { BARBERS } from '@/utils/constants';
+import { BARBERS, SERVICE_LABELS } from '@/utils/constants';
 
 export default function BookingPage() {
   const navigate = useNavigate();
@@ -39,6 +38,8 @@ export default function BookingPage() {
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [services, setServices] = useState<Array<{ id: string; label: string; priceCents: number }>>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     firstName: '',
     lastName: '',
@@ -59,6 +60,26 @@ export default function BookingPage() {
     setBlockedSlots(new Set());
     setCustomerForm({ firstName: '', lastName: '', whatsapp: '' });
   }, [clearBooking]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoadingServices(true);
+      try {
+        const data = await api.services();
+        if (cancelled) return;
+        const items = (data.items ?? []).filter((s) => typeof s?.id === 'string' && typeof s?.label === 'string');
+        setServices(items);
+      } catch {
+        if (!cancelled) setServices([]);
+      } finally {
+        if (!cancelled) setLoadingServices(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Carregar slots quando barbeiro e data são selecionados
   const loadAvailableSlots = useCallback(async () => {
@@ -139,7 +160,7 @@ export default function BookingPage() {
   const createBookingMutation = useMutation({
     mutationFn: async (data: {
       barberId: string;
-      serviceType: ServiceType;
+      serviceType: string;
       slotStart: string;
       customer: {
         firstName: string;
@@ -180,7 +201,7 @@ export default function BookingPage() {
     },
   });
 
-  const handleServiceSelect = (service: ServiceType) => {
+  const handleServiceSelect = (service: string) => {
     bookingState.setBarberId(null);
     bookingState.setSelectedDate(null);
     bookingState.setSelectedSlot(null);
@@ -336,24 +357,28 @@ export default function BookingPage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Escolha o serviço</h2>
             <div className="space-y-3">
-              <ServiceCard
-                service="cabelo"
-                label="Cabelo"
-                selected={bookingState.serviceType === 'cabelo'}
-                onClick={() => handleServiceSelect('cabelo')}
-              />
-              <ServiceCard
-                service="barba"
-                label="Barba"
-                selected={bookingState.serviceType === 'barba'}
-                onClick={() => handleServiceSelect('barba')}
-              />
-              <ServiceCard
-                service="cabelo_barba"
-                label="Cabelo + Barba"
-                selected={bookingState.serviceType === 'cabelo_barba'}
-                onClick={() => handleServiceSelect('cabelo_barba')}
-              />
+              {loadingServices ? (
+                <div className="flex justify-center py-6">
+                  <LoadingSpinner />
+                </div>
+              ) : (
+                (services.length > 0
+                  ? services
+                  : [
+                      { id: 'cabelo', label: 'Cabelo', priceCents: 0 },
+                      { id: 'barba', label: 'Barba', priceCents: 0 },
+                      { id: 'cabelo_barba', label: 'Cabelo + Barba', priceCents: 0 },
+                    ]
+                ).map((s) => (
+                  <ServiceCard
+                    key={s.id}
+                    serviceId={s.id}
+                    label={s.label}
+                    selected={bookingState.serviceType === s.id}
+                    onClick={() => handleServiceSelect(s.id)}
+                  />
+                ))
+              )}
             </div>
           </div>
         )}
@@ -529,11 +554,7 @@ export default function BookingPage() {
             <div className="space-y-2 text-sm">
               <p>
                 <span className="font-medium">Serviço:</span>{' '}
-                {bookingState.serviceType === 'cabelo'
-                  ? 'Cabelo'
-                  : bookingState.serviceType === 'barba'
-                  ? 'Barba'
-                  : 'Cabelo + Barba'}
+                {SERVICE_LABELS[bookingState.serviceType ?? ''] || bookingState.serviceType}
               </p>
               <p>
                 <span className="font-medium">Barbeiro:</span>{' '}

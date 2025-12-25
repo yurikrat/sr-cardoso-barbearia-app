@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export const serviceTypeSchema = z.enum(['cabelo', 'barba', 'cabelo_barba']);
+// Catálogo de serviços é dinâmico (ids como "cabelo", "barba", "cabelo_barba", etc.)
+export const serviceTypeSchema = z
+  .string()
+  .min(1)
+  .max(31)
+  .regex(/^[a-z0-9][a-z0-9_-]{0,30}$/, 'serviceType inválido');
 
 export const bookingStatusSchema = z.enum([
   'booked',

@@ -160,11 +160,30 @@ export const api = {
         revenueCents: number;
         estimatedRevenueCents?: number;
         realizedRevenueCents?: number;
+        estimatedBarberCents?: number;
+        estimatedShopCents?: number;
+        realizedBarberCents?: number;
+        realizedShopCents?: number;
+        commissions?: { defaultBarberPct: number; ownerBarberPct: number };
         projectionRevenueCents?: number | null;
         countsByServiceType: Record<string, number>;
         countsByStatus: Record<string, number>;
-        pricingCents: { cabelo: number; barba: number; cabelo_barba: number };
+        serviceCatalog?: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>;
       }>(`/api/admin/finance/summary?${params.toString()}`, { admin: true });
+    },
+
+    async getFinanceConfig() {
+      return apiFetch<{ config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> } }>(
+        `/api/admin/finance/config`,
+        { admin: true }
+      );
+    },
+
+    async saveFinanceConfig(payload: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> }) {
+      return apiFetch<{ success: boolean; config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> } }>(
+        `/api/admin/finance/config`,
+        { method: 'PUT', admin: true, body: JSON.stringify(payload) }
+      );
     },
     async blockSlots(payload: { barberId: string; startTime: string; endTime: string; reason: string }) {
       return apiFetch<{ success: boolean }>(`/api/admin/blocks`, {
@@ -248,6 +267,10 @@ export const api = {
     logout() {
       setAdminToken(null);
     },
+  },
+
+  async services() {
+    return apiFetch<{ items: Array<{ id: string; label: string; priceCents: number }> }>(`/api/services`);
   },
 
   async availability(barberId: string, dateKey: string) {

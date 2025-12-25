@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBookingState } from '@/contexts/BookingContext';
@@ -6,11 +7,36 @@ import { generateGoogleCalendarUrl } from '@/utils/calendar-ics';
 import { BARBERS, BARBERSHOP_WHATSAPP_E164, SERVICE_LABELS } from '@/utils/constants';
 import { generateWhatsAppDeepLink } from '@/utils/whatsapp';
 import { formatDate, formatTime } from '@/utils/dates';
+import { api } from '@/lib/api';
 
 export default function SuccessPage() {
   const bookingState = useBookingState();
   const [searchParams] = useSearchParams();
   const bookingId = searchParams.get('bookingId');
+
+  const [serviceLabel, setServiceLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const serviceType = bookingState.serviceType;
+    if (!serviceType) {
+      setServiceLabel(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const data = await api.services();
+        if (cancelled) return;
+        const match = (data.items ?? []).find((s) => s.id === serviceType);
+        setServiceLabel(match?.label ?? null);
+      } catch {
+        if (!cancelled) setServiceLabel(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingState.serviceType]);
 
   const canUseActions =
     !!bookingState.serviceType &&
@@ -32,7 +58,8 @@ export default function SuccessPage() {
       bookingState.serviceType!,
       barberName,
       bookingState.selectedSlot!,
-      customerName
+      customerName,
+      serviceLabel || undefined
     );
   })();
 
@@ -56,7 +83,7 @@ export default function SuccessPage() {
 
   const barbershopWhatsAppUrl = (() => {
     if (!canUseActions) return null;
-    const serviceLabel = SERVICE_LABELS[bookingState.serviceType!] || bookingState.serviceType!;
+    const resolvedServiceLabel = serviceLabel || SERVICE_LABELS[bookingState.serviceType!] || bookingState.serviceType!;
     const dateStr = formatDate(bookingState.selectedSlot!);
     const timeStr = formatTime(bookingState.selectedSlot!);
     const customerWhatsApp = bookingState.customerData!.whatsapp;
@@ -80,7 +107,7 @@ export default function SuccessPage() {
     lines.push('');
     lines.push(`Cliente: ${customerName}`);
     lines.push(`WhatsApp: ${customerWhatsApp}`);
-    lines.push(`Serviço: ${serviceLabel}`);
+    lines.push(`Serviço: ${resolvedServiceLabel}`);
     lines.push(`Barbeiro: ${barberName}`);
     lines.push(`Quando: ${dateStr} às ${timeStr}`);
 

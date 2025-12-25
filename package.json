@@ -11,7 +11,7 @@
     "dev": "npm run dev --workspace=apps/web",
     "dev:server": "npm run dev --workspace=apps/server",
     "build": "npm run build --workspaces --if-present",
-    "build:web": "npm run build --workspace=apps/web",
+    "build:web": "npm run build:shared && npm run build --workspace=apps/web",
     "build:functions": "npm run build --workspace=apps/functions",
     "build:server": "npm run build --workspace=apps/server",
     "build:shared": "npm run build --workspace=packages/shared",

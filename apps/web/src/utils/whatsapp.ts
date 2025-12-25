@@ -1,24 +1,19 @@
-import type { ServiceType } from '@sr-cardoso/shared';
 import { DateTime } from 'luxon';
 import { formatDate, formatTime } from './dates';
-
-const SERVICE_LABELS: Record<ServiceType, string> = {
-  cabelo: 'Corte de Cabelo',
-  barba: 'Barba',
-  cabelo_barba: 'Corte de Cabelo + Barba',
-};
+import { SERVICE_LABELS } from './constants';
 
 /**
  * Gera mensagem de confirmação de agendamento
  */
 export function generateBookingConfirmationMessage(
   customerName: string,
-  serviceType: ServiceType,
+  serviceType: string,
   barberName: string,
   slotStart: DateTime,
-  address?: string
+  address?: string,
+  serviceLabelOverride?: string
 ): string {
-  const serviceLabel = SERVICE_LABELS[serviceType];
+  const serviceLabel = serviceLabelOverride || SERVICE_LABELS[serviceType] || serviceType;
   const dateStr = formatDate(slotStart);
   const timeStr = formatTime(slotStart);
   const addressStr = address || 'Barbearia Sr. Cardoso';

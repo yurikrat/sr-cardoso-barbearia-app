@@ -10,7 +10,6 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
-import type { ServiceType } from '@sr-cardoso/shared';
 import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/components/ui/use-toast';
 import { adminCancelBookingFn, adminMarkWhatsappSentFn } from '@/lib/firebase';
@@ -19,6 +18,7 @@ import { generateBookingConfirmationMessage, generateWhatsAppDeepLink } from '@/
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { debugLog } from '@/utils/debugLog';
 import { useSearchParams } from 'react-router-dom';
+import { SERVICE_LABELS } from '@/utils/constants';
 
 const TIME_SLOTS = Array.from({ length: 22 }, (_, i) => {
   const hour = 8 + Math.floor(i / 2);
@@ -291,7 +291,7 @@ export default function AgendaDayPage() {
     
     const message = generateBookingConfirmationMessage(
       customerName,
-      booking.serviceType as ServiceType,
+      booking.serviceType,
       barberName,
       slotStart
     );
@@ -452,11 +452,7 @@ export default function AgendaDayPage() {
                                               {booking.customer.firstName} {booking.customer.lastName}
                                             </div>
                                             <div className="truncate text-xs text-muted-foreground">
-                                              {booking.serviceType === 'cabelo'
-                                                ? 'Cabelo'
-                                                : booking.serviceType === 'barba'
-                                                ? 'Barba'
-                                                : 'Cabelo + Barba'}
+                                              {SERVICE_LABELS[booking.serviceType] || booking.serviceType}
                                             </div>
                                           </div>
 
@@ -530,11 +526,7 @@ export default function AgendaDayPage() {
               <div className="space-y-2 text-sm">
                 <p>
                   <span className="font-medium">Serviço:</span>{' '}
-                  {selectedBooking.serviceType === 'cabelo'
-                    ? 'Cabelo'
-                    : selectedBooking.serviceType === 'barba'
-                    ? 'Barba'
-                    : 'Cabelo + Barba'}
+                  {SERVICE_LABELS[selectedBooking.serviceType] || selectedBooking.serviceType}
                 </p>
                 <p>
                   <span className="font-medium">Horário:</span>{' '}
