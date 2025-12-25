@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound } from 'lucide-react';
@@ -12,7 +12,6 @@ interface AdminLayoutProps {
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
 
   type Role = 'master' | 'barber';
 
@@ -48,7 +47,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/admin/login', { replace: true });
+    // Garante logout imediato (sem depender de re-render do SPA)
+    window.location.replace('/admin/login');
   };
 
   return (
