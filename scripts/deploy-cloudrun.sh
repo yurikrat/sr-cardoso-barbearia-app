@@ -29,6 +29,7 @@ IMAGE_TAG=""
 ADMIN_PASSWORD=""
 ADMIN_JWT_SECRET=""
 WEB_ORIGIN=""
+SETUP=false
 
 die() { echo "Erro: $*" >&2; exit 1; }
 
@@ -42,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
     --admin-jwt-secret) ADMIN_JWT_SECRET="${2:-}"; shift 2 ;;
     --web-origin) WEB_ORIGIN="${2:-}"; shift 2 ;;
+    --setup) SETUP=true; shift ;;
     -h|--help) sed -n '1,120p' "$0"; exit 0 ;;
     *) die "flag desconhecida: $1" ;;
   esac
@@ -71,21 +73,23 @@ command -v docker >/dev/null 2>&1 || die "docker não encontrado"
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
-echo "== Habilitando APIs necessárias (idempotente) =="
-gcloud services enable \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  firestore.googleapis.com \
-  cloudresourcemanager.googleapis.com \
-  iam.googleapis.com \
-  >/dev/null
+if [ "$SETUP" = true ]; then
+  echo "== [SETUP] Habilitando APIs necessárias =="
+  gcloud services enable \
+    run.googleapis.com \
+    artifactregistry.googleapis.com \
+    firestore.googleapis.com \
+    cloudresourcemanager.googleapis.com \
+    iam.googleapis.com \
+    >/dev/null
 
-echo "== Garantindo Artifact Registry repo (idempotente) =="
-if ! gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" >/dev/null 2>&1; then
-  gcloud artifacts repositories create "$AR_REPO" \
-    --repository-format=docker \
-    --location="$REGION" \
-    --description="Sr Cardoso - Docker images" >/dev/null
+  echo "== [SETUP] Garantindo Artifact Registry repo =="
+  if ! gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" >/dev/null 2>&1; then
+    gcloud artifacts repositories create "$AR_REPO" \
+      --repository-format=docker \
+      --location="$REGION" \
+      --description="Sr Cardoso - Docker images" >/dev/null
+  fi
 fi
 
 echo "== Configurando docker auth para Artifact Registry =="
@@ -122,19 +126,22 @@ docker buildx build \
   --push \
   .
 
-echo "== Service Account dedicada (idempotente) =="
 SA_NAME="${SERVICE_NAME}-run"
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-if ! gcloud iam service-accounts describe "$SA_EMAIL" >/dev/null 2>&1; then
-  gcloud iam service-accounts create "$SA_NAME" \
-    --display-name="Cloud Run SA - ${SERVICE_NAME}" >/dev/null
-fi
 
-echo "== Permissões Firestore (IAM) para a SA (idempotente) =="
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/datastore.user" \
-  --quiet >/dev/null
+if [ "$SETUP" = true ]; then
+  echo "== [SETUP] Service Account dedicada =="
+  if ! gcloud iam service-accounts describe "$SA_EMAIL" >/dev/null 2>&1; then
+    gcloud iam service-accounts create "$SA_NAME" \
+      --display-name="Cloud Run SA - ${SERVICE_NAME}" >/dev/null
+  fi
+
+  echo "== [SETUP] Permissões Firestore (IAM) para a SA =="
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/datastore.user" \
+    --quiet >/dev/null
+fi
 
 echo "== Deploy Cloud Run =="
 # Se as senhas foram passadas via flag, atualizamos as env vars (literal).
