@@ -53,8 +53,9 @@ export default function HomePage() {
         <Link
           to="/admin/login"
           className="block text-center text-[10px] text-muted-foreground/50 hover:text-muted-foreground hover:underline"
+          aria-label="Área Administrativa"
         >
-          Área administrativa para os barbeiros e Sr. Cardoso
+          Área Administrativa
         </Link>
       </div>
     </div>
