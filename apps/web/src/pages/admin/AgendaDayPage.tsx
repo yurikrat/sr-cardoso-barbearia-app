@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,6 +39,9 @@ interface Booking {
   whatsappStatus: string;
 }
 
+const SLOT_MINUTES = 30;
+const GRID_ROW_PX = 44;
+
 function formatBookingStatusPtBr(status: string) {
   switch (status) {
     case 'booked':
@@ -69,6 +72,48 @@ export default function AgendaDayPage() {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
 
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
+  const selectedDateLabel = useMemo(() => {
+    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' })
+      .setLocale('pt-BR')
+      .toFormat("cccc, dd 'de' LLLL 'de' yyyy");
+  }, [selectedDate]);
+
+  const dayStart = useMemo(() => {
+    const [h, m] = TIME_SLOTS[0].split(':').map(Number);
+    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({ hour: h, minute: m, second: 0, millisecond: 0 });
+  }, [selectedDate]);
+
+  const dayEnd = useMemo(() => {
+    const [h, m] = TIME_SLOTS[TIME_SLOTS.length - 1].split(':').map(Number);
+    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' })
+      .set({ hour: h, minute: m, second: 0, millisecond: 0 })
+      .plus({ minutes: SLOT_MINUTES });
+  }, [selectedDate]);
+
+  const nowLineTopPx = useMemo(() => {
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const sameDay = now.toFormat('yyyy-MM-dd') === dateKey;
+    if (!sameDay) return null;
+    if (now < dayStart || now > dayEnd) return null;
+    const minutesFromStart = Math.max(0, now.diff(dayStart, 'minutes').minutes);
+    return (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+  }, [dateKey, dayStart, dayEnd]);
+
+  const events = useMemo(() => {
+    const items = Object.values(bookings)
+      .filter((b) => Boolean(b?.id))
+      .map((b) => {
+        const start = DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' });
+        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
+        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+        const heightPx = GRID_ROW_PX; // 30min por slot
+        return { booking: b, topPx, heightPx };
+      })
+      .filter((e) => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX)
+      .sort((a, b) => a.topPx - b.topPx);
+
+    return items;
+  }, [bookings, dayStart]);
 
   useEffect(() => {
     void (async () => {
@@ -261,8 +306,41 @@ export default function AgendaDayPage() {
       <div className="space-y-4">
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-0.5">
+                <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
+                <div className="text-sm text-muted-foreground capitalize">{selectedDateLabel}</div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const prev = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).minus({ days: 1 }).toJSDate();
+                    setSelectedDate(prev);
+                  }}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const today = DateTime.now().setZone('America/Sao_Paulo').startOf('day').toJSDate();
+                    setSelectedDate(today);
+                  }}
+                >
+                  Hoje
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const next = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).plus({ days: 1 }).toJSDate();
+                    setSelectedDate(next);
+                  }}
+                >
+                  Próximo
+                </Button>
+              </div>
             </div>
 
             <div className="w-full overflow-x-auto">
@@ -287,76 +365,128 @@ export default function AgendaDayPage() {
                   ) : (
                     <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
                       <CardContent className="p-0">
-                        <div className="divide-y">
-                          {TIME_SLOTS.map((time) => {
-                            const booking = bookings[time];
-                            const clickable = Boolean(booking);
-
-                            return (
-                              <div
-                                key={time}
-                                className={
-                                  'grid grid-cols-[72px_1fr_auto] items-center gap-3 px-3 py-2 ' +
-                                  (clickable
-                                    ? 'cursor-pointer hover:bg-accent/40 transition-colors'
-                                    : 'text-muted-foreground')
-                                }
-                                onClick={() => booking && setSelectedBooking(booking)}
-                                role={clickable ? 'button' : undefined}
-                                tabIndex={clickable ? 0 : -1}
-                                onKeyDown={(e) => {
-                                  if (!booking) return;
-                                  if (e.key === 'Enter' || e.key === ' ') setSelectedBooking(booking);
-                                }}
-                              >
-                                <span className="font-mono text-sm font-semibold tabular-nums text-foreground/80">
-                                  {time}
-                                </span>
-
-                                <div className="min-w-0">
-                                  {booking ? (
-                                    <div className="min-w-0">
-                                      <div className="font-medium truncate">
-                                        {booking.customer.firstName} {booking.customer.lastName}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground truncate">
-                                        {booking.serviceType === 'cabelo'
-                                          ? 'Cabelo'
-                                          : booking.serviceType === 'barba'
-                                          ? 'Barba'
-                                          : 'Cabelo + Barba'}
+                        <div className="border-t border-border/60">
+                          <div className="max-h-[70vh] overflow-y-auto">
+                            <div className="grid grid-cols-[80px_1fr]">
+                              {/* Coluna de horários */}
+                              <div className="bg-background/40">
+                                {TIME_SLOTS.map((time) => {
+                                  const [h, m] = time.split(':').map(Number);
+                                  const showLabel = m === 0;
+                                  return (
+                                    <div
+                                      key={time}
+                                      className="border-b border-border/60 pr-3"
+                                      style={{ height: GRID_ROW_PX }}
+                                    >
+                                      <div className="h-full flex items-start justify-end pt-1">
+                                        {showLabel ? (
+                                          <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">
+                                            {h.toString().padStart(2, '0')}:00
+                                          </span>
+                                        ) : null}
                                       </div>
                                     </div>
-                                  ) : (
-                                    <span className="text-xs">Livre</span>
-                                  )}
+                                  );
+                                })}
+                              </div>
+
+                              {/* Grade + eventos */}
+                              <div className="relative">
+                                {/* linhas da grade */}
+                                <div aria-hidden className="absolute inset-0">
+                                  {TIME_SLOTS.map((time) => {
+                                    const [, m] = time.split(':').map(Number);
+                                    const isHour = m === 0;
+                                    return (
+                                      <div
+                                        key={time}
+                                        className={
+                                          'border-b ' +
+                                          (isHour ? 'border-border/70' : 'border-border/40')
+                                        }
+                                        style={{ height: GRID_ROW_PX }}
+                                      />
+                                    );
+                                  })}
                                 </div>
 
-                                {booking ? (
-                                  <div className="flex items-center gap-2 justify-end">
-                                    <Badge
-                                      variant={
-                                        booking.status === 'completed' || booking.status === 'confirmed'
-                                          ? 'default'
-                                          : booking.status === 'no_show'
-                                          ? 'destructive'
-                                          : booking.status === 'cancelled'
-                                          ? 'destructive'
-                                          : 'secondary'
-                                      }
-                                    >
-                                      {formatBookingStatusPtBr(booking.status)}
-                                    </Badge>
-                                    {booking.whatsappStatus === 'sent' ? (
-                                      <Badge variant="outline">WhatsApp ✓</Badge>
-                                    ) : null}
+                                {/* indicador de horário atual */}
+                                {nowLineTopPx != null ? (
+                                  <div
+                                    className="absolute left-0 right-0"
+                                    style={{ top: nowLineTopPx }}
+                                    aria-label="Horário atual"
+                                  >
+                                    <div className="relative">
+                                      <div className="absolute -left-1 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-destructive" />
+                                      <div className="h-px bg-destructive" />
+                                    </div>
                                   </div>
-                                ) : (
-                                  <div />
-                                )}
+                                ) : null}
+
+                                {/* eventos */}
+                                <div
+                                  className="relative"
+                                  style={{ height: TIME_SLOTS.length * GRID_ROW_PX }}
+                                >
+                                  {events.map(({ booking, topPx, heightPx }) => {
+                                    const isBad = booking.status === 'no_show' || booking.status === 'cancelled';
+                                    const containerClass =
+                                      'absolute left-2 right-2 rounded-md border px-2 py-1.5 text-left shadow-sm ' +
+                                      (isBad
+                                        ? 'bg-destructive/10 border-destructive/20'
+                                        : 'bg-primary/10 border-primary/20');
+
+                                    return (
+                                      <button
+                                        key={booking.id}
+                                        type="button"
+                                        className={containerClass}
+                                        style={{ top: topPx, height: heightPx - 6 }}
+                                        onClick={() => setSelectedBooking(booking)}
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <div className="truncate text-sm font-medium">
+                                              {booking.customer.firstName} {booking.customer.lastName}
+                                            </div>
+                                            <div className="truncate text-xs text-muted-foreground">
+                                              {booking.serviceType === 'cabelo'
+                                                ? 'Cabelo'
+                                                : booking.serviceType === 'barba'
+                                                ? 'Barba'
+                                                : 'Cabelo + Barba'}
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2">
+                                            <Badge
+                                              variant={
+                                                booking.status === 'completed' || booking.status === 'confirmed'
+                                                  ? 'default'
+                                                  : booking.status === 'no_show' || booking.status === 'cancelled'
+                                                  ? 'destructive'
+                                                  : 'secondary'
+                                              }
+                                              className="shrink-0"
+                                            >
+                                              {formatBookingStatusPtBr(booking.status)}
+                                            </Badge>
+                                            {booking.whatsappStatus === 'sent' ? (
+                                              <Badge variant="outline" className="shrink-0">
+                                                WhatsApp ✓
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            );
-                          })}
+                            </div>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -429,14 +559,22 @@ export default function AgendaDayPage() {
                 <Button
                   variant="secondary"
                   onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'completed' })}
-                  disabled={setStatusMutation.isPending || selectedBooking.status === 'completed'}
+                  disabled={
+                    setStatusMutation.isPending ||
+                    selectedBooking.status === 'completed' ||
+                    selectedBooking.status === 'cancelled'
+                  }
                 >
                   Concluir
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'no_show' })}
-                  disabled={setStatusMutation.isPending || selectedBooking.status === 'no_show'}
+                  disabled={
+                    setStatusMutation.isPending ||
+                    selectedBooking.status === 'no_show' ||
+                    selectedBooking.status === 'cancelled'
+                  }
                 >
                   Falta
                 </Button>

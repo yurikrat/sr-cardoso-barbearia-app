@@ -8,14 +8,30 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const claims = api.admin.getClaims();
-    setUser(claims ? { role: claims.role, barberId: claims.barberId ?? null, username: claims.username } : null);
-    setLoading(false);
+    const syncFromToken = () => {
+      const claims = api.admin.getClaims();
+      setUser(claims ? { role: claims.role, barberId: claims.barberId ?? null, username: claims.username } : null);
+      setLoading(false);
+    };
+
+    syncFromToken();
+
+    const onTokenChanged = () => syncFromToken();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'sr_admin_token') syncFromToken();
+    };
+
+    window.addEventListener('sr_admin_token_changed', onTokenChanged as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('sr_admin_token_changed', onTokenChanged as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   const logout = async () => {
     api.admin.logout();
-    setUser(null);
+    // state will sync via sr_admin_token_changed
   };
 
   return { user, loading, logout };

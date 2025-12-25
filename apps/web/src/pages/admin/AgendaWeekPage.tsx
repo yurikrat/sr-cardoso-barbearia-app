@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -22,8 +23,17 @@ export default function AgendaWeekPage() {
       try {
         const { items } = await api.admin.listBarbers();
         const normalized = (items ?? []).map((b) => ({ id: b.id, name: b.name }));
-        setBarbers(normalized);
-        setSelectedBarber(normalized[0]?.id ?? '');
+        const sorted = [...normalized].sort((a, b) => {
+          const aIsOwner = a.id === 'sr-cardoso';
+          const bIsOwner = b.id === 'sr-cardoso';
+          if (aIsOwner && !bIsOwner) return -1;
+          if (!aIsOwner && bIsOwner) return 1;
+          return a.name.localeCompare(b.name, 'pt-BR');
+        });
+        setBarbers(sorted);
+
+        const nextBarber = sorted.find((b) => b.id === 'sr-cardoso')?.id ?? sorted[0]?.id ?? '';
+        setSelectedBarber(nextBarber);
       } catch {
         setBarbers([]);
         setSelectedBarber('sr-cardoso');
@@ -40,9 +50,9 @@ export default function AgendaWeekPage() {
   const loadWeekData = async () => {
     setLoading(true);
     try {
-      const today = DateTime.now().setZone('America/Sao_Paulo');
-      const weekStart = today.startOf('week'); // Segunda-feira
-      
+      const today = DateTime.now().setZone('America/Sao_Paulo').setLocale('pt-BR');
+      const weekStart = today.startOf('week');
+
       const startKey = weekStart.toFormat('yyyy-MM-dd');
       const { items } = await api.admin.weekSummary(selectedBarber, startKey, 6);
       setWeekData(items);
@@ -60,7 +70,7 @@ export default function AgendaWeekPage() {
 
   const getDayName = (dateKey: string) => {
     const date = DateTime.fromFormat(dateKey, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' });
-    return date.toFormat('EEE, dd/MM', { locale: 'pt-BR' });
+    return date.setLocale('pt-BR').toFormat('EEE, dd/MM');
   };
 
   const getDayColor = (bookings: number, blocks: number) => {
@@ -70,7 +80,7 @@ export default function AgendaWeekPage() {
     return 'bg-secondary';
   };
 
-  const today = DateTime.now().setZone('America/Sao_Paulo');
+  const today = DateTime.now().setZone('America/Sao_Paulo').setLocale('pt-BR');
   const weekStart = today.startOf('week');
   const weekDays = Array.from({ length: 6 }, (_, i) => {
     const day = weekStart.plus({ days: i });
@@ -80,24 +90,23 @@ export default function AgendaWeekPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <h2 className="text-2xl font-serif font-bold">Agenda da Semana</h2>
-          <button
-            onClick={() => navigate('/admin/agenda')}
-            className="text-sm text-primary hover:underline"
-          >
-            Ver agenda do dia →
-          </button>
+          <Button variant="outline" onClick={() => navigate('/admin/agenda')}>
+            Ver agenda do dia
+          </Button>
         </div>
 
         <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
-          <TabsList>
-            {barbers.map((barber) => (
-              <TabsTrigger key={barber.id} value={barber.id}>
-                {barber.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <div className="w-full overflow-x-auto">
+            <TabsList className="w-max min-w-full justify-start flex-nowrap">
+              {barbers.map((barber) => (
+                <TabsTrigger key={barber.id} value={barber.id} className="whitespace-nowrap">
+                  {barber.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
           {barbers.map((barber) => (
             <TabsContent key={barber.id} value={barber.id} className="space-y-4">
@@ -114,7 +123,7 @@ export default function AgendaWeekPage() {
                     return (
                       <Card
                         key={dateKey}
-                        className={`cursor-pointer hover:bg-accent transition-colors ${
+                        className={`cursor-pointer border-primary/10 bg-card/50 backdrop-blur-sm hover:bg-accent/40 transition-colors ${
                           isToday ? 'ring-2 ring-primary' : ''
                         }`}
                         onClick={() => {

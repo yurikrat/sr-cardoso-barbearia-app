@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound } from 'lucide-react';
@@ -12,6 +12,7 @@ interface AdminLayoutProps {
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   type Role = 'master' | 'barber';
 
@@ -45,6 +46,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     }
   };
 
+  const handleLogout = async () => {
+    await logout();
+    navigate('/admin/login', { replace: true });
+  };
+
   return (
     <div className="min-h-[100dvh] bg-background bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed safe-top-p4 safe-bottom-p4 overflow-x-hidden">
       <header className="border-b border-primary/10 bg-card/50 backdrop-blur-md">
@@ -72,7 +78,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             >
               Alterar senha
             </Button>
-            <Button variant="ghost" size="sm" onClick={logout} className="hover:bg-primary/10 hover:text-primary">
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="hover:bg-primary/10 hover:text-primary">
               <LogOut className="h-4 w-4 mr-2" />
               Sair
             </Button>

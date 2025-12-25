@@ -18,6 +18,13 @@ function setAdminToken(token: string | null) {
   } catch {
     // ignore
   }
+
+  // Notify in-app listeners (same-tab) that auth changed.
+  try {
+    window.dispatchEvent(new Event('sr_admin_token_changed'));
+  } catch {
+    // ignore
+  }
 }
 
 function decodeJwtClaims(token: string | null): { role: 'master' | 'barber'; username: string; barberId?: string | null } | null {
@@ -58,6 +65,10 @@ async function apiFetch<T>(
   const json = text ? (JSON.parse(text) as unknown) : null;
 
   if (!res.ok) {
+    if (init?.admin && res.status === 401) {
+      // Token inválido/expirado -> força logout local.
+      setAdminToken(null);
+    }
     const msg =
       (json as ApiError | null)?.error ||
       `Erro HTTP ${res.status}`;
