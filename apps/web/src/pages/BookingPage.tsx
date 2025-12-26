@@ -22,6 +22,9 @@ import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
 import { api } from '@/lib/api';
 import { BARBERS, SERVICE_LABELS } from '@/utils/constants';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+
+const REMEMBERED_CUSTOMER_KEY = 'sr_remembered_customer';
 
 export default function BookingPage() {
   const navigate = useNavigate();
@@ -44,7 +47,19 @@ export default function BookingPage() {
     firstName: '',
     lastName: '',
     whatsapp: '',
+    birthDate: '',
   });
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [isReturningCustomer, setIsReturningCustomer] = useState(false);
+  const [showBirthDateField, setShowBirthDateField] = useState(true);
+
+  const [rememberedCustomer, setRememberedCustomer] = useLocalStorage<{
+    firstName: string;
+    lastName: string;
+    whatsapp: string;
+  } | null>(REMEMBERED_CUSTOMER_KEY, null);
+
+  const [isBookingForSomeoneElse, setIsBookingForSomeoneElse] = useState(false);
 
   const didInitRef = useRef(false);
 
@@ -58,8 +73,22 @@ export default function BookingPage() {
     setAvailableSlots([]);
     setBookedSlots(new Set());
     setBlockedSlots(new Set());
-    setCustomerForm({ firstName: '', lastName: '', whatsapp: '' });
-  }, [clearBooking]);
+    
+    if (rememberedCustomer) {
+      setCustomerForm({
+        firstName: rememberedCustomer.firstName,
+        lastName: rememberedCustomer.lastName,
+        whatsapp: rememberedCustomer.whatsapp,
+        birthDate: '',
+      });
+      setIsReturningCustomer(true);
+      setShowBirthDateField(false);
+    } else {
+      setCustomerForm({ firstName: '', lastName: '', whatsapp: '', birthDate: '' });
+      setIsReturningCustomer(false);
+      setShowBirthDateField(true);
+    }
+  }, [clearBooking, rememberedCustomer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +186,32 @@ export default function BookingPage() {
   }, [bookingState.barberId, selectedDate, loadAvailableSlots]);
   type CreateBookingResponse = { success: boolean; bookingId: string; cancelCode?: string | null; message?: string };
 
+  const handlePhoneLookup = async (phone: string) => {
+    const normalized = normalizeToE164(phone);
+    if (!isValidBrazilianPhone(normalized)) return;
+
+    setLookupLoading(true);
+    try {
+      const result = await api.lookupCustomer(normalized);
+      if (result.found) {
+        setIsReturningCustomer(true);
+        setCustomerForm(prev => ({
+          ...prev,
+          firstName: result.firstName || '',
+          lastName: result.lastNameInitial ? `${result.lastNameInitial}.` : '',
+        }));
+        setShowBirthDateField(!result.hasBirthDate);
+      } else {
+        setIsReturningCustomer(false);
+        setShowBirthDateField(true);
+      }
+    } catch (error) {
+      console.error('Error looking up customer:', error);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   const createBookingMutation = useMutation({
     mutationFn: async (data: {
       barberId: string;
@@ -166,12 +221,20 @@ export default function BookingPage() {
         firstName: string;
         lastName: string;
         whatsapp: string;
+        birthDate?: string;
       };
     }) => {
       const result = await createBookingFn(data);
       return result.data as CreateBookingResponse;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      if (!isBookingForSomeoneElse) {
+        setRememberedCustomer({
+          firstName: variables.customer.firstName,
+          lastName: variables.customer.lastName,
+          whatsapp: variables.customer.whatsapp,
+        });
+      }
       bookingState.setCancelCode(data.cancelCode ?? null);
       navigate(`/sucesso?bookingId=${data.bookingId}`);
     },
@@ -250,28 +313,39 @@ export default function BookingPage() {
     }
 
     // Validações
-    if (!isValidName(customerForm.firstName)) {
-      toast({
-        title: 'Erro',
-        description: 'Por favor, insira um nome válido (mínimo 2 caracteres).',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (!isReturningCustomer) {
+      if (!isValidName(customerForm.firstName)) {
+        toast({
+          title: 'Erro',
+          description: 'Por favor, insira um nome válido (mínimo 2 caracteres).',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-    if (!isValidName(customerForm.lastName)) {
-      toast({
-        title: 'Erro',
-        description: 'Por favor, insira um sobrenome válido (mínimo 2 caracteres).',
-        variant: 'destructive',
-      });
-      return;
+      if (!isValidName(customerForm.lastName)) {
+        toast({
+          title: 'Erro',
+          description: 'Por favor, insira um sobrenome válido (mínimo 2 caracteres).',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     if (!isValidBrazilianPhone(customerForm.whatsapp)) {
       toast({
         title: 'Erro',
         description: 'Por favor, insira um número de WhatsApp válido.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (showBirthDateField && !customerForm.birthDate) {
+      toast({
+        title: 'Erro',
+        description: 'Por favor, insira sua data de nascimento.',
         variant: 'destructive',
       });
       return;
@@ -314,6 +388,7 @@ export default function BookingPage() {
           firstName: customerForm.firstName.trim(),
           lastName: customerForm.lastName.trim(),
           whatsapp: whatsappE164,
+          birthDate: customerForm.birthDate || undefined,
         },
       });
     } catch (error: unknown) {
@@ -490,57 +565,151 @@ export default function BookingPage() {
             className="space-y-4"
           >
             <h2 className="text-lg font-semibold">Seus dados</h2>
+            
+            {(isReturningCustomer || isBookingForSomeoneElse) && (
+              <div className="flex items-center justify-between bg-accent/30 p-3 rounded-lg border border-accent/50 animate-in fade-in slide-in-from-top-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="booking-for-someone" className="text-sm font-medium cursor-pointer">
+                    Agendar para outra pessoa?
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Ative se o serviço não for para você.
+                  </p>
+                </div>
+                <input
+                  id="booking-for-someone"
+                  type="checkbox"
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                  checked={isBookingForSomeoneElse}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsBookingForSomeoneElse(checked);
+                    if (checked) {
+                      setCustomerForm({ firstName: '', lastName: '', whatsapp: '', birthDate: '' });
+                      setIsReturningCustomer(false);
+                      setShowBirthDateField(true);
+                    } else if (rememberedCustomer) {
+                      setCustomerForm({
+                        firstName: rememberedCustomer.firstName,
+                        lastName: rememberedCustomer.lastName,
+                        whatsapp: rememberedCustomer.whatsapp,
+                        birthDate: '',
+                      });
+                      setIsReturningCustomer(true);
+                      setShowBirthDateField(false);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
-                <Label htmlFor="firstName">Nome</Label>
-                <Input
-                  id="firstName"
-                  type="text"
-                  autoComplete="given-name"
-                  value={customerForm.firstName}
-                  onChange={(e) =>
-                    setCustomerForm({ ...customerForm, firstName: e.target.value })
-                  }
-                  required
-                  minLength={2}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="lastName">Sobrenome</Label>
-                <Input
-                  id="lastName"
-                  type="text"
-                  autoComplete="family-name"
-                  value={customerForm.lastName}
-                  onChange={(e) =>
-                    setCustomerForm({ ...customerForm, lastName: e.target.value })
-                  }
-                  required
-                  minLength={2}
-                  className="mt-1"
-                />
-              </div>
-              <div>
                 <Label htmlFor="whatsapp">WhatsApp</Label>
-                <Input
-                  id="whatsapp"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={customerForm.whatsapp}
-                  onChange={(e) => {
-                    const masked = applyPhoneMask(e.target.value);
-                    setCustomerForm({ ...customerForm, whatsapp: masked });
-                  }}
-                  placeholder="Seu WhatsApp"
-                  required
-                  className="mt-1"
-                />
+                <div className="relative">
+                  <Input
+                    id="whatsapp"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={customerForm.whatsapp}
+                    onChange={(e) => {
+                      const masked = applyPhoneMask(e.target.value);
+                      setCustomerForm({ ...customerForm, whatsapp: masked });
+                      if (masked.length >= 14) {
+                        handlePhoneLookup(masked);
+                      }
+                    }}
+                    placeholder="(00) 00000-0000"
+                    required
+                    className="mt-1"
+                  />
+                  {lookupLoading && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <LoadingSpinner />
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {isReturningCustomer ? (
+                <div className="bg-accent/50 p-4 rounded-lg border border-accent animate-in fade-in slide-in-from-top-2">
+                  <p className="text-sm text-muted-foreground">
+                    {rememberedCustomer && !isBookingForSomeoneElse ? 'Que bom te ver de novo!' : 'Olá novamente!'}
+                  </p>
+                  <p className="font-medium text-lg">
+                    {customerForm.firstName} {customerForm.lastName}
+                  </p>
+                  <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="p-0 h-auto text-xs"
+                    onClick={() => {
+                      setIsReturningCustomer(false);
+                      setCustomerForm({ ...customerForm, firstName: '', lastName: '', birthDate: '' });
+                      setShowBirthDateField(true);
+                      setRememberedCustomer(null);
+                    }}
+                  >
+                    Não é você? Clique aqui
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                  <div>
+                    <Label htmlFor="firstName">Nome</Label>
+                    <Input
+                      id="firstName"
+                      type="text"
+                      autoComplete="given-name"
+                      value={customerForm.firstName}
+                      onChange={(e) =>
+                        setCustomerForm({ ...customerForm, firstName: e.target.value })
+                      }
+                      required
+                      minLength={2}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Sobrenome</Label>
+                    <Input
+                      id="lastName"
+                      type="text"
+                      autoComplete="family-name"
+                      value={customerForm.lastName}
+                      onChange={(e) =>
+                        setCustomerForm({ ...customerForm, lastName: e.target.value })
+                      }
+                      required
+                      minLength={2}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {showBirthDateField && (
+                <div className="animate-in fade-in slide-in-from-top-2">
+                  <Label htmlFor="birthDate">Data de Nascimento</Label>
+                  <Input
+                    id="birthDate"
+                    type="date"
+                    value={customerForm.birthDate}
+                    onChange={(e) =>
+                      setCustomerForm({ ...customerForm, birthDate: e.target.value })
+                    }
+                    required
+                    className="mt-1"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Pedimos apenas uma vez para te dar mimos no seu aniversário!
+                  </p>
+                </div>
+              )}
             </div>
             <StickyFooter>
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" disabled={lookupLoading}>
                 Continuar
               </Button>
             </StickyFooter>

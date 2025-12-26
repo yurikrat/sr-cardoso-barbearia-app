@@ -153,7 +153,9 @@ export const createBooking = functions.https.onCall(
             lastName: validated.customer.lastName,
             whatsappE164,
           },
-          profile: {},
+          profile: {
+            birthday: validated.customer.birthDate || null,
+          },
           consent: {
             marketingOptIn: false,
           },
@@ -167,12 +169,18 @@ export const createBooking = functions.https.onCall(
         });
       } else {
         // Atualizar customer existente
-        transaction.update(customerRef, {
+        const updates: Record<string, any> = {
           'identity.firstName': validated.customer.firstName,
           'identity.lastName': validated.customer.lastName,
           'stats.lastBookingAt': now,
           'stats.totalBookings': admin.firestore.FieldValue.increment(1),
-        });
+        };
+
+        if (validated.customer.birthDate) {
+          updates['profile.birthday'] = validated.customer.birthDate;
+        }
+
+        transaction.update(customerRef, updates);
       }
       
       return { bookingId, customerId };

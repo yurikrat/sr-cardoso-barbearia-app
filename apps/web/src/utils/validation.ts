@@ -24,8 +24,13 @@ export function isValidName(name: string): boolean {
  */
 export function isValidBrazilianPhone(phone: string): boolean {
   // Remove caracteres não numéricos
-  const cleanPhone = phone.replace(/\D/g, '');
+  let cleanPhone = phone.replace(/\D/g, '');
   
+  // Se começar com 55, remove para validar o resto
+  if (cleanPhone.startsWith('55') && cleanPhone.length >= 12) {
+    cleanPhone = cleanPhone.slice(2);
+  }
+
   // Deve ter 10 ou 11 dígitos (fixo ou celular)
   if (cleanPhone.length < 10 || cleanPhone.length > 11) return false;
   

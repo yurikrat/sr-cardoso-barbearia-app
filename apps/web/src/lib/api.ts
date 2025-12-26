@@ -281,11 +281,20 @@ export const api = {
     );
   },
 
+  async lookupCustomer(phone: string) {
+    return apiFetch<{
+      found: boolean;
+      firstName?: string;
+      lastNameInitial?: string;
+      hasBirthDate: boolean;
+    }>(`/api/customers/lookup?phone=${encodeURIComponent(phone)}`);
+  },
+
   async createBooking(payload: {
     barberId: string;
     serviceType: string;
     slotStart: string;
-    customer: { firstName: string; lastName: string; whatsapp: string };
+    customer: { firstName: string; lastName: string; whatsapp: string; birthDate?: string };
   }) {
     return apiFetch<{ success: boolean; bookingId: string; cancelCode?: string | null }>(`/api/bookings`, {
       method: 'POST',

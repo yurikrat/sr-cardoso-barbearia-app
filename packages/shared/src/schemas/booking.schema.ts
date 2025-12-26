@@ -26,6 +26,7 @@ export const createBookingRequestSchema = z.object({
     firstName: z.string().min(2).max(50),
     lastName: z.string().min(2).max(50),
     whatsapp: z.string().min(10), // Será normalizado para E.164
+    birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }),
 });
 

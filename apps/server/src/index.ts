@@ -1294,6 +1294,36 @@ app.post('/api/public/cancel/:cancelCode', async (req, res) => {
   }
 });
 
+app.get('/api/customers/lookup', async (req, res) => {
+  try {
+    const phone = typeof req.query.phone === 'string' ? req.query.phone : null;
+    if (!phone) return res.status(400).json({ error: 'phone é obrigatório' });
+
+    const whatsappE164 = normalizeToE164(phone);
+    const customerId = generateCustomerId(whatsappE164);
+    const customerDoc = await db.collection('customers').doc(customerId).get();
+
+    if (!customerDoc.exists) {
+      return res.json({ found: false, hasBirthDate: false });
+    }
+
+    const data = customerDoc.data() as any;
+    const firstName = data?.identity?.firstName;
+    const lastName = data?.identity?.lastName;
+    const birthDate = data?.profile?.birthday;
+
+    return res.json({
+      found: true,
+      firstName: firstName || undefined,
+      lastNameInitial: lastName ? lastName.charAt(0).toUpperCase() : undefined,
+      hasBirthDate: !!birthDate,
+    });
+  } catch (e) {
+    console.error('Error looking up customer:', e);
+    return res.status(500).json({ error: 'Erro ao buscar cliente' });
+  }
+});
+
 app.post('/api/bookings', async (req, res) => {
   try {
     const validated = createBookingRequestSchema.parse(req.body);
@@ -1374,7 +1404,9 @@ app.post('/api/bookings', async (req, res) => {
             lastName: validated.customer.lastName,
             whatsappE164,
           },
-          profile: {},
+          profile: {
+            birthday: validated.customer.birthDate || null,
+          },
           consent: { marketingOptIn: false },
           stats: {
             firstBookingAt: now,
@@ -1385,12 +1417,22 @@ app.post('/api/bookings', async (req, res) => {
           },
         });
       } else {
-        tx.update(customerRef, {
-          'identity.firstName': validated.customer.firstName,
-          'identity.lastName': validated.customer.lastName,
+        const updates: Record<string, any> = {
           'stats.lastBookingAt': now,
           'stats.totalBookings': FieldValue.increment(1),
-        });
+        };
+
+        // Only update name if it's not an initial (e.g. "S.")
+        const isInitial = validated.customer.lastName.length === 2 && validated.customer.lastName.endsWith('.');
+        if (!isInitial) {
+          updates['identity.firstName'] = validated.customer.firstName;
+          updates['identity.lastName'] = validated.customer.lastName;
+        }
+
+        if (validated.customer.birthDate) {
+          updates['profile.birthday'] = validated.customer.birthDate;
+        }
+        tx.update(customerRef, updates);
       }
     });
 

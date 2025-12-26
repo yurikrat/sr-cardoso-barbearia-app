@@ -181,7 +181,3 @@ gcloud run services describe "$SERVICE_NAME" \
 
 echo ""
 echo "✅ Deploy concluído."
-echo ""
-echo "⚠️  Primeira vez: você ainda precisa garantir os ÍNDICES do Firestore para as queries (veja README)."
-
-
