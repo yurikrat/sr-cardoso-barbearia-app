@@ -39,6 +39,12 @@ interface Booking {
   whatsappStatus: string;
 }
 
+function slotIdToTimeKey(slotId: string): string | null {
+  const m = slotId.match(/^(?:\d{8})_(\d{2})(\d{2})$/);
+  if (!m) return null;
+  return `${m[1]}:${m[2]}`;
+}
+
 const SLOT_MINUTES = 30;
 const GRID_ROW_PX = 44;
 
@@ -67,6 +73,7 @@ export default function AgendaDayPage() {
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [bookings, setBookings] = useState<Record<string, Booking>>({});
+  const [blockedTimes, setBlockedTimes] = useState<Set<string>>(new Set());
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
@@ -100,20 +107,40 @@ export default function AgendaDayPage() {
   }, [dateKey, dayStart, dayEnd]);
 
   const events = useMemo(() => {
-    const items = Object.values(bookings)
+    const bookingItems = Object.values(bookings)
       .filter((b) => Boolean(b?.id))
       .map((b) => {
         const start = DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' });
         const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
         const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
         const heightPx = GRID_ROW_PX; // 30min por slot
-        return { booking: b, topPx, heightPx };
+        return { kind: 'booking' as const, booking: b, topPx, heightPx };
       })
       .filter((e) => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX)
       .sort((a, b) => a.topPx - b.topPx);
 
-    return items;
-  }, [bookings, dayStart]);
+    const blockedItems = Array.from(blockedTimes)
+      .map((timeKey) => {
+        const [h, m] = timeKey.split(':').map(Number);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+        const start = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({
+          hour: h,
+          minute: m,
+          second: 0,
+          millisecond: 0,
+        });
+        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
+        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+        const heightPx = GRID_ROW_PX;
+        return { kind: 'block' as const, timeKey, topPx, heightPx };
+      })
+      .filter((e): e is NonNullable<typeof e> => Boolean(e))
+      .filter((e) => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX)
+      .sort((a, b) => a.topPx - b.topPx);
+
+    return [...blockedItems, ...bookingItems].sort((a, b) => a.topPx - b.topPx);
+
+  }, [bookings, blockedTimes, dayStart, selectedDate]);
 
   useEffect(() => {
     void (async () => {
@@ -161,7 +188,17 @@ export default function AgendaDayPage() {
     setLoading(true);
     try {
       const bookingsMap: Record<string, Booking> = {};
-      const { items } = await api.admin.listBookings(selectedBarber, dateKey);
+      const [{ items }, availability] = await Promise.all([
+        api.admin.listBookings(selectedBarber, dateKey),
+        api.availability(selectedBarber, dateKey),
+      ]);
+
+      const nextBlocked = new Set<string>();
+      (availability?.blockedSlotIds ?? []).forEach((slotId) => {
+        const tk = typeof slotId === 'string' ? slotIdToTimeKey(slotId) : null;
+        if (tk) nextBlocked.add(tk);
+      });
+
       items.forEach((raw) => {
         const data = raw as {
           id?: unknown;
@@ -188,6 +225,7 @@ export default function AgendaDayPage() {
       });
 
       setBookings(bookingsMap);
+      setBlockedTimes(nextBlocked);
     } catch (error: unknown) {
       console.error('Error loading bookings:', error);
       const err = error as { name?: unknown; code?: unknown; message?: unknown };
@@ -430,7 +468,29 @@ export default function AgendaDayPage() {
                                   className="relative"
                                   style={{ height: TIME_SLOTS.length * GRID_ROW_PX }}
                                 >
-                                  {events.map(({ booking, topPx, heightPx }) => {
+                                  {events.map((ev) => {
+                                    if (ev.kind === 'block') {
+                                      return (
+                                        <div
+                                          key={`block:${ev.timeKey}`}
+                                          className="absolute left-2 right-2 rounded-md border px-2 py-1.5 text-left bg-muted/40 border-border/60"
+                                          style={{ top: ev.topPx, height: ev.heightPx - 6 }}
+                                          aria-label={`Bloqueado ${ev.timeKey}`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <div className="truncate text-sm font-medium">Bloqueado</div>
+                                              <div className="truncate text-xs text-muted-foreground">Horário fechado</div>
+                                            </div>
+                                            <Badge variant="outline" className="shrink-0">
+                                              Fechado
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    const booking = ev.booking;
                                     const isBad = booking.status === 'no_show' || booking.status === 'cancelled';
                                     const containerClass =
                                       'absolute left-2 right-2 rounded-md border px-2 py-1.5 text-left shadow-sm ' +
@@ -443,7 +503,7 @@ export default function AgendaDayPage() {
                                         key={booking.id}
                                         type="button"
                                         className={containerClass}
-                                        style={{ top: topPx, height: heightPx - 6 }}
+                                        style={{ top: ev.topPx, height: ev.heightPx - 6 }}
                                         onClick={() => setSelectedBooking(booking)}
                                       >
                                         <div className="flex items-start justify-between gap-2">
@@ -589,7 +649,10 @@ export default function AgendaDayPage() {
 
       <BlockSlotsModal
         open={blockModalOpen}
-        onOpenChange={setBlockModalOpen}
+        onOpenChange={(open) => {
+          setBlockModalOpen(open);
+          if (!open) loadBookings();
+        }}
         selectedDate={selectedDate}
       />
     </AdminLayout>
