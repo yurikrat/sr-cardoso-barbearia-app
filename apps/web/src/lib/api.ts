@@ -270,7 +270,15 @@ export const api = {
   },
 
   async services() {
-    return apiFetch<{ items: Array<{ id: string; label: string; priceCents: number }> }>(`/api/services`);
+    return apiFetch<{
+      items: Array<{
+        id: string;
+        label: string;
+        priceCents: number;
+        popularLast90DaysCount?: number;
+        isMostPopular?: boolean;
+      }>;
+    }>(`/api/services`);
   },
 
   async availability(barberId: string, dateKey: string) {

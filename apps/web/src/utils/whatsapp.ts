@@ -55,6 +55,17 @@ Agende seu horário e venha nos visitar! ✂️🎂`;
 }
 
 /**
+ * Gera mensagem para clientes que faltaram (No-Show)
+ */
+export function generateNoShowMessage(customerName: string): string {
+  return `Olá ${customerName}! 
+
+Notamos que você não pôde comparecer ao seu agendamento hoje. 
+
+Gostaria de reagendar para outro horário? Acesse nosso link e escolha uma nova data! ✂️`;
+}
+
+/**
  * Gera deep link do WhatsApp
  */
 export function generateWhatsAppDeepLink(phone: string, text: string): string {

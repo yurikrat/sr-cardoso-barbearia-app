@@ -1,14 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { formatDate } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
-import { generateReactivationMessage, generateBirthdayMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
+import { 
+  generateReactivationMessage, 
+  generateBirthdayMessage, 
+  generateNoShowMessage,
+  generateWhatsAppDeepLink 
+} from '@/utils/whatsapp';
+import { 
+  Search, 
+  MessageCircle, 
+  UserMinus, 
+  Cake, 
+  Users,
+  Clock,
+  AlertTriangle,
+  ChevronRight
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { useNavigate } from 'react-router-dom';
 
 type TimestampLike =
   | { toDate?: () => Date }
@@ -51,74 +69,32 @@ interface Customer {
     lastCompletedAt?: TimestampLike;
     lastBookingAt?: TimestampLike;
     noShowCount: number;
+    totalBookings: number;
   };
 }
 
 export default function SmartListsPage() {
   const { toast } = useToast();
-  const [inactiveCustomers, setInactiveCustomers] = useState<Customer[]>([]);
-  const [birthdayCustomers, setBirthdayCustomers] = useState<Customer[]>([]);
-  const [noShowCustomers, setNoShowCustomers] = useState<Customer[]>([]);
+  const navigate = useNavigate();
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('inactive');
 
   useEffect(() => {
-    loadLists();
+    loadCustomers();
   }, []);
 
-  const loadLists = async () => {
+  const loadCustomers = async () => {
     setLoading(true);
     try {
-      const { items } = await api.admin.listCustomers(500);
-      const customers = items as Customer[];
-
-      // Inativos 30+ dias
-      const thirtyDaysAgo = DateTime.now()
-        .setZone('America/Sao_Paulo')
-        .minus({ days: 30 })
-        .toJSDate();
-      
-      const inactive: Customer[] = [];
-      
-      customers.forEach((data) => {
-        if (!data.consent?.marketingOptIn) return;
-        const lastDate = toDateSafe(data.stats.lastCompletedAt) || toDateSafe(data.stats.lastBookingAt);
-        if (lastDate && lastDate < thirtyDaysAgo) inactive.push(data);
-      });
-      
-      setInactiveCustomers(inactive);
-
-      // Aniversariantes (próximos 7 dias)
-      const today = DateTime.now().setZone('America/Sao_Paulo');
-      const birthdayMmddSet = new Set<string>();
-      
-      for (let i = 0; i < 7; i++) {
-        const date = today.plus({ days: i });
-        birthdayMmddSet.add(date.toFormat('MMdd'));
-      }
-
-      const birthdays: Customer[] = [];
-      
-      customers.forEach((data) => {
-        if (!data.consent?.marketingOptIn) return;
-        if (data.profile.birthdayMmdd && birthdayMmddSet.has(data.profile.birthdayMmdd)) birthdays.push(data);
-      });
-      
-      setBirthdayCustomers(birthdays);
-
-      // No-show (ranking)
-      const noShows: Customer[] = [];
-      
-      customers.forEach((data) => {
-        if (data.stats.noShowCount > 0) noShows.push(data);
-      });
-      
-      noShows.sort((a, b) => b.stats.noShowCount - a.stats.noShowCount);
-      setNoShowCustomers(noShows);
+      const { items } = await api.admin.listCustomers(1000);
+      setCustomers(items as Customer[]);
     } catch (error) {
-      console.error('Error loading lists:', error);
+      console.error('Error loading customers:', error);
       toast({
         title: 'Erro',
-        description: 'Não foi possível carregar as listas.',
+        description: 'Não foi possível carregar os clientes.',
         variant: 'destructive',
       });
     } finally {
@@ -126,13 +102,67 @@ export default function SmartListsPage() {
     }
   };
 
-  const handleSendWhatsApp = (customer: Customer, messageType: 'reactivation' | 'birthday') => {
-    const customerName = `${customer.identity.firstName} ${customer.identity.lastName}`;
+  const lists = useMemo(() => {
+    const thirtyDaysAgo = DateTime.now()
+      .setZone('America/Sao_Paulo')
+      .minus({ days: 30 })
+      .toJSDate();
     
-    const message =
-      messageType === 'reactivation'
-        ? generateReactivationMessage(customerName)
-        : generateBirthdayMessage(customer.identity.firstName);
+    const today = DateTime.now().setZone('America/Sao_Paulo');
+    const birthdayMmddSet = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      birthdayMmddSet.add(today.plus({ days: i }).toFormat('MMdd'));
+    }
+
+    const inactive: Customer[] = [];
+    const birthdays: Customer[] = [];
+    const noShows: Customer[] = [];
+
+    customers.forEach((c) => {
+      // Inativos
+      const lastDate = toDateSafe(c.stats.lastCompletedAt) || toDateSafe(c.stats.lastBookingAt);
+      if (lastDate && lastDate < thirtyDaysAgo && c.consent?.marketingOptIn) {
+        inactive.push(c);
+      }
+
+      // Aniversariantes
+      if (c.profile.birthdayMmdd && birthdayMmddSet.has(c.profile.birthdayMmdd) && c.consent?.marketingOptIn) {
+        birthdays.push(c);
+      }
+
+      // No-Show
+      if (c.stats.noShowCount > 0) {
+        noShows.push(c);
+      }
+    });
+
+    noShows.sort((a, b) => b.stats.noShowCount - a.stats.noShowCount);
+
+    return { inactive, birthdays, noShows };
+  }, [customers]);
+
+  const filteredList = useMemo(() => {
+    const currentList = 
+      activeTab === 'inactive' ? lists.inactive :
+      activeTab === 'birthday' ? lists.birthdays :
+      lists.noShows;
+
+    if (!searchTerm) return currentList;
+    const search = searchTerm.toLowerCase();
+    return currentList.filter(c => 
+      c.identity.firstName.toLowerCase().includes(search) ||
+      c.identity.lastName.toLowerCase().includes(search) ||
+      c.identity.whatsappE164.includes(search)
+    );
+  }, [activeTab, lists, searchTerm]);
+
+  const handleSendWhatsApp = (customer: Customer, type: 'reactivation' | 'birthday' | 'noshow') => {
+    const name = `${customer.identity.firstName} ${customer.identity.lastName}`;
+    let message = '';
+    
+    if (type === 'reactivation') message = generateReactivationMessage(name);
+    else if (type === 'birthday') message = generateBirthdayMessage(customer.identity.firstName);
+    else if (type === 'noshow') message = generateNoShowMessage(name);
     
     const url = generateWhatsAppDeepLink(customer.identity.whatsappE164, message);
     window.open(url, '_blank');
@@ -140,146 +170,174 @@ export default function SmartListsPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <h2 className="text-2xl font-serif font-bold">Listas Inteligentes</h2>
+      <div className="space-y-8 max-w-6xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-serif font-bold text-foreground">Listas Inteligentes</h2>
+            <p className="text-muted-foreground mt-1">Ações rápidas para fidelizar e recuperar clientes.</p>
+          </div>
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar na lista..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-card/50 border-primary/10 focus:border-primary/30"
+            />
+          </div>
+        </div>
 
-        <Tabs defaultValue="inactive" className="w-full">
-          <TabsList>
-            <TabsTrigger value="inactive">Inativos 30+ dias</TabsTrigger>
-            <TabsTrigger value="birthday">Aniversariantes</TabsTrigger>
-            <TabsTrigger value="noshow">No-Show</TabsTrigger>
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card className="bg-card/40 border-primary/10 backdrop-blur-sm">
+            <CardContent className="p-6 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500">
+                <UserMinus className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Inativos (30d+)</p>
+                <p className="text-2xl font-bold">{lists.inactive.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/40 border-primary/10 backdrop-blur-sm">
+            <CardContent className="p-6 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-pink-500/10 flex items-center justify-center text-pink-500">
+                <Cake className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Aniversariantes (7d)</p>
+                <p className="text-2xl font-bold">{lists.birthdays.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/40 border-primary/10 backdrop-blur-sm">
+            <CardContent className="p-6 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-500">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">No-Show (Faltas)</p>
+                <p className="text-2xl font-bold">{lists.noShows.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-3 w-full max-w-md bg-card/50 border border-primary/10 p-1 h-12">
+            <TabsTrigger value="inactive" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4 hidden sm:inline" />
+              Inativos
+            </TabsTrigger>
+            <TabsTrigger value="birthday" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground flex items-center gap-2">
+              <Cake className="h-4 w-4 hidden sm:inline" />
+              Aniversários
+            </TabsTrigger>
+            <TabsTrigger value="noshow" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 hidden sm:inline" />
+              No-Show
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="inactive" className="space-y-4">
+          <div className="mt-6">
             {loading ? (
-              <div className="flex justify-center py-8">
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <LoadingSpinner />
+                <p className="text-sm text-muted-foreground animate-pulse">Carregando listas inteligentes...</p>
               </div>
-            ) : inactiveCustomers.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  Nenhum cliente inativo encontrado.
+            ) : filteredList.length === 0 ? (
+              <Card className="bg-card/20 border-dashed border-primary/20">
+                <CardContent className="p-12 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="h-16 w-16 rounded-full bg-muted/20 flex items-center justify-center text-muted-foreground">
+                    <Users className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium">Nenhum cliente encontrado</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                      Não há clientes que correspondam aos critérios desta lista no momento.
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-2">
-                {inactiveCustomers.map((customer) => (
-                  <Card key={customer.id}>
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold">
-                          {customer.identity.firstName} {customer.identity.lastName}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {customer.identity.whatsappE164}
-                        </p>
-                        {customer.stats.lastCompletedAt && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {(() => {
-                              const d = toDateSafe(customer.stats.lastCompletedAt);
-                              return d ? `Último atendimento: ${formatDate(d)}` : null;
-                            })()}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSendWhatsApp(customer, 'reactivation')}
-                      >
-                        Enviar WhatsApp
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="birthday" className="space-y-4">
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner />
-              </div>
-            ) : birthdayCustomers.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  Nenhum aniversariante nos próximos 7 dias.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {birthdayCustomers.map((customer) => (
-                  <Card key={customer.id}>
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold">
-                          {customer.identity.firstName} {customer.identity.lastName}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {customer.identity.whatsappE164}
-                        </p>
-                        {customer.profile.birthday && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Aniversário: {new Date(customer.profile.birthday).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                            })}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSendWhatsApp(customer, 'birthday')}
-                      >
-                        Enviar WhatsApp
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="noshow" className="space-y-4">
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner />
-              </div>
-            ) : noShowCustomers.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  Nenhum cliente com falta registrada.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {noShowCustomers.map((customer) => (
-                  <Card key={customer.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold">
-                            {customer.identity.firstName} {customer.identity.lastName}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {customer.identity.whatsappE164}
-                          </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredList.map((customer) => (
+                  <Card key={customer.id} className="group bg-card/40 border-primary/5 hover:border-primary/20 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg border border-primary/20 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            {customer.identity.firstName[0]}{customer.identity.lastName[0]}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-lg leading-tight">
+                              {customer.identity.firstName} {customer.identity.lastName}
+                            </h3>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                              <Badge variant="outline" className="text-[10px] h-5 border-primary/20">
+                                {customer.stats.totalBookings || 0} agendamentos
+                              </Badge>
+                              {activeTab === 'noshow' && (
+                                <Badge variant="destructive" className="text-[10px] h-5">
+                                  {customer.stats.noShowCount} faltas
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-destructive">
-                            {customer.stats.noShowCount} falta(s)
-                          </p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => navigate(`/admin/clientes/${customer.id}`)}
+                          className="text-muted-foreground hover:text-primary"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </Button>
+                      </div>
+
+                      <div className="mt-6 pt-4 border-t border-primary/5 flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          {activeTab === 'inactive' && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              <span>Último: {(() => {
+                                const d = toDateSafe(customer.stats.lastCompletedAt) || toDateSafe(customer.stats.lastBookingAt);
+                                return d ? formatDate(d) : 'Nunca';
+                              })()}</span>
+                            </div>
+                          )}
+                          {activeTab === 'birthday' && (
+                            <div className="flex items-center gap-2 text-xs text-pink-500">
+                              <Cake className="h-3 w-3" />
+                              <span>Aniversário: {customer.profile.birthday ? new Date(customer.profile.birthday).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '--/--'}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <MessageCircle className="h-3 w-3" />
+                            <span>{customer.identity.whatsappE164}</span>
+                          </div>
                         </div>
+                        
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white gap-2 shadow-lg shadow-green-900/20"
+                          onClick={() => handleSendWhatsApp(customer, activeTab as any)}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          <span className="hidden sm:inline">Enviar WhatsApp</span>
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
             )}
-          </TabsContent>
+          </div>
         </Tabs>
       </div>
     </AdminLayout>
   );
 }
+
 

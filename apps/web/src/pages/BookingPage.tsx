@@ -41,7 +41,15 @@ export default function BookingPage() {
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [services, setServices] = useState<Array<{ id: string; label: string; priceCents: number }>>([]);
+  const [services, setServices] = useState<
+    Array<{
+      id: string;
+      label: string;
+      priceCents: number;
+      popularLast90DaysCount?: number;
+      isMostPopular?: boolean;
+    }>
+  >([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     firstName: '',
@@ -448,9 +456,11 @@ export default function BookingPage() {
                   <ServiceCard
                     key={s.id}
                     serviceId={s.id}
-                    label={s.label}
-                    selected={bookingState.serviceType === s.id}
-                    onClick={() => handleServiceSelect(s.id)}
+                     label={s.label}
+                     priceCents={s.priceCents}
+                     isMostPopular={s.isMostPopular}
+                     selected={bookingState.serviceType === s.id}
+                     onClick={() => handleServiceSelect(s.id)}
                   />
                 ))
               )}
@@ -468,6 +478,7 @@ export default function BookingPage() {
                   key={barber.id}
                   id={barber.id}
                   name={barber.name}
+                  image={barber.image}
                   selected={bookingState.barberId === barber.id}
                   onClick={() => handleBarberSelect(barber.id)}
                 />

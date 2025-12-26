@@ -53,6 +53,14 @@ export default function FinancePage() {
 
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>('all');
+
+  // Sincroniza o barbeiro selecionado com o perfil do usuário se não for master
+  useEffect(() => {
+    if (user && user.role === 'barber' && user.barberId) {
+      setSelectedBarberId(user.barberId);
+    }
+  }, [user]);
+
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = DateTime.now().setZone('America/Sao_Paulo');
     return now.toFormat('yyyy-MM');
@@ -250,12 +258,16 @@ export default function FinancePage() {
             <p className="text-muted-foreground">Acompanhe o desempenho da barbearia.</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <Select value={selectedBarberId} onValueChange={setSelectedBarberId}>
+            <Select 
+              value={selectedBarberId} 
+              onValueChange={setSelectedBarberId}
+              disabled={!isMaster}
+            >
               <SelectTrigger className="w-full sm:w-[240px]">
                 <SelectValue placeholder="Profissional" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os profissionais</SelectItem>
+                {isMaster && <SelectItem value="all">Todos os profissionais</SelectItem>}
                 {barbers.map((b) => (
                   <SelectItem key={b.id} value={b.id}>
                     {b.name}
@@ -481,22 +493,20 @@ export default function FinancePage() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Comissão do Dono (Sr. Cardoso) (%)</label>
+                          <label className="text-sm font-medium">Comissão da Barbearia (Sr. Cardoso) (%)</label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               className="font-mono"
                               inputMode="decimal"
                               step="0.01"
-                              value={String(Math.round((configDraft.commissions.ownerBarberPct ?? 0) * 10000) / 100)}
-                              onChange={(e) => {
-                                const v = Number(e.target.value);
-                                const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) / 100 : 0;
-                                setConfigDraft({
-                                  ...configDraft,
-                                  commissions: { ...configDraft.commissions, ownerBarberPct: pct },
-                                });
-                              }}
+                              disabled
+                              value={String(
+                                Math.round(
+                                  (Math.max(0, Math.min(1, 1 - (configDraft.commissions.defaultBarberPct ?? 0))) * 10000) /
+                                    100
+                                )
+                              )}
                             />
                             <span className="text-muted-foreground">%</span>
                           </div>

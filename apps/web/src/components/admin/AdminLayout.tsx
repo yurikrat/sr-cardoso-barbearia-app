@@ -95,8 +95,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               return (
                 <Link key={item.path} to={item.path}>
                   <Button
-                    variant={isActive ? 'secondary' : 'ghost'}
-                    className={`flex items-center gap-2 transition-all ${isActive ? 'bg-primary text-primary-foreground' : 'hover:text-primary'}`}
+                    variant="ghost"
+                    className={
+                      `flex items-center gap-2 transition-colors ` +
+                      (isActive
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-primary/10 hover:text-primary')
+                    }
                   >
                     <Icon className="h-4 w-4" />
                     <span className="hidden sm:inline font-serif">{item.label}</span>
