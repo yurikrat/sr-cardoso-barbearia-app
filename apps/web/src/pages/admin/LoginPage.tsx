@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function LoginPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { branding } = useBranding();
+  const { logoSrc } = useBranding();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +47,7 @@ export default function LoginPage() {
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
             <img 
-              src={branding?.logoUrl || "/logo.png"} 
+              src={logoSrc} 
               alt="Sr. Cardoso Barbearia" 
               className="mx-auto w-40 h-auto"
             />

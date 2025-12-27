@@ -28,7 +28,7 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 const REMEMBERED_CUSTOMER_KEY = 'sr_remembered_customer';
 
 export default function BookingPage() {
-  const { branding } = useBranding();
+  const { logoSrc } = useBranding();
   const navigate = useNavigate();
   const { toast } = useToast();
   const bookingState = useBookingState();
@@ -469,7 +469,7 @@ export default function BookingPage() {
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
             <img 
-              src={branding?.logoUrl || "/logo.png"} 
+              src={logoSrc} 
               alt="Sr. Cardoso Barbearia" 
               className="mx-auto h-auto" 
               style={{ 

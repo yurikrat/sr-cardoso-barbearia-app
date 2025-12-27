@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function CancelBookingPage() {
-  const { branding } = useBranding();
+  const { logoSrc } = useBranding();
   const { cancelCode } = useParams<{ cancelCode: string }>();
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export default function CancelBookingPage() {
         <div className="text-center space-y-4">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
             <img 
-              src={branding?.logoUrl || "/logo.png"} 
+              src={logoSrc} 
               alt="Sr. Cardoso Barbearia" 
               className="mx-auto w-40 h-auto"
             />

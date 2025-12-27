@@ -1247,7 +1247,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
   // --- Branding Routes ---
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   });
 
   app.get('/api/admin/branding', requireAdminMw, async (_req, res) => {
@@ -1327,7 +1327,19 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         const filename = 'logo.png';
 
         await uploadToGCS(env, filename, buffer, contentType);
-        return res.json({ success: true, url: '/api/public/branding/logo' });
+
+        const current = await getBrandingConfig(db);
+        const updated: BrandingSettings = {
+          ...current,
+          logoUrl: '/api/public/branding/logo',
+          updatedAt: new Date().toISOString(),
+        };
+
+        await db.doc(BRANDING_CONFIG_DOC_PATH).set(updated, { merge: true });
+        setBrandingConfigCache(updated);
+
+        const url = `/api/public/branding/logo?v=${encodeURIComponent(updated.updatedAt)}`;
+        return res.json({ success: true, url, config: updated });
       } catch (e: any) {
         console.error('Upload error:', e);
         return res.status(500).json({ error: e.message || 'Erro no upload' });

@@ -64,7 +64,14 @@ async function apiFetch<T>(
 
   const res = await fetch(url, { ...init, headers });
   const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
+  let json: unknown = null;
+  if (text) {
+    try {
+      json = JSON.parse(text) as unknown;
+    } catch {
+      json = null;
+    }
+  }
 
   if (!res.ok) {
     if (init?.admin && res.status === 401) {
@@ -277,7 +284,7 @@ export const api = {
       });
     },
 
-    async uploadBrandingAsset(file: File, type: 'logo' | 'favicon') {
+    async uploadBrandingAsset(file: File, type: 'logo') {
       const formData = new FormData();
       formData.append('file', file);
 
@@ -293,11 +300,27 @@ export const api = {
       });
 
       if (!res.ok) {
-        const json = (await res.json()) as ApiError;
-        throw new Error(json.error || `Erro HTTP ${res.status}`);
+        const text = await res.text();
+        let msg: string | null = null;
+        if (text) {
+          try {
+            const parsed = JSON.parse(text) as ApiError;
+            msg = parsed?.error ?? null;
+          } catch {
+            // ignore (likely HTML error page)
+          }
+        }
+        if (!msg && res.status === 413) msg = 'Arquivo muito grande. Tente uma imagem menor.';
+        throw new Error(msg || `Erro HTTP ${res.status}`);
       }
 
-      return (await res.json()) as { success: boolean; url: string };
+      const text = await res.text();
+      try {
+        const parsed = JSON.parse(text) as any;
+        return parsed as { success: boolean; url: string; config?: BrandingSettings };
+      } catch {
+        throw new Error('Resposta inválida do servidor no upload');
+      }
     },
 
     async createBarber(payload: { id?: string | null; name: string; active?: boolean; createLogin?: boolean }) {

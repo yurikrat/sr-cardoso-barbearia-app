@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function HomePage() {
-  const { branding } = useBranding();
+  const { logoSrc } = useBranding();
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-start p-4 safe-top-p4 safe-bottom-p4 bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed overflow-x-hidden">
@@ -12,7 +12,7 @@ export default function HomePage() {
         <div className="text-center space-y-4">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
             <img
-              src={branding?.logoUrl || "/logo.png"}
+              src={logoSrc}
               alt="Sr. Cardoso Barbearia"
               className="mx-auto w-56 h-auto drop-shadow-2xl"
             />

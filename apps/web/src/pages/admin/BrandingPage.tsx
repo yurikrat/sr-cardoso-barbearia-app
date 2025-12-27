@@ -65,11 +65,21 @@ export default function BrandingPage() {
     setUploadingLogo(true);
 
     try {
-      const { url } = await api.admin.uploadBrandingAsset(file, 'logo');
-      setSettings((prev: BrandingSettings | null) => prev ? ({
-        ...prev,
-        logoUrl: url
-      }) : null);
+      const { url, config } = await api.admin.uploadBrandingAsset(file, 'logo');
+      if (config) {
+        setSettings(config);
+      } else {
+        setSettings((prev: BrandingSettings | null) =>
+          prev
+            ? {
+                ...prev,
+                logoUrl: url,
+              }
+            : null
+        );
+      }
+
+      await refreshBranding();
       
       toast({
         title: 'Upload concluído',

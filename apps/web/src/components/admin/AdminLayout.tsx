@@ -11,7 +11,7 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
-  const { branding } = useBranding();
+  const { logoSrc } = useBranding();
   const location = useLocation();
 
   type Role = 'master' | 'barber';
@@ -45,7 +45,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <div className="flex items-center gap-3">
               <Link to="/admin/agenda" className="flex items-center gap-3">
                 <img 
-                  src={branding?.logoUrl || "/logo.png"} 
+                  src={logoSrc} 
                   alt="Logo" 
                   className="h-10 w-auto drop-shadow-md"
                 />
