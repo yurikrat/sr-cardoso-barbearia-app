@@ -65,6 +65,15 @@ Edite `apps/web/.env`:
 VITE_API_BASE_URL=https://your-cloud-run-url.run.app
 ```
 
+#### Branding (upload de logo)
+
+O upload do logo do painel admin usa **Cloud Storage**. No Cloud Run, é obrigatório configurar:
+
+- `GCP_PROJECT_ID=sr-cardoso-barbearia-prd`
+- `GCP_STORAGE_BUCKET=sr-cardoso-assets`
+
+E garantir que o service account do Cloud Run tenha permissão no bucket (por exemplo `roles/storage.objectAdmin`).
+
 ### 4. Inicializar Barbeiros
 
 ```bash
@@ -99,11 +108,11 @@ gcloud firestore indexes create \
 
 ```bash
 # Build e deploy do backend
-gcloud run deploy sr-cardoso-api \
+gcloud run deploy sr-cardoso-barbearia \
   --source apps/server \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=sr-cardoso-barbearia-prd" \
+  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=sr-cardoso-barbearia-prd,GCP_STORAGE_BUCKET=sr-cardoso-assets" \
   --project=sr-cardoso-barbearia-prd
 ```
 
@@ -129,7 +138,7 @@ gcloud firestore indexes create --file=firebase/firestore.indexes.json --project
 npm run build
 
 # Deploy do backend (Cloud Run)
-gcloud run deploy sr-cardoso-api \
+gcloud run deploy sr-cardoso-barbearia \
   --source apps/server \
   --region us-central1 \
   --allow-unauthenticated \
