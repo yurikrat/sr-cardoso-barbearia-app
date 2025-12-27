@@ -760,7 +760,7 @@ export default function BookingPage() {
                     className="mt-1"
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    Pedimos apenas uma vez para te dar mimos no seu aniversário!
+                    Pedimos apenas uma vez.
                   </p>
                 </div>
               )}
