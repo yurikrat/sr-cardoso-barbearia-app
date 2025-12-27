@@ -18,6 +18,7 @@ import {
   getFinanceConfig,
   getServiceFromConfig,
 } from '../lib/finance.js';
+import { getBrandingConfig } from '../lib/branding.js';
 
 export type PublicRouteDeps = {
   env: Env;
@@ -28,6 +29,16 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
   const { env, db } = deps;
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+  app.get('/api/branding', async (_req, res) => {
+    try {
+      const config = await getBrandingConfig(db);
+      return res.json(config);
+    } catch (e) {
+      console.error('Error getting branding:', e);
+      return res.status(500).json({ error: 'Erro ao carregar branding' });
+    }
+  });
 
   app.get('/api/services', async (_req, res) => {
     try {
@@ -61,18 +72,24 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       const dateKey = typeof req.query.dateKey === 'string' ? req.query.dateKey : null;
       if (!barberId || !dateKey) return res.status(400).json({ error: 'barberId e dateKey são obrigatórios' });
 
-      const slotsRef = db.collection('barbers').doc(barberId).collection('slots');
-      const snapshot = await slotsRef.where('dateKey', '==', dateKey).get();
+      const [slotsSnap, barberDoc] = await Promise.all([
+        db.collection('barbers').doc(barberId).collection('slots').where('dateKey', '==', dateKey).get(),
+        db.collection('barbers').doc(barberId).get()
+      ]);
+
       const bookedSlotIds: string[] = [];
       const blockedSlotIds: string[] = [];
 
-      snapshot.forEach((doc) => {
+      slotsSnap.forEach((doc) => {
         const data = doc.data() as { kind?: unknown };
         if (data.kind === 'booking') bookedSlotIds.push(doc.id);
         if (data.kind === 'block') blockedSlotIds.push(doc.id);
       });
 
-      return res.json({ bookedSlotIds, blockedSlotIds });
+      const barberData = barberDoc.data() as any;
+      const schedule = barberData?.schedule ?? null;
+
+      return res.json({ bookedSlotIds, blockedSlotIds, schedule });
     } catch {
       return res.status(500).json({ error: 'Erro ao carregar disponibilidade' });
     }

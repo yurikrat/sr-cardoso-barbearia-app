@@ -1,17 +1,28 @@
 import { Link } from 'react-router-dom';
+import { useBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function HomePage() {
+  const { branding } = useBranding();
+
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-start p-4 safe-top-p4 safe-bottom-p4 bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed overflow-x-hidden">
       <div className="max-w-md w-full space-y-6">
-        <div className="text-center space-y-4">
+        <div className={`text-center space-y-4 ${
+          branding?.logoAlignment === 'left' ? 'text-left' : 
+          branding?.logoAlignment === 'right' ? 'text-right' : 'text-center'
+        }`}>
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
             <img
-              src="/logo.png"
+              src={branding?.logoUrl || "/logo.png"}
               alt="Sr. Cardoso Barbearia"
               className="mx-auto w-56 h-auto drop-shadow-2xl"
+              style={{ 
+                transform: `scale(${branding?.logoScale || 1})`,
+                marginLeft: branding?.logoAlignment === 'left' ? '0' : 'auto',
+                marginRight: branding?.logoAlignment === 'right' ? '0' : 'auto',
+              }}
             />
           </Link>
           <h1 className="sr-only">Sr. Cardoso Barbearia</h1>

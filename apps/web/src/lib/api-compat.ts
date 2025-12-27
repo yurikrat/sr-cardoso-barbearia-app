@@ -1,7 +1,11 @@
 /**
- * Caminho B (GCP puro): este módulo vira um adaptador para a API do Cloud Run.
- * Mantemos o nome `firebase.ts` para evitar um refactor gigante nos imports.
- * O rollback para o caminho A (Firebase SDK) fica documentado no README.
+ * API Compatibility Layer
+ * 
+ * Wrapper functions that maintain backward-compatible signatures (returning { data })
+ * while delegating to the Cloud Run REST API via @/lib/api.
+ * 
+ * This layer exists to avoid a massive refactor of existing useMutation calls.
+ * All actual logic lives in Cloud Run (apps/server), not Firebase Cloud Functions.
  */
 import { api } from '@/lib/api';
 

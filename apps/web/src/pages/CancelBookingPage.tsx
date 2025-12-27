@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function CancelBookingPage() {
+  const { branding } = useBranding();
   const { cancelCode } = useParams<{ cancelCode: string }>();
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,7 +47,12 @@ export default function CancelBookingPage() {
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-4">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+            <img 
+              src={branding?.logoUrl || "/logo.png"} 
+              alt="Sr. Cardoso Barbearia" 
+              className="mx-auto w-40 h-auto" 
+              style={{ transform: `scale(${branding?.logoScale || 1})` }}
+            />
           </Link>
           <h1 className="text-2xl font-serif font-bold text-foreground">Cancelar agendamento</h1>
           <p className="text-muted-foreground">Confirme abaixo para cancelar seu agendamento.</p>

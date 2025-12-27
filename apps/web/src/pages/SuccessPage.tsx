@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { useBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBookingState } from '@/contexts/BookingContext';
@@ -10,6 +11,7 @@ import { formatDate, formatTime } from '@/utils/dates';
 import { api } from '@/lib/api';
 
 export default function SuccessPage() {
+  const { branding } = useBranding();
   const bookingState = useBookingState();
   const [searchParams] = useSearchParams();
   const bookingId = searchParams.get('bookingId');
@@ -132,7 +134,12 @@ export default function SuccessPage() {
       <div className="max-w-md w-full space-y-8">
         <div className="text-center space-y-4">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+            <img 
+              src={branding?.logoUrl || "/logo.png"} 
+              alt="Sr. Cardoso Barbearia" 
+              className="mx-auto w-40 h-auto" 
+              style={{ transform: `scale(${branding?.logoScale || 1})` }}
+            />
           </Link>
           <h1 className="text-3xl font-serif font-bold text-foreground">
             Seu Ritual está agendado.

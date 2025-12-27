@@ -1,32 +1,30 @@
 import { useMemo, useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
-import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/components/ui/use-toast';
-import { adminCancelBookingFn, adminMarkWhatsappSentFn } from '@/lib/firebase';
+import { adminCancelBookingFn, adminMarkWhatsappSentFn } from '@/lib/api-compat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { generateBookingConfirmationMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
-import { Calendar as CalendarIcon } from 'lucide-react';
-import { debugLog } from '@/utils/debugLog';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS } from '@/utils/constants';
+import { cn } from '@/lib/utils';
 
-const TIME_SLOTS = Array.from({ length: 22 }, (_, i) => {
+const TIME_SLOTS = Array.from({ length: 26 }, (_, i) => {
   const hour = 8 + Math.floor(i / 2);
   const minute = (i % 2) * 30;
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }).filter((time) => {
-  const [h, m] = time.split(':').map(Number);
-  return h < 19 || (h === 18 && m <= 30);
+  const [h] = time.split(':').map(Number);
+  return h < 21; // Extend to 20:30 based on screenshot
 });
 
 interface Booking {
@@ -65,83 +63,110 @@ function formatBookingStatusPtBr(status: string) {
   }
 }
 
-export default function AgendaDayPage() {
+function getStatusCardClasses(status: string) {
+  switch (status) {
+    case 'confirmed':
+      return 'bg-blue-100 border-blue-200 text-blue-900 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-100';
+    case 'completed':
+      return 'bg-green-100 border-green-200 text-green-900 dark:bg-green-900/30 dark:border-green-800 dark:text-green-100';
+    case 'no_show':
+      return 'bg-amber-100 border-amber-200 text-amber-900 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-100';
+    case 'cancelled':
+      return 'bg-muted/70 border-border text-muted-foreground';
+    default:
+      return 'bg-card border-border';
+  }
+}
+
+function getStatusPillClasses(status: string) {
+  switch (status) {
+    case 'confirmed':
+      return 'bg-blue-200/70 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100';
+    case 'completed':
+      return 'bg-green-200/70 text-green-900 dark:bg-green-900/40 dark:text-green-100';
+    case 'no_show':
+      return 'bg-amber-200/70 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
+    case 'cancelled':
+      return 'bg-muted text-muted-foreground';
+    default:
+      return 'bg-muted/60 text-muted-foreground';
+  }
+}
+
+type ViewMode = 'day' | 'week' | 'month';
+
+export default function AgendaPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
-  const [bookings, setBookings] = useState<Record<string, Booking>>({});
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [blockedTimes, setBlockedTimes] = useState<Set<string>>(new Set());
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [nowTick, setNowTick] = useState(0);
 
+  // Force re-render every minute to update "now" line
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((x) => x + 1), 60000);
+    return () => clearInterval(t);
+  }, []);
+  void nowTick;
+
+  // Derived state
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
+  
   const selectedDateLabel = useMemo(() => {
-    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' })
-      .setLocale('pt-BR')
-      .toFormat("cccc, dd 'de' LLLL 'de' yyyy");
+    const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).setLocale('pt-BR');
+    const now = DateTime.now().setZone('America/Sao_Paulo').startOf('day');
+    const diff = dt.startOf('day').diff(now, 'days').days;
+
+    if (viewMode === 'day') {
+      let prefix = '';
+      if (diff === 0) prefix = 'Hoje, ';
+      else if (diff === 1) prefix = 'Amanhã, ';
+      else if (diff === -1) prefix = 'Ontem, ';
+      
+      return prefix + dt.toFormat("cccc, dd 'de' LLLL 'de' yyyy");
+    }
+    if (viewMode === 'week') {
+      const start = dt.startOf('week');
+      const end = dt.endOf('week');
+      return `${start.toFormat("dd 'de' LLLL")} - ${end.toFormat("dd 'de' LLLL")}`;
+    }
+    if (viewMode === 'month') return dt.toFormat("LLLL 'de' yyyy");
+    return '';
+  }, [selectedDate, viewMode]);
+
+  const isToday = useMemo(() => {
+    const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).startOf('day');
+    const now = DateTime.now().setZone('America/Sao_Paulo').startOf('day');
+    return dt.equals(now);
   }, [selectedDate]);
 
-  const dayStart = useMemo(() => {
-    const [h, m] = TIME_SLOTS[0].split(':').map(Number);
-    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({ hour: h, minute: m, second: 0, millisecond: 0 });
-  }, [selectedDate]);
+  // Navigation handlers
+  const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
+    const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' });
+    if (direction === 'today') {
+      setSelectedDate(DateTime.now().setZone('America/Sao_Paulo').toJSDate());
+      return;
+    }
+    
+    const amount = direction === 'next' ? 1 : -1;
+    let nextDate = dt;
+    
+    if (viewMode === 'day') nextDate = dt.plus({ days: amount });
+    else if (viewMode === 'week') nextDate = dt.plus({ weeks: amount });
+    else if (viewMode === 'month') nextDate = dt.plus({ months: amount });
+    
+    setSelectedDate(nextDate.toJSDate());
+  };
 
-  const dayEnd = useMemo(() => {
-    const [h, m] = TIME_SLOTS[TIME_SLOTS.length - 1].split(':').map(Number);
-    return DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' })
-      .set({ hour: h, minute: m, second: 0, millisecond: 0 })
-      .plus({ minutes: SLOT_MINUTES });
-  }, [selectedDate]);
-
-  const nowLineTopPx = useMemo(() => {
-    const now = DateTime.now().setZone('America/Sao_Paulo');
-    const sameDay = now.toFormat('yyyy-MM-dd') === dateKey;
-    if (!sameDay) return null;
-    if (now < dayStart || now > dayEnd) return null;
-    const minutesFromStart = Math.max(0, now.diff(dayStart, 'minutes').minutes);
-    return (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
-  }, [dateKey, dayStart, dayEnd]);
-
-  const events = useMemo(() => {
-    const bookingItems = Object.values(bookings)
-      .filter((b) => Boolean(b?.id))
-      .map((b) => {
-        const start = DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' });
-        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
-        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
-        const heightPx = GRID_ROW_PX; // 30min por slot
-        return { kind: 'booking' as const, booking: b, topPx, heightPx };
-      })
-      .filter((e) => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX)
-      .sort((a, b) => a.topPx - b.topPx);
-
-    const blockedItems = Array.from(blockedTimes)
-      .map((timeKey) => {
-        const [h, m] = timeKey.split(':').map(Number);
-        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-        const start = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({
-          hour: h,
-          minute: m,
-          second: 0,
-          millisecond: 0,
-        });
-        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
-        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
-        const heightPx = GRID_ROW_PX;
-        return { kind: 'block' as const, timeKey, topPx, heightPx };
-      })
-      .filter((e): e is NonNullable<typeof e> => Boolean(e))
-      .filter((e) => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX)
-      .sort((a, b) => a.topPx - b.topPx);
-
-    return [...blockedItems, ...bookingItems].sort((a, b) => a.topPx - b.topPx);
-
-  }, [bookings, blockedTimes, dayStart, selectedDate]);
-
+  // Initial load
   useEffect(() => {
     void (async () => {
       try {
@@ -175,45 +200,55 @@ export default function AgendaDayPage() {
         if (!selectedBarber) setSelectedBarber('sr-cardoso');
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load bookings
   useEffect(() => {
     if (!selectedBarber) return;
     loadBookings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedBarber]);
+  }, [selectedDate, selectedBarber, viewMode]);
 
   const loadBookings = async () => {
     setLoading(true);
     try {
-      const bookingsMap: Record<string, Booking> = {};
-      const [{ items }, availability] = await Promise.all([
-        api.admin.listBookings(selectedBarber, dateKey),
-        api.availability(selectedBarber, dateKey),
-      ]);
+      let items: any[] = [];
+      let nextBlocked = new Set<string>();
 
-      const nextBlocked = new Set<string>();
-      (availability?.blockedSlotIds ?? []).forEach((slotId) => {
-        const tk = typeof slotId === 'string' ? slotIdToTimeKey(slotId) : null;
-        if (tk) nextBlocked.add(tk);
-      });
+      if (viewMode === 'day') {
+        const [res, availability] = await Promise.all([
+          api.admin.listBookings(selectedBarber, dateKey),
+          api.availability(selectedBarber, dateKey),
+        ]);
+        items = res.items;
+        (availability?.blockedSlotIds ?? []).forEach((slotId) => {
+          const tk = typeof slotId === 'string' ? slotIdToTimeKey(slotId) : null;
+          if (tk) nextBlocked.add(tk);
+        });
+      } else {
+        let start: DateTime, end: DateTime;
+        const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' });
+        
+        if (viewMode === 'week') {
+          start = dt.startOf('week');
+          end = dt.endOf('week');
+        } else {
+          start = dt.startOf('month').startOf('week');
+          end = dt.endOf('month').endOf('week');
+        }
 
-      items.forEach((raw) => {
-        const data = raw as {
-          id?: unknown;
-          barberId?: unknown;
-          customer?: unknown;
-          serviceType?: unknown;
-          slotStart?: unknown;
-          status?: unknown;
-          whatsappStatus?: unknown;
-        };
+        const res = await api.admin.listBookings(selectedBarber, undefined, {
+          start: start.toFormat('yyyy-MM-dd'),
+          end: end.toFormat('yyyy-MM-dd'),
+        });
+        items = res.items;
+      }
+
+      const loadedBookings = items.map((raw): Booking | null => {
+        const data = raw as any;
         const slotStartIso = typeof data.slotStart === 'string' ? data.slotStart : null;
-        if (!slotStartIso) return;
+        if (!slotStartIso) return null;
         const slotStart = DateTime.fromISO(slotStartIso, { zone: 'America/Sao_Paulo' }).toJSDate();
-        const timeKey = DateTime.fromJSDate(slotStart, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm');
-        bookingsMap[timeKey] = {
+        return {
           id: String(data.id ?? ''),
           barberId: typeof data.barberId === 'string' ? data.barberId : undefined,
           customer: data.customer as Booking['customer'],
@@ -222,76 +257,43 @@ export default function AgendaDayPage() {
           status: String(data.status ?? ''),
           whatsappStatus: String(data.whatsappStatus ?? ''),
         };
-      });
+      }).filter((b): b is Booking => b !== null);
 
-      setBookings(bookingsMap);
+      setBookings(loadedBookings);
       setBlockedTimes(nextBlocked);
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error loading bookings:', error);
-      const err = error as { name?: unknown; code?: unknown; message?: unknown };
-      // #region agent log
-      debugLog({
-        sessionId: 'debug-session',
-        runId: 'run3',
-        hypothesisId: 'H4',
-        location: 'apps/web/src/pages/admin/AgendaDayPage.tsx:loadBookings:catch',
-        message: 'admin load bookings failed',
-        data: {
-          selectedBarber,
-          dateKey,
-          errorName: typeof err?.name === 'string' ? err.name : null,
-          errorCode: typeof err?.code === 'string' ? err.code : null,
-          errorMessage: typeof err?.message === 'string' ? err.message : null,
-        },
-        timestamp: Date.now(),
-      });
-      // #endregion
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível carregar a agenda.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro', description: 'Não foi possível carregar a agenda.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
+  // Mutations (Cancel, WhatsApp, Status)
   const cancelMutation = useMutation({
     mutationFn: async (bookingId: string) => {
-      const result = await adminCancelBookingFn({ bookingId });
-      return result.data;
+      await adminCancelBookingFn({ bookingId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
       loadBookings();
       setSelectedBooking(null);
-      toast({
-        title: 'Sucesso',
-        description: 'Reserva cancelada com sucesso.',
-      });
+      toast({ title: 'Sucesso', description: 'Reserva cancelada.' });
     },
-    onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : null;
-      toast({
-        title: 'Erro',
-        description: message || 'Erro ao cancelar reserva.',
-        variant: 'destructive',
-      });
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Erro ao cancelar.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
     },
   });
 
   const markWhatsappSentMutation = useMutation({
     mutationFn: async (bookingId: string) => {
-      const result = await adminMarkWhatsappSentFn({ bookingId });
-      return result.data;
+      await adminMarkWhatsappSentFn({ bookingId });
     },
     onSuccess: () => {
       loadBookings();
       setSelectedBooking(null);
-      toast({
-        title: 'Sucesso',
-        description: 'WhatsApp marcado como enviado.',
-      });
+      toast({ title: 'Sucesso', description: 'WhatsApp marcado como enviado.' });
     },
   });
 
@@ -302,23 +304,11 @@ export default function AgendaDayPage() {
     onSuccess: (_data, variables) => {
       loadBookings();
       setSelectedBooking((prev) => (prev ? { ...prev, status: variables.status } : prev));
-      toast({
-        title: 'Sucesso',
-        description:
-          variables.status === 'completed'
-            ? 'Marcado como concluído.'
-            : variables.status === 'no_show'
-            ? 'Marcado como falta.'
-            : 'Status atualizado.',
-      });
+      toast({ title: 'Sucesso', description: 'Status atualizado.' });
     },
-    onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : null;
-      toast({
-        title: 'Erro',
-        description: message || 'Erro ao atualizar status.',
-        variant: 'destructive',
-      });
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Erro ao atualizar status.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
     },
   });
 
@@ -326,318 +316,356 @@ export default function AgendaDayPage() {
     const barberName = barbers.find((b) => b.id === booking.barberId)?.name || 'Barbeiro';
     const slotStart = DateTime.fromJSDate(booking.slotStart, { zone: 'America/Sao_Paulo' });
     const customerName = `${booking.customer.firstName} ${booking.customer.lastName}`;
-    
-    const message = generateBookingConfirmationMessage(
-      customerName,
-      booking.serviceType,
-      barberName,
-      slotStart
-    );
-    
+    const message = generateBookingConfirmationMessage(customerName, booking.serviceType, barberName, slotStart);
     const url = generateWhatsAppDeepLink(booking.customer.whatsappE164, message);
     window.open(url, '_blank');
     markWhatsappSentMutation.mutate(booking.id);
   };
 
-  return (
-    <AdminLayout>
-      <div className="space-y-4">
-        <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-0.5">
-                <h2 className="text-2xl font-serif font-bold">Agenda do Dia</h2>
-                <div className="text-sm text-muted-foreground capitalize">{selectedDateLabel}</div>
-              </div>
+  // Render Helpers
+  const renderDayView = () => {
+    const dayStart = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({ hour: 8, minute: 0 });
+    
+    // Filter bookings for this day
+    const dayBookings = bookings.filter(b => 
+      DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(dayStart, 'day')
+    );
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const prev = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).minus({ days: 1 }).toJSDate();
-                    setSelectedDate(prev);
-                  }}
+    const events = [
+      ...dayBookings.map(b => {
+        const start = DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' });
+        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
+        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+        return { kind: 'booking' as const, booking: b, topPx, heightPx: GRID_ROW_PX };
+      }),
+      ...Array.from(blockedTimes).map(timeKey => {
+        const [h, m] = timeKey.split(':').map(Number);
+        const start = dayStart.set({ hour: h, minute: m });
+        const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
+        const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+        return { kind: 'block' as const, timeKey, topPx, heightPx: GRID_ROW_PX };
+      })
+    ].filter(e => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX);
+
+    // Now line
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const isToday = now.hasSame(dayStart, 'day');
+    const nowMinutes = now.diff(dayStart, 'minutes').minutes;
+    const nowTopPx = (nowMinutes / SLOT_MINUTES) * GRID_ROW_PX;
+    const showNowLine = isToday && nowTopPx >= 0 && nowTopPx < TIME_SLOTS.length * GRID_ROW_PX;
+
+    return (
+      <div className="relative border-t border-border/60">
+        <div className="grid grid-cols-[60px_1fr]">
+          <div className="bg-background/40">
+            {TIME_SLOTS.map((time) => (
+              <div key={time} className="border-b border-border/60 pr-2 h-[44px] flex items-start justify-end pt-1">
+                <span className="font-mono text-xs text-muted-foreground">{time}</span>
+              </div>
+            ))}
+          </div>
+          <div className="relative border-l border-border/60">
+            {TIME_SLOTS.map((time) => (
+              <div key={time} className="border-b border-border/40 h-[44px]" />
+            ))}
+            
+            {showNowLine && (
+              <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: nowTopPx }}>
+                <div className="relative">
+                  <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-red-500 shadow-sm" />
+                  <div className="h-0.5 bg-red-500 shadow-sm" />
+                </div>
+              </div>
+            )}
+
+            {events.map((ev) => {
+              if (ev.kind === 'block') {
+                return (
+                  <div
+                    key={`block-${ev.timeKey}`}
+                    className="absolute left-1 right-1 rounded bg-muted/80 border border-border p-2 text-xs text-muted-foreground flex items-center justify-center"
+                    style={{ top: ev.topPx, height: ev.heightPx - 4 }}
+                  >
+                    Fechado
+                  </div>
+                );
+              }
+              const b = ev.booking;
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => setSelectedBooking(b)}
+                  className={cn(
+                    "absolute left-1 right-1 rounded px-2 py-1 text-left text-xs border shadow-sm transition-all hover:z-10",
+                    getStatusCardClasses(b.status)
+                  )}
+                  style={{ top: ev.topPx, height: ev.heightPx - 4 }}
                 >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const today = DateTime.now().setZone('America/Sao_Paulo').startOf('day').toJSDate();
-                    setSelectedDate(today);
-                  }}
-                >
-                  Hoje
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const next = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).plus({ days: 1 }).toJSDate();
-                    setSelectedDate(next);
-                  }}
-                >
-                  Próximo
-                </Button>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className={cn('font-semibold truncate', b.status === 'cancelled' && 'line-through')}>{b.customer.firstName}</div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                        getStatusPillClasses(b.status)
+                      )}
+                    >
+                      {formatBookingStatusPtBr(b.status)}
+                    </span>
+                  </div>
+                  <div className="truncate opacity-80">{SERVICE_LABELS[b.serviceType] || b.serviceType}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWeekView = () => {
+    const startOfWeek = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).startOf('week');
+    const days = Array.from({ length: 7 }, (_, i) => startOfWeek.plus({ days: i }));
+    const dayStartHour = 8;
+
+    return (
+      <div className="overflow-x-auto">
+        <div className="min-w-[800px] grid grid-cols-[60px_repeat(7,1fr)] border-t border-border/60">
+          {/* Header */}
+          <div className="sticky left-0 bg-background z-20 border-b border-r p-2" />
+          {days.map(day => (
+            <div key={day.toISODate()} className={cn(
+              "text-center p-2 border-b border-r font-medium text-sm",
+              day.hasSame(DateTime.now().setZone('America/Sao_Paulo'), 'day') && "bg-primary/5 text-primary"
+            )}>
+              <div className="uppercase text-[10px] text-muted-foreground">{day.toFormat('ccc')}</div>
+              <div>{day.toFormat('dd')}</div>
+            </div>
+          ))}
+
+          {/* Time Grid */}
+          <div className="sticky left-0 bg-background z-20 border-r">
+            {TIME_SLOTS.map(time => (
+              <div key={time} className="h-[44px] border-b text-xs text-muted-foreground flex items-start justify-end pr-2 pt-1">
+                {time}
+              </div>
+            ))}
+          </div>
+
+          {days.map(day => {
+             const dayBookings = bookings.filter(b => 
+              DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day')
+            );
+            return (
+              <div key={day.toISODate()} className="relative border-r border-border/40 bg-background/30">
+                {TIME_SLOTS.map(time => (
+                  <div key={time} className="h-[44px] border-b border-border/40" />
+                ))}
+                {dayBookings.map(b => {
+                  const start = DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' });
+                  const minutesFromStart = start.diff(day.set({ hour: dayStartHour, minute: 0 }), 'minutes').minutes;
+                  const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
+                  if (topPx < 0 || topPx >= TIME_SLOTS.length * GRID_ROW_PX) return null;
+                  
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => setSelectedBooking(b)}
+                      className={cn(
+                        "absolute left-0.5 right-0.5 rounded px-1 py-0.5 text-xs border shadow-sm overflow-hidden hover:z-10",
+                        getStatusCardClasses(b.status)
+                      )}
+                      style={{ top: topPx, height: GRID_ROW_PX - 2 }}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <div className={cn('font-semibold truncate', b.status === 'cancelled' && 'line-through')}>{b.customer.firstName}</div>
+                        <span
+                          className={cn(
+                            'rounded px-1 py-0.5 text-[10px] font-medium',
+                            getStatusPillClasses(b.status)
+                          )}
+                        >
+                          {formatBookingStatusPtBr(b.status)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMonthView = () => {
+    const start = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).startOf('month').startOf('week');
+    const end = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).endOf('month').endOf('week');
+    const days = [];
+    let curr = start;
+    while (curr <= end) {
+      days.push(curr);
+      curr = curr.plus({ days: 1 });
+    }
+
+    return (
+      <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden shadow-sm">
+        {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+          <div key={d} className="bg-muted/50 p-2 text-center text-xs font-medium text-muted-foreground uppercase">
+            {d}
+          </div>
+        ))}
+        {days.map(day => {
+          const isCurrentMonth = day.hasSame(DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }), 'month');
+          const dayBookings = bookings.filter(b => 
+            DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day')
+          );
+          const isToday = day.hasSame(DateTime.now().setZone('America/Sao_Paulo'), 'day');
+
+          return (
+            <div 
+              key={day.toISODate()} 
+              className={cn(
+                "bg-card min-h-[120px] p-2 transition-colors hover:bg-accent/5",
+                !isCurrentMonth && "bg-muted/20 text-muted-foreground"
+              )}
+              onClick={() => {
+                setSelectedDate(day.toJSDate());
+                setViewMode('day');
+              }}
+            >
+              <div className={cn("text-sm font-medium mb-2 w-6 h-6 flex items-center justify-center rounded-full", isToday && "bg-primary text-primary-foreground")}>
+                {day.day}
+              </div>
+              <div className="space-y-1">
+                {dayBookings.slice(0, 4).map(b => (
+                  <div key={b.id} className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded truncate border",
+                    b.status === 'confirmed' ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200" :
+                    b.status === 'completed' ? "bg-green-50 border-green-100 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200" :
+                    b.status === 'no_show' ? "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200" :
+                    b.status === 'cancelled' ? "bg-muted/60 border-border text-muted-foreground" :
+                    "bg-muted border-transparent"
+                  )}>
+                    {DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm')} {b.customer.firstName} • {formatBookingStatusPtBr(b.status)}
+                  </div>
+                ))}
+                {dayBookings.length > 4 && (
+                  <div className="text-[10px] text-muted-foreground font-medium pl-1">
+                    mais +{dayBookings.length - 4}
+                  </div>
+                )}
               </div>
             </div>
+          );
+        })}
+      </div>
+    );
+  };
 
-            <div className="w-full overflow-x-auto">
-              <TabsList className="w-max min-w-full justify-start flex-nowrap">
-                {barbers.map((barber) => (
-                  <TabsTrigger key={barber.id} value={barber.id} className="whitespace-nowrap">
-                    {barber.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+  return (
+    <AdminLayout>
+      <div className="space-y-4 h-[calc(100vh-140px)] flex flex-col">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-serif font-bold">Agenda</h2>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="capitalize">{selectedDateLabel}</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
-            <div>
+          <div className="flex items-center gap-2 bg-card border rounded-lg p-1 shadow-sm">
+            <Button variant="ghost" size="sm" onClick={() => handleNavigate('prev')}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => handleNavigate('today')}>
+              {isToday ? 'Hoje' : 'Ir para Hoje'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => handleNavigate('next')}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="w-auto">
+              <TabsList>
+                <TabsTrigger value="day" className="px-3"><List className="h-4 w-4 mr-2" /> Dia</TabsTrigger>
+                <TabsTrigger value="week" className="px-3"><Columns className="h-4 w-4 mr-2" /> Semana</TabsTrigger>
+                <TabsTrigger value="month" className="px-3"><LayoutGrid className="h-4 w-4 mr-2" /> Mês</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
+
+        <Tabs value={selectedBarber} onValueChange={setSelectedBarber} className="flex-1 flex flex-col min-h-0">
+          <div className="w-full overflow-x-auto shrink-0 pb-2">
+            <TabsList className="w-max min-w-full justify-start flex-nowrap">
               {barbers.map((barber) => (
-                <TabsContent key={barber.id} value={barber.id} className="space-y-4">
-                  {loading ? (
-                    <div className="flex justify-center py-8">
-                      <LoadingSpinner />
-                    </div>
-                  ) : (
-                    <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-                      <CardContent className="p-0">
-                        <div className="border-t border-border/60">
-                          <div className="max-h-[70vh] overflow-y-auto">
-                            <div className="grid grid-cols-[80px_1fr]">
-                              {/* Coluna de horários */}
-                              <div className="bg-background/40">
-                                {TIME_SLOTS.map((time) => {
-                                  const [h, m] = time.split(':').map(Number);
-                                  const showLabel = m === 0;
-                                  return (
-                                    <div
-                                      key={time}
-                                      className="border-b border-border/60 pr-3"
-                                      style={{ height: GRID_ROW_PX }}
-                                    >
-                                      <div className="h-full flex items-start justify-end pt-1">
-                                        {showLabel ? (
-                                          <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">
-                                            {h.toString().padStart(2, '0')}:00
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-
-                              {/* Grade + eventos */}
-                              <div className="relative">
-                                {/* linhas da grade */}
-                                <div aria-hidden className="absolute inset-0">
-                                  {TIME_SLOTS.map((time) => {
-                                    const [, m] = time.split(':').map(Number);
-                                    const isHour = m === 0;
-                                    return (
-                                      <div
-                                        key={time}
-                                        className={
-                                          'border-b ' +
-                                          (isHour ? 'border-border/70' : 'border-border/40')
-                                        }
-                                        style={{ height: GRID_ROW_PX }}
-                                      />
-                                    );
-                                  })}
-                                </div>
-
-                                {/* indicador de horário atual */}
-                                {nowLineTopPx != null ? (
-                                  <div
-                                    className="absolute left-0 right-0"
-                                    style={{ top: nowLineTopPx }}
-                                    aria-label="Horário atual"
-                                  >
-                                    <div className="relative">
-                                      <div className="absolute -left-1 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-destructive" />
-                                      <div className="h-px bg-destructive" />
-                                    </div>
-                                  </div>
-                                ) : null}
-
-                                {/* eventos */}
-                                <div
-                                  className="relative"
-                                  style={{ height: TIME_SLOTS.length * GRID_ROW_PX }}
-                                >
-                                  {events.map((ev) => {
-                                    if (ev.kind === 'block') {
-                                      return (
-                                        <div
-                                          key={`block:${ev.timeKey}`}
-                                          className="absolute left-2 right-2 rounded-md border px-2 py-1.5 text-left bg-muted/40 border-border/60"
-                                          style={{ top: ev.topPx, height: ev.heightPx - 6 }}
-                                          aria-label={`Bloqueado ${ev.timeKey}`}
-                                        >
-                                          <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                              <div className="truncate text-sm font-medium">Bloqueado</div>
-                                              <div className="truncate text-xs text-muted-foreground">Horário fechado</div>
-                                            </div>
-                                            <Badge variant="outline" className="shrink-0">
-                                              Fechado
-                                            </Badge>
-                                          </div>
-                                        </div>
-                                      );
-                                    }
-
-                                    const booking = ev.booking;
-                                    const isBad = booking.status === 'no_show' || booking.status === 'cancelled';
-                                    const containerClass =
-                                      'absolute left-2 right-2 rounded-md border px-2 py-1.5 text-left shadow-sm ' +
-                                      (isBad
-                                        ? 'bg-destructive/10 border-destructive/20'
-                                        : 'bg-primary/10 border-primary/20');
-
-                                    return (
-                                      <button
-                                        key={booking.id}
-                                        type="button"
-                                        className={containerClass}
-                                        style={{ top: ev.topPx, height: ev.heightPx - 6 }}
-                                        onClick={() => setSelectedBooking(booking)}
-                                      >
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="min-w-0">
-                                            <div className="truncate text-sm font-medium">
-                                              {booking.customer.firstName} {booking.customer.lastName}
-                                            </div>
-                                            <div className="truncate text-xs text-muted-foreground">
-                                              {SERVICE_LABELS[booking.serviceType] || booking.serviceType}
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center gap-2">
-                                            <Badge
-                                              variant={
-                                                booking.status === 'completed' || booking.status === 'confirmed'
-                                                  ? 'default'
-                                                  : booking.status === 'no_show' || booking.status === 'cancelled'
-                                                  ? 'destructive'
-                                                  : 'secondary'
-                                              }
-                                              className="shrink-0"
-                                            >
-                                              {formatBookingStatusPtBr(booking.status)}
-                                            </Badge>
-                                            {booking.whatsappStatus === 'sent' ? (
-                                              <Badge variant="outline" className="shrink-0">
-                                                WhatsApp ✓
-                                              </Badge>
-                                            ) : null}
-                                          </div>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </TabsContent>
+                <TabsTrigger key={barber.id} value={barber.id} className="whitespace-nowrap">
+                  {barber.name}
+                </TabsTrigger>
               ))}
+            </TabsList>
+          </div>
+
+          <div className="flex-1 min-h-0 relative bg-card/50 backdrop-blur-sm border rounded-lg overflow-hidden shadow-sm">
+            {loading && (
+              <div className="absolute inset-0 z-50 bg-background/50 flex items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            )}
+            
+            <div className="h-full overflow-y-auto">
+              {viewMode === 'day' && renderDayView()}
+              {viewMode === 'week' && renderWeekView()}
+              {viewMode === 'month' && renderMonthView()}
             </div>
-
-            <aside className="space-y-3">
-              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-                <CardContent className="p-3">
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
-                    className="rounded-md border w-full"
-                  />
-                </CardContent>
-              </Card>
-
-              <Button variant="outline" onClick={() => setBlockModalOpen(true)} className="w-full flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4" />
-                Bloquear Horários
-              </Button>
-            </aside>
           </div>
         </Tabs>
       </div>
 
+      {/* Booking Details Dialog */}
       <Dialog open={!!selectedBooking} onOpenChange={() => setSelectedBooking(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Detalhes da Reserva</DialogTitle>
             <DialogDescription>
-              {selectedBooking &&
-                `${selectedBooking.customer.firstName} ${selectedBooking.customer.lastName}`}
+              {selectedBooking && `${selectedBooking.customer.firstName} ${selectedBooking.customer.lastName}`}
             </DialogDescription>
           </DialogHeader>
           {selectedBooking && (
             <div className="space-y-4">
               <div className="space-y-2 text-sm">
-                <p>
-                  <span className="font-medium">Serviço:</span>{' '}
-                  {SERVICE_LABELS[selectedBooking.serviceType] || selectedBooking.serviceType}
-                </p>
-                <p>
-                  <span className="font-medium">Horário:</span>{' '}
-                  {formatTime(selectedBooking.slotStart)}
-                </p>
-                <p>
-                  <span className="font-medium">WhatsApp:</span>{' '}
-                  {selectedBooking.customer.whatsappE164}
-                </p>
-                <p>
-                  <span className="font-medium">Status:</span>{' '}
-                  <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge>
-                </p>
+                <p><span className="font-medium">Serviço:</span> {SERVICE_LABELS[selectedBooking.serviceType] || selectedBooking.serviceType}</p>
+                <p><span className="font-medium">Horário:</span> {formatTime(selectedBooking.slotStart)}</p>
+                <p><span className="font-medium">WhatsApp:</span> {selectedBooking.customer.whatsappE164}</p>
+                <p><span className="font-medium">Status:</span> <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge></p>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => handleSendWhatsApp(selectedBooking)}
-                  disabled={markWhatsappSentMutation.isPending}
-                >
-                  Enviar WhatsApp
-                </Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button onClick={() => handleSendWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
                 <Button
                   variant="secondary"
+                  size="sm"
+                  disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status) || setStatusMutation.isPending}
                   onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'completed' })}
-                  disabled={
-                    setStatusMutation.isPending ||
-                    selectedBooking.status === 'completed' ||
-                    selectedBooking.status === 'cancelled'
-                  }
                 >
                   Concluir
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
+                  disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status) || setStatusMutation.isPending}
                   onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'no_show' })}
-                  disabled={
-                    setStatusMutation.isPending ||
-                    selectedBooking.status === 'no_show' ||
-                    selectedBooking.status === 'cancelled'
-                  }
                 >
                   Falta
                 </Button>
                 <Button
                   variant="destructive"
+                  size="sm"
+                  disabled={selectedBooking.status === 'cancelled' || cancelMutation.isPending}
                   onClick={() => {
-                    if (confirm('Tem certeza que deseja cancelar esta reserva?')) {
-                      cancelMutation.mutate(selectedBooking.id);
-                    }
+                    if (confirm('Cancelar?')) cancelMutation.mutate(selectedBooking.id);
                   }}
-                  disabled={cancelMutation.isPending}
                 >
                   Cancelar
                 </Button>
@@ -655,6 +683,16 @@ export default function AgendaDayPage() {
         }}
         selectedDate={selectedDate}
       />
+      
+      {/* Floating Action Button for Blocking Slots (only visible in Day view for now) */}
+      {viewMode === 'day' && (
+        <Button
+          className="fixed bottom-6 right-6 rounded-full h-14 w-14 shadow-lg z-50"
+          onClick={() => setBlockModalOpen(true)}
+        >
+          <CalendarIcon className="h-6 w-6" />
+        </Button>
+      )}
     </AdminLayout>
   );
 }

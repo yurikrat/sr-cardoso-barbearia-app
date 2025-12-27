@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useBranding } from '@/hooks/useBranding';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function LoginPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { branding } = useBranding();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -44,7 +46,12 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+            <img 
+              src={branding?.logoUrl || "/logo.png"} 
+              alt="Sr. Cardoso Barbearia" 
+              className="mx-auto w-40 h-auto" 
+              style={{ transform: `scale(${branding?.logoScale || 1})` }}
+            />
           </Link>
         </div>
         <Card>

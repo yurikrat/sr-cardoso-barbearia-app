@@ -2,11 +2,14 @@ import type express from 'express';
 import { DateTime } from 'luxon';
 import { FieldValue, Timestamp } from '@google-cloud/firestore';
 import type { Firestore } from '@google-cloud/firestore';
+import multer from 'multer';
+import sharp from 'sharp';
 import {
   generateSlotId,
   getDateKey,
   isSunday,
   isValidTimeSlot,
+  type BrandingSettings,
 } from '@sr-cardoso/shared';
 import type { Env } from '../lib/env.js';
 import {
@@ -18,6 +21,12 @@ import {
   sanitizeFinanceConfig,
   setFinanceConfigCache,
 } from '../lib/finance.js';
+import {
+  BRANDING_CONFIG_DOC_PATH,
+  getBrandingConfig,
+  setBrandingConfigCache,
+  uploadToGCS,
+} from '../lib/branding.js';
 import {
   generatePassword,
   getAdminFromReq,
@@ -385,9 +394,30 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const barberDoc = await db.collection('barbers').doc(barberId).get();
       if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
       const data = barberDoc.data() as any;
-      return res.json({ calendarFeedToken: (data?.calendarFeedToken as string | undefined) ?? null });
+      return res.json({ 
+        calendarFeedToken: (data?.calendarFeedToken as string | undefined) ?? null,
+        schedule: data?.schedule ?? null
+      });
     } catch {
       return res.status(500).json({ error: 'Erro ao carregar barbeiro' });
+    }
+  });
+
+  app.put('/api/admin/barbers/:barberId/schedule', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId = req.params.barberId;
+      
+      if (admin.role !== 'master' && admin.barberId !== barberId) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
+
+      const schedule = req.body.schedule;
+      await db.collection('barbers').doc(barberId).set({ schedule }, { merge: true });
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Error updating schedule:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar horários' });
     }
   });
 
@@ -659,24 +689,39 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const admin = getAdminFromReq(req);
       const requestedBarberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
       const barberId = admin.role === 'barber' ? (admin.barberId as string) : requestedBarberId;
+      
       const dateKey = typeof req.query.dateKey === 'string' ? req.query.dateKey : null;
-      if (!barberId || !dateKey) return res.status(400).json({ error: 'barberId e dateKey são obrigatórios' });
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : null;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : null;
 
-      const snapshot = await db
-        .collection('bookings')
-        .where('barberId', '==', barberId)
-        .where('dateKey', '==', dateKey)
-        .orderBy('slotStart', 'asc')
-        .get();
+      if (!barberId) return res.status(400).json({ error: 'barberId é obrigatório' });
 
-      const items = snapshot.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          ...data,
-          slotStart: data.slotStart?.toDate ? data.slotStart.toDate().toISOString() : null,
-        };
-      });
+      let query = db.collection('bookings').where('barberId', '==', barberId);
+
+      if (dateKey) {
+        query = query.where('dateKey', '==', dateKey);
+      } else if (startDate && endDate) {
+        query = query.where('dateKey', '>=', startDate).where('dateKey', '<=', endDate);
+      } else {
+        return res.status(400).json({ error: 'dateKey ou (startDate e endDate) são obrigatórios' });
+      }
+
+      const snapshot = await query.get();
+
+      const items = snapshot.docs
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            ...data,
+            slotStart: data.slotStart?.toDate ? data.slotStart.toDate().toISOString() : null,
+          };
+        })
+        .sort((a, b) => {
+          const startA = a.slotStart || '';
+          const startB = b.slotStart || '';
+          return startA.localeCompare(startB);
+        });
 
       return res.json({ items });
     } catch {
@@ -1197,6 +1242,84 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       return res.status(500).send('Erro ao gerar calendário');
     }
   });
+
+  // --- Branding Routes ---
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  });
+
+  app.get('/api/admin/branding', requireAdminMw, async (_req, res) => {
+    try {
+      const config = await getBrandingConfig(db);
+      return res.json(config);
+    } catch (e) {
+      return res.status(500).json({ error: 'Erro ao carregar branding' });
+    }
+  });
+
+  app.patch('/api/admin/branding', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const body = req.body as Partial<BrandingSettings>;
+      const current = await getBrandingConfig(db);
+
+      const updated: BrandingSettings = {
+        ...current,
+        ...body,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await db.doc(BRANDING_CONFIG_DOC_PATH).set(updated, { merge: true });
+      setBrandingConfigCache(updated);
+
+      return res.json({ success: true, config: updated });
+    } catch (e) {
+      return res.status(500).json({ error: 'Erro ao atualizar branding' });
+    }
+  });
+
+  app.post(
+    '/api/admin/branding/upload',
+    requireAdminMw,
+    requireMaster(),
+    upload.single('file') as any,
+    async (req, res) => {
+      try {
+        const type = req.query.type as 'logo' | 'favicon';
+        if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+        if (type !== 'logo' && type !== 'favicon') {
+          return res.status(400).json({ error: 'Tipo inválido (logo ou favicon)' });
+        }
+
+        let buffer = req.file.buffer;
+        let contentType = req.file.mimetype;
+        let filename = `${type}-${Date.now()}`;
+
+        if (type === 'favicon') {
+          // Process favicon: resize to 128x128 for high quality on all devices
+          buffer = await sharp(buffer)
+            .resize(128, 128, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .png()
+            .toBuffer();
+          contentType = 'image/png';
+          filename += '.png';
+        } else {
+          // Process logo: optimize but keep quality
+          const metadata = await sharp(buffer).metadata();
+          if (metadata.width && metadata.width > 1200) {
+            buffer = await sharp(buffer).resize(1200).toBuffer();
+          }
+          filename += metadata.format === 'png' ? '.png' : '.jpg';
+        }
+
+        const publicUrl = await uploadToGCS(env, filename, buffer, contentType);
+        return res.json({ success: true, url: publicUrl });
+      } catch (e: any) {
+        console.error('Upload error:', e);
+        return res.status(500).json({ error: e.message || 'Erro no upload' });
+      }
+    }
+  );
 }
 
 function formatICSDate(date: Date): string {

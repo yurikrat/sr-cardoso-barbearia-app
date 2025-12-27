@@ -7,6 +7,7 @@ export type Env = {
   WEB_ORIGIN?: string;
   STATIC_DIR?: string;
   CANCEL_LINK_PEPPER?: string;
+  GCP_STORAGE_BUCKET?: string;
 };
 
 export function getEnv(): Env {
@@ -19,5 +20,6 @@ export function getEnv(): Env {
     WEB_ORIGIN: process.env.WEB_ORIGIN,
     STATIC_DIR: process.env.STATIC_DIR,
     CANCEL_LINK_PEPPER: process.env.CANCEL_LINK_PEPPER,
+    GCP_STORAGE_BUCKET: process.env.GCP_STORAGE_BUCKET,
   };
 }

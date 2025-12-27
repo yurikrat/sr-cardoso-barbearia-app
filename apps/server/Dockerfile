@@ -1,13 +1,19 @@
 # Stage 1: Base (Dependencies)
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
+
+# Enable BuildKit cache for npm
+ENV NPM_CONFIG_CACHE=/app/.npm
+
 # Copy package definitions first for better caching
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/web/package.json ./apps/web/
 COPY apps/server/package.json ./apps/server/
-# Install dependencies
-RUN npm ci --no-audit --no-fund
+
+# Install dependencies using cache mount
+RUN --mount=type=cache,target=/app/.npm \
+    npm ci --no-audit --no-fund
 
 # Stage 2: Build Shared
 FROM base AS build-shared
@@ -17,7 +23,9 @@ RUN npm run build --workspace=packages/shared
 # Stage 3: Build Web (Parallel)
 FROM build-shared AS build-web
 COPY apps/web ./apps/web
-RUN npm run build --workspace=apps/web
+# Use cache for build artifacts if possible (e.g. vite cache)
+RUN --mount=type=cache,target=/app/apps/web/node_modules/.vite \
+    npm run build --workspace=apps/web
 
 # Stage 4: Build Server (Parallel)
 FROM build-shared AS build-server
@@ -31,18 +39,21 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV STATIC_DIR=/app/apps/web/dist
 
-# Copy root node_modules
+# Copy root node_modules and prune devDependencies
+COPY --from=base /app/package.json /app/package-lock.json ./
 COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/packages/shared/package.json ./packages/shared/
+COPY --from=base /app/apps/server/package.json ./apps/server/
 
-# Copy workspace structures (to preserve node_modules nesting)
-COPY --from=base /app/apps/server ./apps/server
-COPY --from=build-shared /app/packages/shared ./packages/shared
+# Prune dev dependencies to keep image small
+RUN npm prune --production --no-audit --no-fund
 
-# Copy built artifacts
+# Copy workspace structures
+COPY --from=build-shared /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build-server /app/apps/server/dist ./apps/server/dist
 COPY --from=build-web /app/apps/web/dist ./apps/web/dist
 
-# Set working directory to server app to match local development structure
+# Set working directory to server app
 WORKDIR /app/apps/server
 
 EXPOSE 8080

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useBranding } from '@/hooks/useBranding';
 import { useBookingState } from '@/contexts/BookingContext';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -13,10 +14,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useToast } from '@/components/ui/use-toast';
-import { createBookingFn } from '@/lib/firebase';
+import { createBookingFn } from '@/lib/api-compat';
 import { applyPhoneMask, normalizeToE164 } from '@/utils/phone';
 import { generateDaySlots, isSlotPast } from '@/utils/slots';
-import { formatDate, formatTime, isToday } from '@/utils/dates';
+import { formatDate, formatTime, isToday, generateSlotsBetween } from '@/utils/dates';
 import { isValidName, isValidBrazilianPhone } from '@/utils/validation';
 import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
@@ -27,6 +28,7 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 const REMEMBERED_CUSTOMER_KEY = 'sr_remembered_customer';
 
 export default function BookingPage() {
+  const { branding } = useBranding();
   const navigate = useNavigate();
   const { toast } = useToast();
   const bookingState = useBookingState();
@@ -127,13 +129,50 @@ export default function BookingPage() {
       const date = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' });
       const dateKey = date.toFormat('yyyy-MM-dd');
       
-      // Gerar todos os slots do dia
-      const allSlots = generateDaySlots(selectedDate);
-      setAvailableSlots(allSlots);
+      // Fetch availability first
+      const availability = await api.availability(bookingState.barberId, dateKey);
+      
+      let slots: DateTime[] = [];
+
+      if (availability.schedule && Object.keys(availability.schedule).length > 0) {
+        let dayKey = date.weekday.toString();
+        if (date.weekday === 7) dayKey = '0'; // Sunday
+
+        const dayConfig = availability.schedule[dayKey];
+        
+        if (dayConfig && dayConfig.active) {
+           const [startH, startM] = dayConfig.start.split(':').map(Number);
+           const [endH, endM] = dayConfig.end.split(':').map(Number);
+           
+           const startDt = date.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
+           const endDt = date.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
+           
+           // Generate slots up to 30 mins before closing
+           const lastSlotStart = endDt.minus({ minutes: 30 });
+           slots = generateSlotsBetween(startDt, lastSlotStart);
+
+           if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+             slots = slots.filter(slot => {
+               const slotStr = slot.toFormat('HH:mm');
+               return !dayConfig.breaks.some((brk: any) => {
+                 return slotStr >= brk.start && slotStr < brk.end;
+               });
+             });
+           }
+        } else {
+           // Closed or no config for this day
+           slots = [];
+        }
+      } else {
+        // Default fallback
+        slots = generateDaySlots(selectedDate);
+      }
+
+      setAvailableSlots(slots);
 
       const booked = new Set<string>();
       const blocked = new Set<string>();
-      const availability = await api.availability(bookingState.barberId, dateKey);
+      
       availability.bookedSlotIds.forEach((id) => booked.add(id));
       availability.blockedSlotIds.forEach((id) => blocked.add(id));
 
@@ -147,7 +186,7 @@ export default function BookingPage() {
         data: {
           barberId: bookingState.barberId,
           dateKey,
-          totalSlots: allSlots.length,
+          totalSlots: slots.length,
           firestoreDocs: availability.bookedSlotIds.length + availability.blockedSlotIds.length,
           bookedCount: booked.size,
           blockedCount: blocked.size,
@@ -429,7 +468,15 @@ export default function BookingPage() {
       <div className="max-w-md mx-auto space-y-6">
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img src="/logo.png" alt="Sr. Cardoso Barbearia" className="mx-auto w-40 h-auto" />
+            <img 
+              src={branding?.logoUrl || "/logo.png"} 
+              alt="Sr. Cardoso Barbearia" 
+              className="mx-auto h-auto" 
+              style={{ 
+                width: '160px',
+                transform: `scale(${branding?.logoScale || 1})`
+              }}
+            />
           </Link>
           <h1 className="text-2xl font-serif font-bold">Agendar</h1>
           <Stepper currentStep={step} totalSteps={6} />

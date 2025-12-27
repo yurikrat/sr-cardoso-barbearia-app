@@ -6,6 +6,9 @@ App de agendamentos mobile-first para a Barbearia Sr. Cardoso.
 
 Aplicativo web PWA para clientes agendarem horários na barbearia, com painel admin completo para gerenciamento de agendas, clientes e campanhas. Otimizado para abrir a partir de links no WhatsApp (iOS/Android).
 
+**Projeto GCP:** `sr-cardoso-barbearia-prd`  
+**Região:** `us-central1`
+
 ## 🏗️ Estrutura do Projeto
 
 Este é um monorepo organizado em workspaces:
@@ -14,19 +17,18 @@ Este é um monorepo organizado em workspaces:
 sr-cardoso-barbearia/
 ├── apps/
 │   ├── web/              # Frontend React + Vite (cliente + admin)
-│   └── functions/        # Backend - Firebase Cloud Functions
+│   └── server/           # Backend - Cloud Run (Express + Firestore)
 ├── packages/
 │   └── shared/           # Tipos, schemas e utilitários compartilhados
 ├── scripts/              # Scripts de setup/manutenção
-├── firebase/             # Configurações Firebase (rules, indexes)
-├── firebase.json         # Configuração principal Firebase
-└── .firebaserc           # Aliases de projetos Firebase
+├── firebase/             # Configurações Firestore (rules, indexes)
+└── Dockerfile            # Container para Cloud Run
 ```
 
 ### Separação Backend/Frontend
 
 - **Frontend**: `apps/web/` - React, Vite, TypeScript, Tailwind CSS
-- **Backend**: `apps/functions/` - Firebase Cloud Functions, TypeScript
+- **Backend**: `apps/server/` - Cloud Run (Express), Firestore, Cloud Storage
 - **Compartilhado**: `packages/shared/` - Types, schemas Zod, utilitários
 
 ## 🚀 Setup Inicial
@@ -35,7 +37,8 @@ sr-cardoso-barbearia/
 
 - Node.js >= 18.0.0
 - npm >= 9.0.0
-- Firebase CLI (`npm install -g firebase-tools`)
+- Google Cloud SDK (`gcloud`) instalado e configurado
+- Projeto GCP criado com Firestore habilitado
 
 ### 1. Instalar Dependências
 
@@ -43,18 +46,12 @@ sr-cardoso-barbearia/
 npm install
 ```
 
-### 2. Configurar Firebase
+### 2. Configurar Google Cloud
 
 ```bash
-firebase login
-firebase init
+gcloud init
+gcloud config set project sr-cardoso-barbearia-prd
 ```
-
-Durante o `firebase init`, selecione:
-- ✅ Firestore
-- ✅ Functions
-- ✅ Hosting
-- ✅ Use an existing project
 
 ### 3. Configurar Variáveis de Ambiente
 
@@ -62,60 +59,68 @@ Durante o `firebase init`, selecione:
 cp .env.example apps/web/.env
 ```
 
-Edite `apps/web/.env` com suas credenciais do Firebase:
+Edite `apps/web/.env`:
 
 ```bash
-VITE_FIREBASE_API_KEY=your-api-key
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-VITE_FIREBASE_APP_ID=your-app-id
+VITE_API_BASE_URL=https://your-cloud-run-url.run.app
 ```
-
-**Onde encontrar**: Firebase Console > Project Settings > General > Your apps
 
 ### 4. Inicializar Barbeiros
 
 ```bash
-export FIREBASE_SERVICE_ACCOUNT_PATH=./serviceAccountKey.json
+export GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json
 npx tsx scripts/init-barbers.ts
 ```
 
-**Service Account**: Firebase Console > Project Settings > Service accounts > Generate new private key
+**Service Account**: GCP Console > IAM & Admin > Service accounts > Create key (JSON)
 
-### 5. Configurar Firebase Auth
-
-No Firebase Console:
-- Authentication > Sign-in method > Habilite "Email/Password"
-- Authentication > Users > Add user (crie usuário admin)
-
-### 6. Deploy Firestore Rules e Indexes
-
-```bash
-firebase deploy --only firestore:rules,firestore:indexes
+### 5. Deploy Firestore Rules e Indexes
+GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json
+npx tsx scripts/init-barbers.ts
 ```
 
-## 🛠️ Scripts Disponíveis
+**Service Account**: GCP Console > IAM & Admin > Service accounts > Create key (JSON)
 
-- `npm run dev` - Inicia servidor de desenvolvimento do frontend
-- `npm run build` - Build de todos os workspaces
-- `npm run build:web` - Build apenas do frontend
-- `npm run build:functions` - Build apenas das functions
-- `npm run lint` - Executa ESLint em todos os workspaces
-- `npm run format` - Formata código com Prettier
-- `npm run format:check` - Verifica formatação
+### 5. Deploy Firestore Rules e Indexes
 
-## 🔥 Firebase
+```bash
+# Deploy das regras de segurança
+gcloud firestore rules create \
+  --file=firebase/firestore.rules \
+  --project=sr-cardoso-barbearia-prd
 
-### Arquivos do Firebase
+# Deploy dos índices
+gcloud firestore indexes create \
+  --file=firebase/firestore.indexes.json \
+  --project=sr-cardoso-barbearia-prd
+```
 
-Todos os arquivos de configuração do Firebase estão organizados:
+### 6. Deploy do Cloud Run
 
-- `firebase.json` - Configuração principal (raiz)
-- `.firebaserc` - Aliases de projetos (raiz)
+```bash
+# Build e deploy do backend
+gcloud run deploy sr-cardoso-api \
+  --source apps/server \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=sr-cardoso-barbearia-prd" \
+  --project=sr-cardoso-barbearia-prd
+```
+
+## 🧪 Desenvolvimento
+
+### Arquivos de Configuração Firestore
+
+Todos os arquivos de configuração do Firestore estão organizados em `firebase/`:
+
 - `firebase/firestore.rules` - Regras de segurança
 - `firebase/firestore.indexes.json` - Índices compostos
+
+Deploy via:
+```bash
+gcloud firestore rules create --file=firebase/firestore.rules --project=sr-cardoso-barbearia-prd
+gcloud firestore indexes create --file=firebase/firestore.indexes.json --project=sr-cardoso-barbearia-prd
+```
 
 ### Deploy
 
@@ -123,21 +128,16 @@ Todos os arquivos de configuração do Firebase estão organizados:
 # Build primeiro
 npm run build
 
-# Deploy completo
-firebase deploy
+# Deploy do backend (Cloud Run)
+gcloud run deploy sr-cardoso-api \
+  --source apps/server \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --project=sr-cardoso-barbearia-prd
 
-# Deploy seletivo
-firebase deploy --only hosting      # Frontend
-firebase deploy --only functions    # Backend
-firebase deploy --only firestore:rules
-firebase deploy --only firestore:indexes
-```
-
-### Ambientes
-
-```bash
-firebase use dev   # Ambiente de desenvolvimento
-firebase use prod  # Ambiente de produção
+# Deploy incremental (apenas regras/índices do Firestore)
+gcloud firestore rules create --file=firebase/firestore.rules --project=sr-cardoso-barbearia-prd
+gcloud firestore indexes create --file=firebase/firestore.indexes.json --project=sr-cardoso-barbearia-prd
 ```
 
 ## 🧪 Desenvolvimento
@@ -172,7 +172,7 @@ npm run serve
 - ✅ Persistência de estado no localStorage
 
 ### Admin
-- ✅ Login com Firebase Auth
+- ✅ Login com JWT (backend)
 - ✅ Agenda do dia por barbeiro
 - ✅ Agenda da semana (visão geral)
 - ✅ Gerenciamento de reservas (visualizar, cancelar)
@@ -200,10 +200,10 @@ npm run serve
 - PWA (vite-plugin-pwa)
 
 **Backend:**
-- Firebase Cloud Functions (serverless)
+- Cloud Run (Express + Node.js)
 - Firestore (banco NoSQL)
-- Firebase Auth (autenticação)
-- Firebase Hosting (CDN)
+- Cloud Storage (assets/branding)
+- JWT-based authentication (admin)
 
 **Compartilhado:**
 - TypeScript types
@@ -217,16 +217,16 @@ npm run serve
 2. Seleciona serviço → barbeiro → data → horário
 3. Preenche dados (nome, sobrenome, WhatsApp)
 4. Revisa e confirma
-5. Frontend chama `createBooking()` Function
-6. Function valida, cria booking, bloqueia slot, upsert customer
+5. Frontend chama `POST /api/bookings` no Cloud Run
+6. API valida, cria booking, bloqueia slot, upsert customer
 7. Retorna bookingId
 8. Frontend redireciona para `/sucesso`
 
 **Admin:**
 1. Admin faz login (`/admin/login`)
 2. Acessa agenda (`/admin/agenda`)
-3. Visualiza bookings do dia/semana
-4. Pode cancelar, reagendar, bloquear slots
+3. Visualiza bookings do dia/semana/mês
+4. Pode cancelar, reagendar, marcar status (Concluir/Falta)
 5. Envia WhatsApp via deep link (`wa.me`)
 
 ### Schema Firestore
@@ -239,11 +239,12 @@ npm run serve
 
 ## 🔐 Segurança
 
-- ✅ Autenticação Firebase Auth (admin)
-- ✅ Firestore Rules configuradas
-- ✅ Validações server-side em todas as Functions (Zod)
+- ✅ JWT-based authentication (admin)
+- ✅ Firestore Rules configuradas (deploy via gcloud)
+- ✅ Validações server-side em todas as rotas (Zod)
 - ✅ Transações Firestore para evitar duplo agendamento
 - ✅ Validação de timezone (America/Sao_Paulo)
+- ✅ Helmet + CORS configurados no Express
 
 ## 🔏 Privacidade (simples) + Opt-out
 
@@ -331,14 +332,13 @@ Se um cliente pedir para parar de receber mensagens, o admin deve:
    npm run build
    ```
 
-2. **Selecionar Ambiente:**
+2. **Deploy:**
    ```bash
-   firebase use dev   # ou prod
-   ```
-
-3. **Deploy:**
-   ```bash
-   firebase deploy
+   gcloud run deploy sr-cardoso-api \
+     --source apps/server \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --project=sr-cardoso-barbearia-prd
    ```
 
 ### Checklist Antes de Deploy
@@ -353,16 +353,15 @@ Se um cliente pedir para parar de receber mensagens, o admin deve:
 
 ## 🆘 Troubleshooting
 
-### Erro: "Firebase: Error (auth/unauthorized-domain)"
-- Adicione o domínio em Firebase Console > Authentication > Settings > Authorized domains
+### Erro: "Unauthorized domain"
+- Adicione o domínio autorizado nas configurações do Cloud Run ou CORS no backend
 
 ### Erro: "Permission denied" no Firestore
 - Verifique as regras em `firebase/firestore.rules`
-- Deploy: `firebase deploy --only firestore:rules`
+- Deploy: `gcloud firestore rules create --file=firebase/firestore.rules --project=sr-cardoso-barbearia-prd`
 
-### Erro: "Function not found"
-- Verifique se as functions foram deployadas: `firebase deploy --only functions`
-
+### Erro: "API not responding"
+- Verifique se o Cloud Run está deployado: `gcloud run services list
 ### PWA não instala
 - Verifique se está usando HTTPS (ou localhost)
 - Verifique o console do navegador para erros
@@ -384,9 +383,9 @@ apps/
 │   │   └── utils/          # Utilitários
 │   └── public/             # Assets estáticos
 │
-└── functions/              # Backend
+└── server/                 # Backend (Cloud Run)
     └── src/
-        ├── functions/       # Cloud Functions
+        ├── routes/          # Express routes (REST API)
         └── utils/           # Utilitários
 
 packages/
@@ -396,7 +395,7 @@ packages/
         ├── schemas/         # Zod schemas
         └── utils/           # Utilitários
 
-firebase/                    # Configurações Firebase
+firebase/                    # Configurações Firestore
 ├── firestore.rules
 └── firestore.indexes.json
 ```
@@ -407,16 +406,16 @@ Privado - Barbearia Sr. Cardoso
 
 ---
 
-## ✅ Caminho B (ATUAL): GCP puro (Cloud Run + Firestore via IAM)
+## ✅ Arquitetura Atual: GCP Cloud Run + Firestore
 
-### O que muda no Caminho B
+### Como funciona
 - O **frontend não usa Firebase SDK** (sem `firebase/auth` e sem `firebase/firestore` no browser).
 - O frontend chama uma **API REST** (Cloud Run) em:
   - `POST /api/bookings` (público)
   - `GET /api/availability?barberId=...&dateKey=YYYY-MM-DD` (público)
   - `POST /api/admin/login` + endpoints admin (protegidos por token)
   - `GET /ical/barber/{barberId}/{token}.ics` (feed iCal)
-- O acesso ao Firestore é feito **no servidor** usando **IAM da Service Account do Cloud Run** (sem Firestore Rules).
+- O acesso ao Firestore é feito **no servidor** usando **IAM da Service Account do Cloud Run**.
 
 ### Variáveis de ambiente (server)
 No Cloud Run (ou local), configure:
@@ -425,7 +424,7 @@ No Cloud Run (ou local), configure:
 - `GCP_PROJECT_ID` (opcional): project id (em Cloud Run normalmente não precisa)
 - `WEB_ORIGIN` (opcional): se quiser restringir CORS
 
-### Rodar local (Caminho B)
+### Rodar local
 1. Build do web (opcional, se quiser servir estático pelo server):
    - `npm run build:web`
 2. Rodar o server:
@@ -455,27 +454,20 @@ Se você não quer Cloud Build, use o script que faz **build local + docker push
   - `./scripts/deploy-cloudrun.sh --project sr-cardoso-barbearia-prd --region us-central1 --service sr-cardoso-barbearia --admin-password '...' --admin-jwt-secret '...'`
 
 ### Índices do Firestore (obrigatório na 1ª vez)
-O Firestore vai pedir índices para algumas queries do backend. Crie no Console:
-- Firebase/GCP Console → Firestore → Indexes → Composite indexes
+O Firestore vai pedir índices para algumas queries do backend. Deploy via:
 
-Crie pelo menos:
+```bash
+gcloud firestore indexes create --file=firebase/firestore.indexes.json --project=sr-cardoso-barbearia-prd
+```
+
+Ou crie manualmente no Console (Firestore → Indexes → Composite indexes):
 - **bookings**: `barberId ASC`, `dateKey ASC`, `slotStart ASC`
-- **bookings**: `barberId ASC`, `slotStart ASC`, `status ASC` *(para o iCal: status in + orderBy slotStart)*
-- **slots (subcoleção barbers/{barberId}/slots)**: `dateKey ASC`, `slotStart ASC` *(para queries por intervalo/data, se necessário)*
+- **bookings**: `barberId ASC`, `slotStart ASC`, `status ASC`
+- **slots (subcoleção)**: `dateKey ASC`, `slotStart ASC`
 
 ---
 
-## ↩️ Rollback: Caminho A (Firebase)
-
-O caminho A (Firebase Hosting + Firebase Auth + Cloud Functions) está preservado em `apps/functions/` e nas configurações `firebase/` e `firebase.json`.
-
-Para voltar ao caminho A rapidamente:
-- **Rollback via git**: volte para o commit **`9957b25`** (antes do caminho B), onde `apps/web/src/lib/firebase.ts` usa Firebase SDK.
-- Depois, siga o setup do Firebase no próprio README (seções de Firebase e Deploy).
-
----
-
-## 🧠 Planejamento (UX + Arquitetura GCP/Firebase)
+## 🧠 Planejamento (UX + Arquitetura GCP)
 
 ### Objetivo
 Criar um app web mobile-first (PWA) para clientes agendarem horários e um painel admin completo para a barbearia gerenciar duas agendas independentes (Sr Cardoso e Emanuel Fernandes), com slots de 30 min, funcionamento 08:00–19:00 (último horário 18:30), todos os dias exceto domingo, e confirmação por WhatsApp sem API no MVP (admin envia pela conta do WhatsApp Business da barbearia com mensagem pré-preenchida).
@@ -511,7 +503,7 @@ O fluxo do cliente será otimizado para o cenário real: o usuário chega pelo l
 - **Cadastro de cliente (CRM)**: cada agendamento cria/atualiza um registro único de cliente (dedupe por WhatsApp), para permitir histórico, recorrência e futuras campanhas.
 
 ### Casos de borda e microdetalhes (para nada escapar)
-- **Deep link de rota**: Firebase Hosting com rewrite para SPA suportar abrir direto em `/agendar` e `/admin` a partir de links.
+- **Deep link de rota**: Cloud Run serve o SPA com suporte para abertura direta em `/agendar` e `/admin` a partir de links.
 - **Timezone**: cálculo/validação do slot sempre em `America/Sao_Paulo` no backend (evita agendar errado se o celular estiver em outro fuso).
 - **Último slot**: 18:30 (encerrando 19:00) — o front exibe isso explicitamente.
 - **Domingo**: calendário desabilita e exibe mensagem “Domingo fechado”.
@@ -583,10 +575,10 @@ O fluxo do cliente será otimizado para o cenário real: o usuário chega pelo l
 - Buscar por nome/WhatsApp.
 
 #### Modelo de acesso (admin)
-- Contas separadas por barbeiro (Firebase Auth).
+- Login via JWT (backend)
 - Permissões:
   - barber: vê e gerencia apenas a própria agenda
-  - owner: vê e gerencia ambas (opcional, se você quiser um terceiro login “Barbearia”)
+  - owner: vê e gerencia ambas
 
 ### Design System (derivado da marca)
 > Valores iniciais (ajustaremos com amostragem do arquivo original da logo).
@@ -615,17 +607,16 @@ O fluxo do cliente será otimizado para o cenário real: o usuário chega pelo l
 - Luxon (datas/horários com timezone)
 - vite-plugin-pwa (PWA + manifest + cache estático)
 
-#### Backend (serverless)
-- Firebase Cloud Functions (Node 20 + TypeScript)
+#### Backend
+- Google Cloud Run (Express + Node.js 20 + TypeScript)
 - Firestore (Native mode)
-- Firebase Auth (admin)
-- Firebase App Check (web) (opcional; só se começar a ter abuso/spam no link público)
+- Cloud Storage (images/assets)
+- JWT-based authentication (admin)
 
-#### Hosting/Infra (GCP-first, custo)
-- Firebase Hosting (SPA + PWA)
-- Functions e Firestore no Firebase (GCP gerenciado)
-- Billing (importante): Cloud Functions exige projeto no plano Blaze (billing habilitado). Para manter custo praticamente zero, configurar orçamento + alertas no GCP e acompanhar quotas.
-- GitHub Actions para deploy (ambiente dev/prod) *(cancelado depois; deploy manual preferido).*
+#### Hosting/Infra
+- Cloud Run serves both API and static SPA (`express.static`)
+- Firestore rules managed via gcloud CLI
+- Billing: Cloud Run tem free tier generoso; Firestore tem cotas gratuitas. Com alertas de orçamento configurados, custos tendem a zero para tráfego baixo.
 
 ### Modelo de dados (Firestore)
 #### Coleções
@@ -655,15 +646,15 @@ O fluxo do cliente será otimizado para o cenário real: o usuário chega pelo l
 - `slotId = YYYYMMDD_HHmm` (ex.: `20251223_0830`).
 - `createBooking` faz transação: se slot doc existir → falha; senão cria slot + booking.
 
-### APIs (Cloud Functions)
-- `createBooking` (público)
+### APIs (Cloud Run)
+- `POST /api/bookings` (público)
   - valida regras (domingo, faixa horária, intervalos de 30 min, dados)
   - transação: cria slot + booking + upsert do customer (primeira vez ou merge)
-- `adminCancelBooking` (admin)
+- `POST /api/admin/bookings/:id/cancel` (admin)
   - transação: atualiza booking + remove slot
-- `adminRescheduleBooking` (admin)
+- `POST /api/admin/bookings/:id/reschedule` (admin)
   - transação: cria novo slot, remove slot antigo, atualiza booking
-- `adminBlockSlots` (admin)
+- `POST /api/admin/slots/block` (admin)
   - cria slots `kind=block` para intervalo
 - `adminMarkWhatsappSent` (admin)
   - marca `whatsappStatus=sent`
@@ -716,22 +707,24 @@ O fluxo do cliente será otimizado para o cenário real: o usuário chega pelo l
 - Métricas básicas: número de reservas/dia, taxa de cancelamento.
 
 ### Arquitetura (visão macro)
-- ClientApp → `createBooking` (Cloud Functions) → Firestore
-- AdminApp → Firestore + Functions (cancel/reschedule/block/markWhatsappSent)
+- ClientApp → Cloud Run REST API → Firestore
+- AdminApp → Cloud Run REST API (cancel/reschedule/block/markWhatsappSent/status) → Firestore
 - AdminApp → WhatsApp Business (deep link) para envio manual
 
 ### Roadmap (entregas)
 - MVP (1–2 semanas): Cliente agenda + bloqueio de horário + admin confirma/cancela/reagenda + deep link WhatsApp.
 - V1 (hardening): (Opcional) App Check + melhorias anti-spam + exportação básica.
 - V2 (automação WhatsApp): Migrar confirmação para WhatsApp Business Cloud API (templates + status delivery) mantendo o mesmo modelo de dados (só troca o “sender”).
-
-### Custos (free tier first)
-- Firebase Hosting: geralmente zero no início.
+GCP free tier first)
+- Cloud Run: 2 milhões de requisições/mês gratuitas
+- Firestore: 50k leituras + 20k escritas/dia gratuitas
+- Cloud Storage: 5 GB gratuitos
+- P
 - Firestore + Cloud Functions: exigem plano Blaze (billing habilitado), mas têm cotas gratuitas; para uma barbearia com tráfego baixo, tende a ficar perto de zero se bem otimizado e com alertas de orçamento.
 - Custos crescem principalmente com: muito tráfego, muitas leituras, e automação WhatsApp via API (cobrança por conversação).
-
-### Estrutura sugerida do repositório
-- `apps/web/` (React+Vite)
+server/` (Cloud Run: Express+Firestore+Cloud Storage)
+- `packages/shared/` (schemas Zod, utils de datas, tipos)
+- `firebase/` (firestore.rules, firestore.indexes.json — deploy via gcloud)
 - `apps/functions/` (Cloud Functions TS)
 - `packages/shared/` (schemas Zod, utils de datas, tipos)
 - `firebase.json`, `firebase/firestore.rules`, `firebase/firestore.indexes.json`

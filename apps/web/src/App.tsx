@@ -8,6 +8,7 @@ import { Toaster } from './components/ui/toaster';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { debugLog } from '@/utils/debugLog';
 import { api } from '@/lib/api';
+import { useBranding } from '@/hooks/useBranding';
 import HomePage from './pages/HomePage';
 import BookingPage from './pages/BookingPage';
 import SuccessPage from './pages/SuccessPage';
@@ -22,6 +23,8 @@ import CalendarIntegrationPage from './pages/admin/CalendarIntegrationPage';
 import FinancePage from './pages/admin/FinancePage';
 import UsersPage from './pages/admin/UsersPage';
 import ChangePasswordPage from './pages/admin/ChangePasswordPage';
+import ScheduleConfigPage from './pages/admin/ScheduleConfigPage';
+import BrandingPage from './pages/admin/BrandingPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -47,6 +50,23 @@ function MasterOnlyRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const { branding } = useBranding();
+
+  useEffect(() => {
+    if (branding?.faviconUrl) {
+      const links = document.querySelectorAll("link[rel*='icon']");
+      links.forEach(link => {
+        (link as HTMLLinkElement).href = branding.faviconUrl!;
+      });
+      
+      // Apple touch icon
+      const appleIcon = document.querySelector("link[rel='apple-touch-icon']");
+      if (appleIcon) {
+        (appleIcon as HTMLLinkElement).href = branding.faviconUrl;
+      }
+    }
+  }, [branding]);
+
   useEffect(() => {
     // #region agent log
     debugLog({
@@ -134,6 +154,16 @@ function App() {
               }
             />
             <Route
+              path="/admin/branding"
+              element={
+                <ProtectedRoute>
+                  <MasterOnlyRoute>
+                    <BrandingPage />
+                  </MasterOnlyRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/listas"
               element={
                 <ProtectedRoute>
@@ -146,6 +176,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <CalendarIntegrationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/horarios"
+              element={
+                <ProtectedRoute>
+                  <ScheduleConfigPage />
                 </ProtectedRoute>
               }
             />

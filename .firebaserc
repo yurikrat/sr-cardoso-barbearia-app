@@ -1,8 +1,0 @@
-{
-  "projects": {
-    "default": "prod",
-    "dev": "sr-cardoso-barbearia-dev",
-    "prod": "sr-cardoso-barbearia-prd"
-  }
-}
-

@@ -8,12 +8,12 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 
-// Inicializar Firebase Admin
-const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+// Inicializar Firebase Admin SDK (usado apenas para Firestore)
+const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!serviceAccountPath) {
-  console.error('❌ FIREBASE_SERVICE_ACCOUNT_PATH não definido');
-  console.log('💡 Crie uma service account no Firebase Console e defina o caminho:');
-  console.log('   export FIREBASE_SERVICE_ACCOUNT_PATH=./path/to/serviceAccountKey.json');
+  console.error('❌ GOOGLE_APPLICATION_CREDENTIALS não definido');
+  console.log('💡 Crie uma service account no GCP Console e defina o caminho:');
+  console.log('   export GOOGLE_APPLICATION_CREDENTIALS=./path/to/serviceAccountKey.json');
   process.exit(1);
 }
 
@@ -23,7 +23,7 @@ try {
     credential: admin.credential.cert(serviceAccount),
   });
 } catch (error) {
-  console.error('❌ Erro ao inicializar Firebase Admin:', error);
+  console.error('❌ Erro ao inicializar Firestore Admin SDK:', error);
   process.exit(1);
 }
 

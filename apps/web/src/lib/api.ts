@@ -1,3 +1,5 @@
+import type { BrandingSettings } from '@sr-cardoso/shared';
+
 type ApiError = { error?: string };
 
 const BASE =
@@ -100,11 +102,16 @@ export const api = {
       setAdminToken(data.token);
       return data;
     },
-    async listBookings(barberId: string, dateKey: string) {
+    async listBookings(barberId: string, dateKey?: string, range?: { start: string; end: string }) {
+      const params = new URLSearchParams();
+      params.set('barberId', barberId);
+      if (dateKey) params.set('dateKey', dateKey);
+      if (range) {
+        params.set('startDate', range.start);
+        params.set('endDate', range.end);
+      }
       return apiFetch<{ items: unknown[] }>(
-        `/api/admin/bookings?barberId=${encodeURIComponent(barberId)}&dateKey=${encodeURIComponent(
-          dateKey
-        )}`,
+        `/api/admin/bookings?${params.toString()}`,
         { admin: true }
       );
     },
@@ -138,6 +145,18 @@ export const api = {
     async getBarberCalendarToken(barberId: string) {
       return apiFetch<{ calendarFeedToken: string | null }>(`/api/admin/barbers/${barberId}`, {
         admin: true,
+      });
+    },
+    async getBarber(barberId: string) {
+      return apiFetch<{ calendarFeedToken: string | null; schedule: any }>(`/api/admin/barbers/${barberId}`, {
+        admin: true,
+      });
+    },
+    async updateBarberSchedule(barberId: string, schedule: any) {
+      return apiFetch<{ success: boolean }>(`/api/admin/barbers/${barberId}/schedule`, {
+        method: 'PUT',
+        admin: true,
+        body: JSON.stringify({ schedule }),
       });
     },
     async listBarbers() {
@@ -246,6 +265,41 @@ export const api = {
       });
     },
 
+    async getBranding() {
+      return apiFetch<BrandingSettings>(`/api/admin/branding`, { admin: true });
+    },
+
+    async updateBranding(payload: Partial<BrandingSettings>) {
+      return apiFetch<{ success: boolean; config: BrandingSettings }>(`/api/admin/branding`, {
+        method: 'PATCH',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async uploadBrandingAsset(file: File, type: 'logo' | 'favicon') {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const url = `${BASE}/api/admin/branding/upload?type=${type}`;
+      const token = getAdminToken();
+      const headers = new Headers();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const json = (await res.json()) as ApiError;
+        throw new Error(json.error || `Erro HTTP ${res.status}`);
+      }
+
+      return (await res.json()) as { success: boolean; url: string };
+    },
+
     async createBarber(payload: { id?: string | null; name: string; active?: boolean; createLogin?: boolean }) {
       return apiFetch<{ success: boolean; id: string; username: string | null; password: string | null }>(
         `/api/admin/barbers`,
@@ -281,8 +335,12 @@ export const api = {
     }>(`/api/services`);
   },
 
+  async getBranding() {
+    return apiFetch<BrandingSettings>(`/api/branding`);
+  },
+
   async availability(barberId: string, dateKey: string) {
-    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[] }>(
+    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[]; schedule: any }>(
       `/api/availability?barberId=${encodeURIComponent(barberId)}&dateKey=${encodeURIComponent(
         dateKey
       )}`
