@@ -32,20 +32,41 @@ export async function uploadToGCS(
   filename: string,
   buffer: Buffer,
   contentType: string
-): Promise<string> {
+): Promise<{ bucket: string; objectPath: string }> {
   if (!env.GCP_STORAGE_BUCKET) {
-    throw new Error('GCP_STORAGE_BUCKET não configurado');
+    throw new Error('GCP_STORAGE_BUCKET não configurado (defina no Cloud Run / ambiente)');
   }
 
   const storage = new Storage(env.GCP_PROJECT_ID ? { projectId: env.GCP_PROJECT_ID } : undefined);
   const bucket = storage.bucket(env.GCP_STORAGE_BUCKET);
-  const file = bucket.file(`branding/${filename}`);
+  const objectPath = `branding/${filename}`;
+  const file = bucket.file(objectPath);
 
   await file.save(buffer, {
     metadata: { contentType },
-    public: true,
   });
 
-  // Retorna a URL pública (assumindo que o bucket/objeto é público)
-  return `https://storage.googleapis.com/${env.GCP_STORAGE_BUCKET}/branding/${filename}`;
+  return { bucket: env.GCP_STORAGE_BUCKET, objectPath };
+}
+
+export async function downloadFromGCS(
+  env: Env,
+  objectPath: string
+): Promise<{ buffer: Buffer; contentType: string | null; etag: string | null }> {
+  if (!env.GCP_STORAGE_BUCKET) {
+    throw new Error('GCP_STORAGE_BUCKET não configurado (defina no Cloud Run / ambiente)');
+  }
+
+  const storage = new Storage(env.GCP_PROJECT_ID ? { projectId: env.GCP_PROJECT_ID } : undefined);
+  const bucket = storage.bucket(env.GCP_STORAGE_BUCKET);
+  const file = bucket.file(objectPath);
+
+  const [metadata] = await file.getMetadata();
+  const [buffer] = await file.download();
+
+  return {
+    buffer,
+    contentType: (metadata as any)?.contentType ?? null,
+    etag: (metadata as any)?.etag ?? null,
+  };
 }

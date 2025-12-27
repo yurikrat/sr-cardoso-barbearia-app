@@ -25,6 +25,7 @@ import {
   BRANDING_CONFIG_DOC_PATH,
   getBrandingConfig,
   setBrandingConfigCache,
+  downloadFromGCS,
   uploadToGCS,
 } from '../lib/branding.js';
 import {
@@ -1278,6 +1279,29 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // Public: serve current branding logo (kept in private GCS bucket)
+  app.get('/api/public/branding/logo', async (_req, res) => {
+    try {
+      // If storage isn't configured yet, let the web fallback to /logo.png
+      if (!env.GCP_STORAGE_BUCKET) return res.status(404).end();
+
+      const { buffer, contentType, etag } = await downloadFromGCS(env, 'branding/logo.png');
+      res.setHeader('Content-Type', contentType ?? 'image/png');
+      // Ensure updates show immediately after upload.
+      res.setHeader('Cache-Control', 'no-store');
+      if (etag) res.setHeader('ETag', etag);
+      return res.status(200).send(buffer);
+    } catch (e: any) {
+      // Not found (no logo uploaded yet)
+      const msg = String(e?.message ?? '');
+      if (e?.code === 404 || msg.includes('No such object') || msg.includes('Not Found')) {
+        return res.status(404).end();
+      }
+      console.error('Error serving branding logo:', e);
+      return res.status(500).end();
+    }
+  });
+
   app.post(
     '/api/admin/branding/upload',
     requireAdminMw,
@@ -1291,19 +1315,19 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           return res.status(400).json({ error: 'Tipo inválido (apenas logo é suportado)' });
         }
 
-        let buffer = req.file.buffer;
-        let contentType = req.file.mimetype;
-        let filename = `logo-${Date.now()}`;
-
-        // Process logo: optimize but keep quality
-        const metadata = await sharp(buffer).metadata();
+        // Process logo: resize and normalize to PNG for a stable object path.
+        let image = sharp(req.file.buffer);
+        const metadata = await image.metadata();
         if (metadata.width && metadata.width > 1200) {
-          buffer = await sharp(buffer).resize(1200).toBuffer();
+          image = image.resize(1200);
         }
-        filename += metadata.format === 'png' ? '.png' : '.jpg';
 
-        const publicUrl = await uploadToGCS(env, filename, buffer, contentType);
-        return res.json({ success: true, url: publicUrl });
+        const buffer = await image.png().toBuffer();
+        const contentType = 'image/png';
+        const filename = 'logo.png';
+
+        await uploadToGCS(env, filename, buffer, contentType);
+        return res.json({ success: true, url: '/api/public/branding/logo' });
       } catch (e: any) {
         console.error('Upload error:', e);
         return res.status(500).json({ error: e.message || 'Erro no upload' });
