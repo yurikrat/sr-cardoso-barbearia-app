@@ -780,9 +780,40 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
       const newSlot = DateTime.fromISO(newSlotStart, { zone: 'America/Sao_Paulo' });
       if (isSunday(newSlot)) return res.status(400).json({ error: 'Não é possível reagendar para domingo' });
-      if (!isValidTimeSlot(newSlot)) return res.status(400).json({ error: 'Horário inválido' });
+      if (!isValidTimeSlot(newSlot)) return res.status(400).json({ error: 'Horário inválido (deve ser múltiplo de 30min)' });
 
       const barberId = booking.barberId as string;
+      
+      // Validate against barber's schedule
+      const barberDoc = await db.collection('barbers').doc(barberId).get();
+      const barberData = barberDoc.data() as { schedule?: any } | undefined;
+      if (barberData?.schedule) {
+        const dayKey = newSlot.weekday === 7 ? '0' : newSlot.weekday.toString();
+        const dayConfig = barberData.schedule[dayKey];
+        if (dayConfig && dayConfig.active) {
+          const slotTime = newSlot.toFormat('HH:mm');
+          const [startH, startM] = dayConfig.start.split(':').map(Number);
+          const [endH, endM] = dayConfig.end.split(':').map(Number);
+          const dayStart = newSlot.set({ hour: startH, minute: startM });
+          const dayEnd = newSlot.set({ hour: endH, minute: endM });
+          const lastSlotStart = dayEnd.minus({ minutes: 30 });
+          
+          if (newSlot < dayStart || newSlot > lastSlotStart) {
+            return res.status(400).json({ error: 'Horário fora do expediente configurado' });
+          }
+          
+          if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+            const isInBreak = dayConfig.breaks.some((brk: any) => {
+              return slotTime >= brk.start && slotTime < brk.end;
+            });
+            if (isInBreak) {
+              return res.status(400).json({ error: 'Horário está em período de pausa' });
+            }
+          }
+        } else {
+          return res.status(400).json({ error: 'Barbeiro não atende neste dia' });
+        }
+      }
       const newSlotId = generateSlotId(newSlot);
       const newDateKey = getDateKey(newSlot);
       const oldSlotDate: Date | null = booking.slotStart?.toDate ? booking.slotStart.toDate() : null;

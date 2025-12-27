@@ -408,14 +408,44 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
 
       if (isSunday(slotStart)) return res.status(400).json({ error: 'Domingo fechado' });
       if (!isValidTimeSlot(slotStart)) {
-        return res.status(400).json({ error: 'Horário inválido (08:00–18:30, 30min)' });
+        return res.status(400).json({ error: 'Horário inválido (deve ser múltiplo de 30min)' });
       }
 
       const barberRef = db.collection('barbers').doc(validated.barberId);
       const barberDoc = await barberRef.get();
       if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
-      const barberData = barberDoc.data() as { active?: unknown } | undefined;
+      const barberData = barberDoc.data() as { active?: unknown; schedule?: any } | undefined;
       if (!barberData?.active) return res.status(400).json({ error: 'Barbeiro indisponível' });
+
+      // Validate against barber's schedule
+      if (barberData?.schedule) {
+        const dayKey = slotStart.weekday === 7 ? '0' : slotStart.weekday.toString();
+        const dayConfig = barberData.schedule[dayKey];
+        if (dayConfig && dayConfig.active) {
+          const slotTime = slotStart.toFormat('HH:mm');
+          const [startH, startM] = dayConfig.start.split(':').map(Number);
+          const [endH, endM] = dayConfig.end.split(':').map(Number);
+          const dayStart = slotStart.set({ hour: startH, minute: startM });
+          const dayEnd = slotStart.set({ hour: endH, minute: endM });
+          const lastSlotStart = dayEnd.minus({ minutes: 30 });
+          
+          if (slotStart < dayStart || slotStart > lastSlotStart) {
+            return res.status(400).json({ error: 'Horário fora do expediente configurado' });
+          }
+          
+          // Check if slot is within a break
+          if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+            const isInBreak = dayConfig.breaks.some((brk: any) => {
+              return slotTime >= brk.start && slotTime < brk.end;
+            });
+            if (isInBreak) {
+              return res.status(400).json({ error: 'Horário está em período de pausa' });
+            }
+          }
+        } else {
+          return res.status(400).json({ error: 'Barbeiro não atende neste dia' });
+        }
+      }
 
       const customerId = generateCustomerId(whatsappE164);
       const slotId = generateSlotId(slotStart);

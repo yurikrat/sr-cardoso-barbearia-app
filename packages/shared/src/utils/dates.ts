@@ -42,22 +42,12 @@ export function generateSlotId(slotStart: Date | DateTime): string {
 }
 
 /**
- * Valida se o horário está dentro da faixa permitida (08:00 - 18:30)
+ * Valida se o horário é um slot válido (múltiplo de 30 minutos)
+ * Nota: Não valida o range de horário - isso deve ser feito contra o schedule do barbeiro
  */
 export function isValidTimeSlot(slotStart: Date | DateTime): boolean {
   const dt = slotStart instanceof DateTime ? slotStart : toSaoPauloTime(slotStart);
-  const hour = dt.hour;
   const minute = dt.minute;
-
-  // Antes das 08:00
-  if (hour < 8) {
-    return false;
-  }
-
-  // Depois das 18:30
-  if (hour > 18 || (hour === 18 && minute > 30)) {
-    return false;
-  }
 
   // Deve ser múltiplo de 30 minutos
   if (minute !== 0 && minute !== 30) {
