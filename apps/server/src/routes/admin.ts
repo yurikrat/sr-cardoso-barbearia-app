@@ -1285,32 +1285,22 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     upload.single('file') as any,
     async (req, res) => {
       try {
-        const type = req.query.type as 'logo' | 'favicon';
+        const type = req.query.type as string;
         if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-        if (type !== 'logo' && type !== 'favicon') {
-          return res.status(400).json({ error: 'Tipo inválido (logo ou favicon)' });
+        if (type !== 'logo') {
+          return res.status(400).json({ error: 'Tipo inválido (apenas logo é suportado)' });
         }
 
         let buffer = req.file.buffer;
         let contentType = req.file.mimetype;
-        let filename = `${type}-${Date.now()}`;
+        let filename = `logo-${Date.now()}`;
 
-        if (type === 'favicon') {
-          // Process favicon: resize to 128x128 for high quality on all devices
-          buffer = await sharp(buffer)
-            .resize(128, 128, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-            .png()
-            .toBuffer();
-          contentType = 'image/png';
-          filename += '.png';
-        } else {
-          // Process logo: optimize but keep quality
-          const metadata = await sharp(buffer).metadata();
-          if (metadata.width && metadata.width > 1200) {
-            buffer = await sharp(buffer).resize(1200).toBuffer();
-          }
-          filename += metadata.format === 'png' ? '.png' : '.jpg';
+        // Process logo: optimize but keep quality
+        const metadata = await sharp(buffer).metadata();
+        if (metadata.width && metadata.width > 1200) {
+          buffer = await sharp(buffer).resize(1200).toBuffer();
         }
+        filename += metadata.format === 'png' ? '.png' : '.jpg';
 
         const publicUrl = await uploadToGCS(env, filename, buffer, contentType);
         return res.json({ success: true, url: publicUrl });

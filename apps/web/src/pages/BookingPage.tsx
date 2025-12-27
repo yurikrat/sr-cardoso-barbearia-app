@@ -473,8 +473,7 @@ export default function BookingPage() {
               alt="Sr. Cardoso Barbearia" 
               className="mx-auto h-auto" 
               style={{ 
-                width: '160px',
-                transform: `scale(${branding?.logoScale || 1})`
+                width: '160px'
               }}
             />
           </Link>

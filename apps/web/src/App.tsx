@@ -53,18 +53,8 @@ function App() {
   const { branding } = useBranding();
 
   useEffect(() => {
-    if (branding?.faviconUrl) {
-      const links = document.querySelectorAll("link[rel*='icon']");
-      links.forEach(link => {
-        (link as HTMLLinkElement).href = branding.faviconUrl!;
-      });
-      
-      // Apple touch icon
-      const appleIcon = document.querySelector("link[rel='apple-touch-icon']");
-      if (appleIcon) {
-        (appleIcon as HTMLLinkElement).href = branding.faviconUrl;
-      }
-    }
+    // Keep reference so branding stays warm in memory; favicon is static.
+    void branding;
   }, [branding]);
 
   useEffect(() => {

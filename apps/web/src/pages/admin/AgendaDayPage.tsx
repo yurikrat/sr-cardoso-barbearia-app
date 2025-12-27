@@ -87,9 +87,11 @@ function getStatusPillClasses(status: string) {
     case 'no_show':
       return 'bg-amber-200/70 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
     case 'cancelled':
-      return 'bg-muted text-muted-foreground';
+      return 'bg-red-200/70 text-red-900 dark:bg-red-900/40 dark:text-red-100';
+    case 'booked':
+      return 'bg-purple-200/70 text-purple-900 dark:bg-purple-900/40 dark:text-purple-100';
     default:
-      return 'bg-muted/60 text-muted-foreground';
+      return 'bg-slate-200/70 text-slate-900 dark:bg-slate-800/40 dark:text-slate-100';
   }
 }
 

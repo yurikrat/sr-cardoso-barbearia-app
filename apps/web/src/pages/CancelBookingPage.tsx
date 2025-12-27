@@ -50,8 +50,7 @@ export default function CancelBookingPage() {
             <img 
               src={branding?.logoUrl || "/logo.png"} 
               alt="Sr. Cardoso Barbearia" 
-              className="mx-auto w-40 h-auto" 
-              style={{ transform: `scale(${branding?.logoScale || 1})` }}
+              className="mx-auto w-40 h-auto"
             />
           </Link>
           <h1 className="text-2xl font-serif font-bold text-foreground">Cancelar agendamento</h1>

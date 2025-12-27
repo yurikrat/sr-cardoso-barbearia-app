@@ -49,8 +49,7 @@ export default function LoginPage() {
             <img 
               src={branding?.logoUrl || "/logo.png"} 
               alt="Sr. Cardoso Barbearia" 
-              className="mx-auto w-40 h-auto" 
-              style={{ transform: `scale(${branding?.logoScale || 1})` }}
+              className="mx-auto w-40 h-auto"
             />
           </Link>
         </div>
