@@ -16,6 +16,7 @@ export default function BrandingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [hasPendingLogoChange, setHasPendingLogoChange] = useState(false);
   
   const [settings, setSettings] = useState<BrandingSettings | null>(null);
 
@@ -41,7 +42,12 @@ export default function BrandingPage() {
     if (!settings) return;
     setSaving(true);
     try {
-      await api.admin.updateBranding(settings);
+      await api.admin.updateBranding({
+        ...settings,
+        commitLogo: hasPendingLogoChange,
+      } as any);
+      
+      setHasPendingLogoChange(false);
       await refreshBranding();
       toast({
         title: 'Configurações salvas',
@@ -65,25 +71,21 @@ export default function BrandingPage() {
     setUploadingLogo(true);
 
     try {
-      const { url, config } = await api.admin.uploadBrandingAsset(file, 'logo');
-      if (config) {
-        setSettings(config);
-      } else {
-        setSettings((prev: BrandingSettings | null) =>
-          prev
-            ? {
-                ...prev,
-                logoUrl: url,
-              }
-            : null
-        );
-      }
-
-      await refreshBranding();
+      const { url } = await api.admin.uploadBrandingAsset(file, 'logo');
+      
+      setSettings((prev: BrandingSettings | null) =>
+        prev
+          ? {
+              ...prev,
+              logoUrl: url,
+            }
+          : null
+      );
+      setHasPendingLogoChange(true);
       
       toast({
-        title: 'Upload concluído',
-        description: 'Logo enviado com sucesso.',
+        title: 'Preview atualizado',
+        description: 'Clique em Salvar para aplicar as alterações.',
       });
     } catch (err: any) {
       toast({

@@ -70,3 +70,19 @@ export async function downloadFromGCS(
     etag: (metadata as any)?.etag ?? null,
   };
 }
+
+export async function copyFileInGCS(
+  env: Env,
+  sourceFilename: string,
+  destFilename: string
+): Promise<void> {
+  if (!env.GCP_STORAGE_BUCKET) {
+    throw new Error('GCP_STORAGE_BUCKET não configurado');
+  }
+  const storage = new Storage(env.GCP_PROJECT_ID ? { projectId: env.GCP_PROJECT_ID } : undefined);
+  const bucket = storage.bucket(env.GCP_STORAGE_BUCKET);
+  const source = bucket.file(`branding/${sourceFilename}`);
+  const dest = bucket.file(`branding/${destFilename}`);
+  
+  await source.copy(dest);
+}

@@ -27,6 +27,7 @@ import {
   setBrandingConfigCache,
   downloadFromGCS,
   uploadToGCS,
+  copyFileInGCS,
 } from '../lib/branding.js';
 import {
   generatePassword,
@@ -1261,14 +1262,28 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
   app.patch('/api/admin/branding', requireAdminMw, requireMaster(), async (req, res) => {
     try {
-      const body = req.body as Partial<BrandingSettings>;
+      const body = req.body as Partial<BrandingSettings> & { commitLogo?: boolean };
+      const { commitLogo, ...settings } = body;
+
+      if (commitLogo) {
+        try {
+          await copyFileInGCS(env, 'logo-draft.png', 'logo.png');
+        } catch (err) {
+          console.error('Error promoting logo draft:', err);
+        }
+      }
+
       const current = await getBrandingConfig(db);
 
       const updated: BrandingSettings = {
         ...current,
-        ...body,
+        ...settings,
         updatedAt: new Date().toISOString(),
       };
+
+      if (commitLogo) {
+        updated.logoUrl = '/api/public/branding/logo';
+      }
 
       await db.doc(BRANDING_CONFIG_DOC_PATH).set(updated, { merge: true });
       setBrandingConfigCache(updated);
@@ -1302,6 +1317,18 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  app.get('/api/public/branding/logo-preview', async (_req, res) => {
+    try {
+      if (!env.GCP_STORAGE_BUCKET) return res.status(404).end();
+      const { buffer, contentType } = await downloadFromGCS(env, 'branding/logo-draft.png');
+      res.setHeader('Content-Type', contentType ?? 'image/png');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).send(buffer);
+    } catch (e: any) {
+      return res.status(404).end();
+    }
+  });
+
   app.post(
     '/api/admin/branding/upload',
     requireAdminMw,
@@ -1324,22 +1351,12 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
         const buffer = await image.png().toBuffer();
         const contentType = 'image/png';
-        const filename = 'logo.png';
+        const filename = 'logo-draft.png';
 
         await uploadToGCS(env, filename, buffer, contentType);
 
-        const current = await getBrandingConfig(db);
-        const updated: BrandingSettings = {
-          ...current,
-          logoUrl: '/api/public/branding/logo',
-          updatedAt: new Date().toISOString(),
-        };
-
-        await db.doc(BRANDING_CONFIG_DOC_PATH).set(updated, { merge: true });
-        setBrandingConfigCache(updated);
-
-        const url = `/api/public/branding/logo?v=${encodeURIComponent(updated.updatedAt)}`;
-        return res.json({ success: true, url, config: updated });
+        const url = `/api/public/branding/logo-preview?v=${Date.now()}`;
+        return res.json({ success: true, url, preview: true });
       } catch (e: any) {
         console.error('Upload error:', e);
         return res.status(500).json({ error: e.message || 'Erro no upload' });
