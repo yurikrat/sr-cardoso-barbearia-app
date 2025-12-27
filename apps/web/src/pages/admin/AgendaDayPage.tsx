@@ -18,15 +18,6 @@ import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
 
-const TIME_SLOTS = Array.from({ length: 26 }, (_, i) => {
-  const hour = 8 + Math.floor(i / 2);
-  const minute = (i % 2) * 30;
-  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-}).filter((time) => {
-  const [h] = time.split(':').map(Number);
-  return h < 21; // Extend to 20:30 based on screenshot
-});
-
 interface Booking {
   id: string;
   barberId?: string;
@@ -111,6 +102,7 @@ export default function AgendaPage() {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
+  const [barberSchedule, setBarberSchedule] = useState<any>(null);
 
   // Force re-render every minute to update "now" line
   useEffect(() => {
@@ -121,6 +113,50 @@ export default function AgendaPage() {
 
   // Derived state
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
+  
+  // Generate TIME_SLOTS dynamically based on barber's schedule
+  const TIME_SLOTS = useMemo(() => {
+    if (!barberSchedule || !selectedDate) {
+      // Fallback: 08:00-22:00
+      return Array.from({ length: 29 }, (_, i) => {
+        const hour = 8 + Math.floor(i / 2);
+        const minute = (i % 2) * 30;
+        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      });
+    }
+
+    const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' });
+    const dayKey = dt.weekday === 7 ? '0' : dt.weekday.toString();
+    const dayConfig = barberSchedule[dayKey];
+
+    if (!dayConfig || !dayConfig.active) {
+      // Day closed, return default slots anyway for display
+      return Array.from({ length: 29 }, (_, i) => {
+        const hour = 8 + Math.floor(i / 2);
+        const minute = (i % 2) * 30;
+        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      });
+    }
+
+    const [startH, startM] = dayConfig.start.split(':').map(Number);
+    const [endH, endM] = dayConfig.end.split(':').map(Number);
+    
+    const slots: string[] = [];
+    let h = startH;
+    let m = startM;
+    
+    // Generate slots including the last possible slot
+    while (h < endH || (h === endH && m <= endM)) {
+      slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+      m += 30;
+      if (m >= 60) {
+        h++;
+        m = 0;
+      }
+    }
+    
+    return slots;
+  }, [barberSchedule, selectedDate]);
   
   const selectedDateLabel = useMemo(() => {
     const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).setLocale('pt-BR');
@@ -203,6 +239,23 @@ export default function AgendaPage() {
       }
     })();
   }, []);
+
+  // Fetch barber schedule
+  useEffect(() => {
+    if (!selectedBarber) return;
+    
+    async function fetchSchedule() {
+      try {
+        const barberData = await api.admin.getBarber(selectedBarber);
+        setBarberSchedule(barberData.schedule || null);
+      } catch (err) {
+        console.error('Error loading barber schedule:', err);
+        setBarberSchedule(null);
+      }
+    }
+    
+    fetchSchedule();
+  }, [selectedBarber]);
 
   // Load bookings
   useEffect(() => {
