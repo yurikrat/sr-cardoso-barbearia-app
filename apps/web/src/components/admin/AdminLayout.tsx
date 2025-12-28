@@ -3,7 +3,7 @@ import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
-import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette } from 'lucide-react';
+import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette, MessageCircle } from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -22,6 +22,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/clientes', label: 'Clientes', icon: Users, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/senha', label: 'Senha', icon: KeyRound, roles: ['master', 'barber'] as Role[] },
+    { path: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, roles: ['master'] as Role[] },
     { path: '/admin/listas', label: 'Listas', icon: List, roles: ['master'] as Role[] },
     { path: '/admin/usuarios', label: 'Usuários', icon: UserCog, roles: ['master'] as Role[] },
     { path: '/admin/branding', label: 'Branding', icon: Palette, roles: ['master'] as Role[] },

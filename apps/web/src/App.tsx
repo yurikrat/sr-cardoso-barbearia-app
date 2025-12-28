@@ -25,6 +25,7 @@ import UsersPage from './pages/admin/UsersPage';
 import ChangePasswordPage from './pages/admin/ChangePasswordPage';
 import ScheduleConfigPage from './pages/admin/ScheduleConfigPage';
 import BrandingPage from './pages/admin/BrandingPage';
+import WhatsappPage from './pages/admin/WhatsappPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -149,6 +150,16 @@ function App() {
                 <ProtectedRoute>
                   <MasterOnlyRoute>
                     <BrandingPage />
+                  </MasterOnlyRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/whatsapp"
+              element={
+                <ProtectedRoute>
+                  <MasterOnlyRoute>
+                    <WhatsappPage />
                   </MasterOnlyRoute>
                 </ProtectedRoute>
               }

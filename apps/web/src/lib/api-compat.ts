@@ -34,3 +34,7 @@ export const adminMarkWhatsappSentFn = async (payload: { bookingId: string }) =>
   data: await api.admin.markWhatsappSent(payload.bookingId),
 });
 
+export const adminSendBookingWhatsappConfirmationFn = async (payload: { bookingId: string; text: string }) => ({
+  data: await api.admin.sendBookingWhatsappConfirmation(payload.bookingId, { text: payload.text }),
+});
+

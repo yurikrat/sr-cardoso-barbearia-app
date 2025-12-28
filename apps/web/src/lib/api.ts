@@ -1,5 +1,29 @@
 import type { BrandingSettings } from '@sr-cardoso/shared';
 
+type AdminWhatsappStatusResponse = {
+  instanceName: string;
+  instanceExists: boolean;
+  connectionState: string | null;
+  checkedBy: 'connectionState' | 'fetchInstances' | 'unknown';
+  hint?: string;
+  configured?: boolean;
+  missing?: Array<'EVOLUTION_BASE_URL' | 'EVOLUTION_API_KEY' | 'EVOLUTION_INSTANCE_NAME'>;
+};
+
+type AdminWhatsappConnectResponse = {
+  instanceName: string;
+  qrcodeBase64: string | null;
+  pairingCode?: string | null;
+};
+
+type AdminWhatsappConnectRequest = {
+  mode?: 'qr' | 'pairingCode';
+  phoneNumber?: string;
+};
+
+type AdminWhatsappSendTestResponse = { success: boolean; deduped?: boolean };
+type AdminWhatsappSendConfirmationResponse = { success: boolean; deduped?: boolean };
+
 type ApiError = { error?: string };
 
 const BASE =
@@ -148,6 +172,37 @@ export const api = {
         method: 'POST',
         admin: true,
       });
+    },
+
+    async whatsappStatus() {
+      return apiFetch<AdminWhatsappStatusResponse>(`/api/admin/whatsapp/status`, { admin: true });
+    },
+
+    async whatsappConnect(payload?: AdminWhatsappConnectRequest) {
+      return apiFetch<AdminWhatsappConnectResponse>(`/api/admin/whatsapp/connect`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload ?? {}),
+      });
+    },
+
+    async whatsappSendTest(payload: { toE164: string; text: string }) {
+      return apiFetch<AdminWhatsappSendTestResponse>(`/api/admin/whatsapp/send-test`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async sendBookingWhatsappConfirmation(bookingId: string, payload: { text: string }) {
+      return apiFetch<AdminWhatsappSendConfirmationResponse>(
+        `/api/admin/bookings/${encodeURIComponent(bookingId)}/whatsapp/send-confirmation`,
+        {
+          method: 'POST',
+          admin: true,
+          body: JSON.stringify(payload),
+        }
+      );
     },
     async getBarberCalendarToken(barberId: string) {
       return apiFetch<{ calendarFeedToken: string | null }>(`/api/admin/barbers/${barberId}`, {

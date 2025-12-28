@@ -8,6 +8,7 @@ export * from './types/branding';
 // Schemas
 export * from './schemas/booking.schema';
 export * from './schemas/customer.schema';
+export * from './schemas/whatsapp.schema';
 
 // Utils
 export * from './utils/phone';

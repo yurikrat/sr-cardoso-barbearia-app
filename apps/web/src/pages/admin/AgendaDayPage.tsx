@@ -10,9 +10,9 @@ import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
-import { adminCancelBookingFn, adminMarkWhatsappSentFn } from '@/lib/api-compat';
+import { adminCancelBookingFn, adminSendBookingWhatsappConfirmationFn } from '@/lib/api-compat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { generateBookingConfirmationMessage, generateWhatsAppDeepLink } from '@/utils/whatsapp';
+import { generateBookingConfirmationMessage } from '@/utils/whatsapp';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS } from '@/utils/constants';
@@ -341,14 +341,18 @@ export default function AgendaPage() {
     },
   });
 
-  const markWhatsappSentMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      await adminMarkWhatsappSentFn({ bookingId });
+  const sendWhatsappConfirmationMutation = useMutation({
+    mutationFn: async (payload: { bookingId: string; text: string }) => {
+      await adminSendBookingWhatsappConfirmationFn(payload);
     },
     onSuccess: () => {
       loadBookings();
       setSelectedBooking(null);
-      toast({ title: 'Sucesso', description: 'WhatsApp marcado como enviado.' });
+      toast({ title: 'Sucesso', description: 'Confirmação enviada no WhatsApp.' });
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Erro ao enviar WhatsApp.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
     },
   });
 
@@ -372,9 +376,7 @@ export default function AgendaPage() {
     const slotStart = DateTime.fromJSDate(booking.slotStart, { zone: 'America/Sao_Paulo' });
     const customerName = `${booking.customer.firstName} ${booking.customer.lastName}`;
     const message = generateBookingConfirmationMessage(customerName, booking.serviceType, barberName, slotStart);
-    const url = generateWhatsAppDeepLink(booking.customer.whatsappE164, message);
-    window.open(url, '_blank');
-    markWhatsappSentMutation.mutate(booking.id);
+    sendWhatsappConfirmationMutation.mutate({ bookingId: booking.id, text: message });
   };
 
   // Render Helpers

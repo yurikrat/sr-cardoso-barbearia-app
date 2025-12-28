@@ -2,6 +2,7 @@ import type express from 'express';
 import { DateTime } from 'luxon';
 import { FieldValue, Timestamp } from '@google-cloud/firestore';
 import type { Firestore } from '@google-cloud/firestore';
+import { createHash } from 'crypto';
 import multer from 'multer';
 import sharp from 'sharp';
 import {
@@ -9,9 +10,22 @@ import {
   getDateKey,
   isSunday,
   isValidTimeSlot,
+  adminWhatsappConnectRequestSchema,
+  adminWhatsappSendTestRequestSchema,
+  adminWhatsappSendConfirmationRequestSchema,
+  type AdminWhatsappStatusResponse,
   type BrandingSettings,
 } from '@sr-cardoso/shared';
 import type { Env } from '../lib/env.js';
+import {
+  createEvolutionClient,
+  extractConnectionState,
+  extractPairingCode,
+  extractQrBase64,
+  getEvolutionInstanceName,
+  toEvolutionNumber,
+  type EvolutionRequestError,
+} from '../lib/evolutionApi.js';
 import {
   OWNER_BARBER_ID,
   FINANCE_CONFIG_DOC_PATH,
@@ -91,6 +105,42 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
   const { env, db } = deps;
 
   const requireAdminMw = requireAdmin(env);
+
+  function mapEvolutionError(e: EvolutionRequestError): { httpStatus: number; message: string } {
+    if ((e as any)?.method === 'CONFIG') {
+      return { httpStatus: 500, message: e.message };
+    }
+    if (e.status === 401 || e.status === 403) {
+      return { httpStatus: 502, message: 'Falha ao autenticar no Evolution (verifique a apikey)' };
+    }
+    if (e.status === 404) {
+      return { httpStatus: 502, message: 'Endpoint do Evolution não encontrado (verifique baseUrl/versão)' };
+    }
+    if (e.status === 409) {
+      return { httpStatus: 409, message: 'Operação inválida no Evolution (instância pode estar desconectada)' };
+    }
+    if (e.status >= 500) {
+      return { httpStatus: 502, message: 'Evolution indisponível no momento' };
+    }
+    return { httpStatus: 502, message: 'Falha ao comunicar com o Evolution' };
+  }
+
+  function makeOutboundDocId(input: string) {
+    return createHash('sha256').update(input).digest('hex');
+  }
+
+  function markBookingWhatsappSentTx(tx: any, bookingRef: any, customerRef: any) {
+    const now = Timestamp.now();
+    tx.update(bookingRef, {
+      whatsappStatus: 'sent',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (customerRef) {
+      tx.update(customerRef, {
+        'stats.lastContactAt': now,
+      });
+    }
+  }
 
   app.post('/api/admin/login', async (req, res) => {
     try {
@@ -884,6 +934,298 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       return res.json({ success: true });
     } catch {
       return res.status(500).json({ error: 'Erro ao marcar WhatsApp enviado' });
+    }
+  });
+
+  app.get('/api/admin/whatsapp/status', requireAdminMw, async (_req, res) => {
+    try {
+      const baseUrl = (env.EVOLUTION_BASE_URL ?? '').trim();
+      const apiKey = (env.EVOLUTION_API_KEY ?? '').trim();
+      const instanceNameEnv = (env.EVOLUTION_INSTANCE_NAME ?? '').trim();
+      const instanceName = instanceNameEnv || '-';
+
+      const missing: Array<'EVOLUTION_BASE_URL' | 'EVOLUTION_API_KEY' | 'EVOLUTION_INSTANCE_NAME'> = [];
+      if (!baseUrl) missing.push('EVOLUTION_BASE_URL');
+      if (!apiKey) missing.push('EVOLUTION_API_KEY');
+      if (!instanceNameEnv) missing.push('EVOLUTION_INSTANCE_NAME');
+      const configured = missing.length === 0;
+
+      if (!configured) {
+        const payload: AdminWhatsappStatusResponse = {
+          instanceName,
+          instanceExists: false,
+          connectionState: null,
+          checkedBy: 'unknown',
+          hint: 'Configuração incompleta do Evolution no servidor.',
+          configured,
+          missing,
+        };
+        return res.json(payload);
+      }
+
+      const evo = createEvolutionClient(env);
+
+      let checkedBy: AdminWhatsappStatusResponse['checkedBy'] = 'unknown';
+      let connectionState: string | null = null;
+      let instanceExists = false;
+
+      try {
+        const raw = await evo.get(`/instance/connectionState/${encodeURIComponent(instanceName)}`);
+        connectionState = extractConnectionState(raw);
+        checkedBy = 'connectionState';
+        instanceExists = true;
+      } catch (e: any) {
+        const err = e as EvolutionRequestError;
+        if (!err || typeof err.status !== 'number' || err.status !== 404) {
+          // Ignora e tenta fallback
+        }
+      }
+
+      if (checkedBy !== 'connectionState') {
+        try {
+          const raw = await evo.get('/instance/fetchInstances');
+          checkedBy = 'fetchInstances';
+
+          const obj = raw as any;
+          const candidates = [obj?.instances, obj?.items, obj?.data, obj];
+          const list = candidates.find((c) => Array.isArray(c)) as any[] | undefined;
+          if (Array.isArray(list)) {
+            const found = list.find((it) => {
+              const name = it?.instanceName ?? it?.name ?? it?.instance;
+              return typeof name === 'string' && name === instanceName;
+            });
+            instanceExists = !!found;
+            if (!connectionState && found) {
+              const candidate =
+                found?.connectionState ??
+                found?.connectionStatus ??
+                found?.state ??
+                found?.status ??
+                found?.whatsapp?.status;
+              if (typeof candidate === 'string' && candidate.trim()) connectionState = candidate.trim();
+            }
+          }
+        } catch {
+          checkedBy = 'unknown';
+        }
+      }
+
+      const normalizedState = (connectionState ?? '').trim().toLowerCase();
+      let hint: string | undefined;
+      if (!instanceExists) {
+        hint = 'Instância não encontrada no Evolution. Crie/recrie a instância e tente conectar.';
+      } else if (!normalizedState) {
+        hint = 'Sem estado de conexão disponível. Tente Atualizar e gerar QR/código novamente.';
+      } else if (normalizedState === 'open' || normalizedState === 'connected') {
+        hint = 'Conectado.';
+      } else if (normalizedState === 'close' || normalizedState === 'closed' || normalizedState === 'disconnected') {
+        hint = 'Desconectado. Gere QR ou código para conectar.';
+      } else if (normalizedState === 'connecting') {
+        hint = 'Conectando. Se ficar preso em "connecting" e o WhatsApp recusar, tente o modo Código (sem QR) e/ou reinicie a instância no Evolution.';
+      }
+
+      const payload: AdminWhatsappStatusResponse = {
+        instanceName,
+        instanceExists,
+        connectionState,
+        checkedBy,
+        hint,
+        configured,
+        missing,
+      };
+      return res.json(payload);
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : 'Erro ao consultar status do WhatsApp';
+      return res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/admin/whatsapp/connect', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const instanceName = getEvolutionInstanceName(env);
+      const evo = createEvolutionClient(env);
+
+      const parsed = adminWhatsappConnectRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
+      const mode = parsed.data.mode ?? 'qr';
+
+      let raw: unknown;
+
+      if (mode === 'pairingCode') {
+        const number = toEvolutionNumber(parsed.data.phoneNumber ?? '');
+        // 1) Tentativa mais compatível: GET com query param `number`
+        raw = await evo.get(`/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(number)}`);
+
+        // 2) Fallback: alguns builds aceitam POST com body
+        const pairingFromGet = extractPairingCode(raw);
+        if (!pairingFromGet) {
+          try {
+            raw = await evo.post(`/instance/connect/${encodeURIComponent(instanceName)}`, { number });
+          } catch {
+            // mantém resposta do GET
+          }
+        }
+      } else {
+        raw = await evo.get(`/instance/connect/${encodeURIComponent(instanceName)}`);
+      }
+
+      const qrcodeBase64 = extractQrBase64(raw);
+      const pairingCode = extractPairingCode(raw);
+
+      return res.json({ instanceName, qrcodeBase64, pairingCode });
+    } catch (e: any) {
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      const err = e as EvolutionRequestError;
+      if (err && typeof err.status === 'number') {
+        const mapped = mapEvolutionError(err);
+        return res.status(mapped.httpStatus).json({ error: mapped.message });
+      }
+      return res.status(500).json({ error: 'Erro ao conectar WhatsApp' });
+    }
+  });
+
+  app.post('/api/admin/whatsapp/send-test', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const instanceName = getEvolutionInstanceName(env);
+      const evo = createEvolutionClient(env);
+
+      const parsed = adminWhatsappSendTestRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
+
+      const toE164 = parsed.data.toE164;
+      const text = parsed.data.text;
+
+      const outboundDocId = makeOutboundDocId(`test:${instanceName}:${toE164}:${text}`);
+      const outboundRef = db.collection('whatsappOutbound').doc(outboundDocId);
+      const outboundSnap = await outboundRef.get();
+      if (outboundSnap.exists && (outboundSnap.data() as any)?.status === 'sent') {
+        return res.json({ success: true, deduped: true });
+      }
+
+      await outboundRef.set(
+        {
+          kind: 'test',
+          instanceName,
+          toE164,
+          textLen: text.length,
+          status: 'pending',
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await evo.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+        number: toEvolutionNumber(toE164),
+        text,
+      });
+
+      await outboundRef.set(
+        {
+          status: 'sent',
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      return res.json({ success: true });
+    } catch (e: any) {
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      const err = e as EvolutionRequestError;
+      if (err && typeof err.status === 'number') {
+        const mapped = mapEvolutionError(err);
+        return res.status(mapped.httpStatus).json({ error: mapped.message });
+      }
+      return res.status(500).json({ error: 'Erro ao enviar mensagem teste' });
+    }
+  });
+
+  app.post('/api/admin/bookings/:bookingId/whatsapp/send-confirmation', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const bookingId = req.params.bookingId;
+
+      const instanceName = getEvolutionInstanceName(env);
+      const evo = createEvolutionClient(env);
+
+      const parsed = adminWhatsappSendConfirmationRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
+
+      const bookingRef = db.collection('bookings').doc(bookingId);
+      const bookingDoc = await bookingRef.get();
+      if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
+      const booking = bookingDoc.data() as any;
+
+      if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+        return res.status(403).json({ error: 'Acesso restrito' });
+      }
+
+      const toE164 = String(booking?.customer?.whatsappE164 ?? '').trim();
+      if (!toE164) return res.status(400).json({ error: 'Reserva sem WhatsApp do cliente' });
+
+      const text = parsed.data.text;
+      const outboundDocId = makeOutboundDocId(`confirmation:${bookingId}:${instanceName}:${toE164}`);
+      const outboundRef = db.collection('whatsappOutbound').doc(outboundDocId);
+
+      const outboundSnap = await outboundRef.get();
+      if (outboundSnap.exists && (outboundSnap.data() as any)?.status === 'sent') {
+        const customerId = typeof booking.customerId === 'string' ? booking.customerId : null;
+        const customerRef = customerId ? db.collection('customers').doc(customerId) : null;
+        await db.runTransaction(async (tx) => {
+          markBookingWhatsappSentTx(tx, bookingRef, customerRef);
+        });
+        return res.json({ success: true, deduped: true });
+      }
+
+      await outboundRef.set(
+        {
+          kind: 'confirmation',
+          bookingId,
+          instanceName,
+          toE164,
+          textLen: text.length,
+          status: 'pending',
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await evo.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+        number: toEvolutionNumber(toE164),
+        text,
+      });
+
+      const customerId = typeof booking.customerId === 'string' ? booking.customerId : null;
+      const customerRef = customerId ? db.collection('customers').doc(customerId) : null;
+
+      await db.runTransaction(async (tx) => {
+        markBookingWhatsappSentTx(tx, bookingRef, customerRef);
+        tx.set(
+          outboundRef,
+          {
+            status: 'sent',
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+
+      return res.json({ success: true });
+    } catch (e: any) {
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      const err = e as EvolutionRequestError;
+      if (err && typeof err.status === 'number') {
+        const mapped = mapEvolutionError(err);
+        return res.status(mapped.httpStatus).json({ error: mapped.message });
+      }
+      return res.status(500).json({ error: 'Erro ao enviar confirmação' });
     }
   });
 

@@ -8,6 +8,11 @@ export type Env = {
   STATIC_DIR?: string;
   CANCEL_LINK_PEPPER?: string;
   GCP_STORAGE_BUCKET?: string;
+
+  // Evolution API (WhatsApp)
+  EVOLUTION_BASE_URL?: string;
+  EVOLUTION_API_KEY?: string;
+  EVOLUTION_INSTANCE_NAME?: string;
 };
 
 export function getEnv(): Env {
@@ -21,5 +26,9 @@ export function getEnv(): Env {
     STATIC_DIR: process.env.STATIC_DIR,
     CANCEL_LINK_PEPPER: process.env.CANCEL_LINK_PEPPER,
     GCP_STORAGE_BUCKET: process.env.GCP_STORAGE_BUCKET,
+
+    EVOLUTION_BASE_URL: process.env.EVOLUTION_BASE_URL,
+    EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY,
+    EVOLUTION_INSTANCE_NAME: process.env.EVOLUTION_INSTANCE_NAME,
   };
 }
