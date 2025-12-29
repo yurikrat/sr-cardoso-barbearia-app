@@ -6,10 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -48,6 +50,18 @@ export default function WhatsappPage() {
   const [toE164, setToE164] = useState('');
   const [text, setText] = useState('');
 
+  // Estados para notificações automáticas
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState({
+    confirmationEnabled: true,
+    confirmationMessage: 'Seu agendamento foi confirmado! Esperamos você na barbearia.',
+    reminderEnabled: true,
+    reminderMinutesBefore: 60,
+    reminderMessage: 'Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!',
+    cancellationMessage: 'Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!',
+  });
+
   const qrSrc = useMemo(() => asDataUrl(qrBase64), [qrBase64]);
   const canUseEvolution = !!status && status.configured !== false;
 
@@ -70,10 +84,42 @@ export default function WhatsappPage() {
     setStatus(data);
   };
 
+  const loadNotificationSettings = async () => {
+    setLoadingNotifications(true);
+    try {
+      const data = await api.admin.whatsappGetNotificationSettings();
+      setNotificationSettings(data);
+    } catch (e: any) {
+      // Se não existir configuração ainda, usa os defaults
+      console.log('Using default notification settings');
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  const saveNotificationSettings = async () => {
+    setSavingNotifications(true);
+    try {
+      await api.admin.whatsappSaveNotificationSettings(notificationSettings);
+      toast({ title: 'Salvo', description: 'Configurações de notificações salvas.' });
+    } catch (e: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: e?.message || 'Não foi possível salvar as configurações.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingNotifications(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
         await loadStatus();
+        if (claims?.role === 'master') {
+          await loadNotificationSettings();
+        }
       } catch (e: any) {
         toast({
           title: 'Erro ao carregar status',
@@ -84,7 +130,7 @@ export default function WhatsappPage() {
         setLoading(false);
       }
     })();
-  }, [toast]);
+  }, [toast, claims?.role]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -346,6 +392,164 @@ export default function WhatsappPage() {
           </CardContent>
         </Card>
         </div>
+
+        {/* Seção de Notificações Automáticas - só para master */}
+        {claims?.role === 'master' && (
+          <>
+            <Separator className="my-8" />
+            
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-foreground flex items-center gap-2">
+                  <Bell className="h-6 w-6" />
+                  Notificações Automáticas
+                </h3>
+                <p className="text-muted-foreground">Configure mensagens automáticas para seus clientes.</p>
+              </div>
+              <Button 
+                onClick={saveNotificationSettings} 
+                disabled={savingNotifications || loadingNotifications}
+                className="w-auto"
+              >
+                {savingNotifications ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                Salvar Configurações
+              </Button>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* Confirmação de Agendamento */}
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-5 w-5 text-primary" />
+                      <CardTitle>Confirmação de Agendamento</CardTitle>
+                    </div>
+                    <Switch
+                      checked={notificationSettings.confirmationEnabled}
+                      onCheckedChange={(checked) =>
+                        setNotificationSettings({ ...notificationSettings, confirmationEnabled: checked })
+                      }
+                    />
+                  </div>
+                  <CardDescription>
+                    Mensagem enviada automaticamente quando o cliente faz um agendamento.
+                    O link para cancelar/reagendar é incluído automaticamente.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmationMessage">Mensagem de confirmação</Label>
+                    <textarea
+                      id="confirmationMessage"
+                      value={notificationSettings.confirmationMessage}
+                      onChange={(e) =>
+                        setNotificationSettings({ ...notificationSettings, confirmationMessage: e.target.value })
+                      }
+                      placeholder="Seu agendamento foi confirmado! Esperamos você na barbearia."
+                      className="w-full min-h-[100px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      disabled={!notificationSettings.confirmationEnabled}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O nome do cliente, data, hora, serviço e link de cancelamento serão adicionados automaticamente.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Lembrete */}
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="h-5 w-5 text-primary" />
+                      <CardTitle>Lembrete de Atendimento</CardTitle>
+                    </div>
+                    <Switch
+                      checked={notificationSettings.reminderEnabled}
+                      onCheckedChange={(checked) =>
+                        setNotificationSettings({ ...notificationSettings, reminderEnabled: checked })
+                      }
+                    />
+                  </div>
+                  <CardDescription>
+                    Mensagem enviada antes do horário do atendimento para lembrar o cliente.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="reminderMinutes">Enviar lembrete quantos minutos antes?</Label>
+                    <Select
+                      value={String(notificationSettings.reminderMinutesBefore)}
+                      onValueChange={(v) =>
+                        setNotificationSettings({ ...notificationSettings, reminderMinutesBefore: Number(v) })
+                      }
+                      disabled={!notificationSettings.reminderEnabled}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="30">30 minutos</SelectItem>
+                        <SelectItem value="60">1 hora</SelectItem>
+                        <SelectItem value="120">2 horas</SelectItem>
+                        <SelectItem value="180">3 horas</SelectItem>
+                        <SelectItem value="1440">1 dia (24 horas)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="reminderMessage">Mensagem de lembrete</Label>
+                    <textarea
+                      id="reminderMessage"
+                      value={notificationSettings.reminderMessage}
+                      onChange={(e) =>
+                        setNotificationSettings({ ...notificationSettings, reminderMessage: e.target.value })
+                      }
+                      placeholder="Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!"
+                      className="w-full min-h-[100px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      disabled={!notificationSettings.reminderEnabled}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O nome do cliente, hora e serviço serão adicionados automaticamente.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Cancelamento */}
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm lg:col-span-2">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-5 w-5 text-primary" />
+                    <CardTitle>Confirmação de Cancelamento</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Mensagem enviada quando o cliente cancela um agendamento.
+                    O link para fazer novo agendamento é incluído automaticamente.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cancellationMessage">Mensagem de cancelamento</Label>
+                    <textarea
+                      id="cancellationMessage"
+                      value={notificationSettings.cancellationMessage}
+                      onChange={(e) =>
+                        setNotificationSettings({ ...notificationSettings, cancellationMessage: e.target.value })
+                      }
+                      placeholder="Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!"
+                      className="w-full min-h-[80px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O nome do cliente e link para novo agendamento serão adicionados automaticamente.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
       </div>
     </AdminLayout>
   );

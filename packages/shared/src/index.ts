@@ -4,6 +4,7 @@ export * from './types/customer';
 export * from './types/booking';
 export * from './types/slot';
 export * from './types/branding';
+export * from './types/whatsappNotifications';
 
 // Schemas
 export * from './schemas/booking.schema';

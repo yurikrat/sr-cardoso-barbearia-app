@@ -110,13 +110,13 @@ export default function BrandingPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 max-w-2xl mx-auto">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-serif font-bold text-foreground">Identidade Visual</h2>
             <p className="text-muted-foreground">Gerencie o logo da barbearia.</p>
           </div>
-          <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90">
+          <Button onClick={handleSave} disabled={saving} className="w-auto bg-primary hover:bg-primary/90">
             {saving ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
             Salvar Alterações
           </Button>

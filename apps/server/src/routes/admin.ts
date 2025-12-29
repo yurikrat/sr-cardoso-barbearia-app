@@ -54,6 +54,12 @@ import {
   verifyPassword,
   type AdminUserDoc,
 } from '../lib/adminAuth.js';
+import {
+  getNotificationSettings,
+  saveNotificationSettings,
+  processReminders,
+  processMessageQueue,
+} from '../services/whatsappNotifications.js';
 
 export type AdminRouteDeps = {
   env: Env;
@@ -1068,6 +1074,74 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         return res.status(500).json({ error: e.message });
       }
       return res.status(500).json({ error: 'Erro ao desconectar WhatsApp' });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Configurações de Notificações WhatsApp
+  // ─────────────────────────────────────────────────────────────
+
+  app.get('/api/admin/whatsapp/notification-settings', requireAdminMw, requireMaster(), async (_req, res) => {
+    try {
+      const settings = await getNotificationSettings(db);
+      return res.json(settings);
+    } catch (e: any) {
+      console.error('Error getting notification settings:', e);
+      return res.status(500).json({ error: 'Erro ao carregar configurações de notificação' });
+    }
+  });
+
+  app.put('/api/admin/whatsapp/notification-settings', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const body = req.body || {};
+
+      const settings = {
+        confirmationEnabled: body.confirmationEnabled === true,
+        confirmationMessage: String(body.confirmationMessage || '').slice(0, 500),
+        reminderEnabled: body.reminderEnabled === true,
+        reminderMinutesBefore: Math.max(15, Math.min(1440, Number(body.reminderMinutesBefore) || 60)),
+        reminderMessage: String(body.reminderMessage || '').slice(0, 500),
+        cancellationMessage: String(body.cancellationMessage || '').slice(0, 500),
+      };
+
+      await saveNotificationSettings(db, settings, admin?.username || 'unknown');
+      return res.json({ success: true, settings });
+    } catch (e: any) {
+      console.error('Error saving notification settings:', e);
+      return res.status(500).json({ error: 'Erro ao salvar configurações de notificação' });
+    }
+  });
+
+  // Endpoint para processar lembretes (chamado via Cloud Scheduler ou manualmente)
+  app.post('/api/admin/whatsapp/send-reminders', requireAdminMw, requireMaster(), async (_req, res) => {
+    try {
+      const result = await processReminders(db, env);
+      return res.json({
+        success: true,
+        processed: result.processed,
+        sent: result.sent,
+        queued: result.queued,
+      });
+    } catch (e: any) {
+      console.error('Error processing reminders:', e);
+      return res.status(500).json({ error: 'Erro ao processar lembretes' });
+    }
+  });
+
+  // Endpoint para processar fila de retry
+  app.post('/api/admin/whatsapp/process-queue', requireAdminMw, requireMaster(), async (_req, res) => {
+    try {
+      const result = await processMessageQueue(db, env);
+      return res.json({
+        success: true,
+        processed: result.processed,
+        sent: result.sent,
+        failed: result.failed,
+      });
+    } catch (e: any) {
+      console.error('Error processing message queue:', e);
+      return res.status(500).json({ error: 'Erro ao processar fila de mensagens' });
     }
   });
 

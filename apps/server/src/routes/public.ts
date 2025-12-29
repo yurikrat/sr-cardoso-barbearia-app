@@ -19,6 +19,7 @@ import {
   getServiceFromConfig,
 } from '../lib/finance.js';
 import { getBrandingConfig } from '../lib/branding.js';
+import { sendBookingConfirmation, sendCancellationConfirmation } from '../services/whatsappNotifications.js';
 
 export type PublicRouteDeps = {
   env: Env;
@@ -329,6 +330,17 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       if (snap.empty) return res.status(404).json({ error: 'Agendamento não encontrado' });
 
       const bookingRef = snap.docs[0].ref;
+      const bookingData = snap.docs[0].data() as any;
+
+      // Guarda dados para envio de mensagem antes de cancelar
+      const customerData = {
+        id: snap.docs[0].id,
+        customerId: bookingData.customerId,
+        barberId: bookingData.barberId,
+        serviceType: bookingData.serviceType,
+        slotStart: bookingData.slotStart?.toDate() || new Date(),
+        customer: bookingData.customer,
+      };
 
       await db.runTransaction(async (tx) => {
         const bookingDoc = await tx.get(bookingRef);
@@ -354,6 +366,12 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
           cancelledReason: 'customer',
           updatedAt: FieldValue.serverTimestamp(),
         });
+      });
+
+      // Envia confirmação de cancelamento via WhatsApp (em background)
+      const baseUrl = env.WEB_ORIGIN || `${req.protocol}://${req.get('host')}`;
+      sendCancellationConfirmation(db, env, customerData, baseUrl).catch((err) => {
+        console.error('Error sending WhatsApp cancellation confirmation:', err);
       });
 
       return res.json({ success: true });
@@ -532,6 +550,29 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
           }
           tx.update(customerRef, updates);
         }
+      });
+
+      // Envia confirmação automática via WhatsApp (em background, não bloqueia resposta)
+      const baseUrl = env.WEB_ORIGIN || `${req.protocol}://${req.get('host')}`;
+      sendBookingConfirmation(
+        db,
+        env,
+        {
+          id: bookingId,
+          customerId,
+          barberId: validated.barberId,
+          serviceType: validated.serviceType,
+          slotStart: slotStart.toJSDate(),
+          customer: {
+            firstName: validated.customer.firstName,
+            lastName: validated.customer.lastName,
+            whatsappE164,
+          },
+        },
+        cancelCode,
+        baseUrl
+      ).catch((err) => {
+        console.error('Error sending WhatsApp confirmation:', err);
       });
 
       return res.json({ success: true, bookingId, cancelCode });

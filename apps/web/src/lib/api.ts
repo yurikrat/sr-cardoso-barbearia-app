@@ -202,6 +202,46 @@ export const api = {
       });
     },
 
+    async whatsappGetNotificationSettings() {
+      return apiFetch<{
+        confirmationEnabled: boolean;
+        confirmationMessage: string;
+        reminderEnabled: boolean;
+        reminderMinutesBefore: number;
+        reminderMessage: string;
+        cancellationMessage: string;
+      }>(`/api/admin/whatsapp/notification-settings`, { admin: true });
+    },
+
+    async whatsappSaveNotificationSettings(settings: {
+      confirmationEnabled: boolean;
+      confirmationMessage: string;
+      reminderEnabled: boolean;
+      reminderMinutesBefore: number;
+      reminderMessage: string;
+      cancellationMessage: string;
+    }) {
+      return apiFetch<{ success: boolean }>(`/api/admin/whatsapp/notification-settings`, {
+        method: 'PUT',
+        admin: true,
+        body: JSON.stringify(settings),
+      });
+    },
+
+    async whatsappSendReminders() {
+      return apiFetch<{ success: boolean; processed: number; sent: number; queued: number }>(
+        `/api/admin/whatsapp/send-reminders`,
+        { method: 'POST', admin: true }
+      );
+    },
+
+    async whatsappProcessQueue() {
+      return apiFetch<{ success: boolean; processed: number; sent: number; failed: number }>(
+        `/api/admin/whatsapp/process-queue`,
+        { method: 'POST', admin: true }
+      );
+    },
+
     async sendBookingWhatsappConfirmation(bookingId: string, payload: { text: string }) {
       return apiFetch<AdminWhatsappSendConfirmationResponse>(
         `/api/admin/bookings/${encodeURIComponent(bookingId)}/whatsapp/send-confirmation`,

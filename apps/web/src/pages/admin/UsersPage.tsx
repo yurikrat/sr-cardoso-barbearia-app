@@ -166,7 +166,7 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="sm:col-span-2 flex flex-col gap-2">
-              <Button onClick={handleCreateProfessionalAndLogin} disabled={loading}>
+              <Button onClick={handleCreateProfessionalAndLogin} disabled={loading} className="w-auto self-start">
                 Cadastrar e gerar senha
               </Button>
               {generatedCredentials ? (

@@ -36,7 +36,7 @@ export default function ChangePasswordPage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex flex-col gap-1">
           <h2 className="text-3xl font-serif font-bold tracking-tight">Segurança</h2>
           <p className="text-muted-foreground">Gerencie o acesso à sua conta administrativa.</p>
