@@ -36,6 +36,7 @@ async function readTextSafe(res: Response): Promise<string> {
 export type EvolutionClient = {
   get: (path: string) => Promise<EvolutionJson>;
   post: (path: string, body: unknown) => Promise<EvolutionJson>;
+  delete: (path: string) => Promise<EvolutionJson>;
 };
 
 export function createEvolutionClient(env: Env): EvolutionClient {
@@ -63,7 +64,7 @@ export function createEvolutionClient(env: Env): EvolutionClient {
     }
   };
 
-  const request = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
+  const request = async (method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown) => {
     ensureConfigured();
 
     const url = buildUrl(baseUrl, path);
@@ -134,6 +135,7 @@ export function createEvolutionClient(env: Env): EvolutionClient {
   return {
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
+    delete: (path) => request('DELETE', path),
   };
 }
 

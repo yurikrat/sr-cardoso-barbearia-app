@@ -23,6 +23,7 @@ type AdminWhatsappConnectRequest = {
 
 type AdminWhatsappSendTestResponse = { success: boolean; deduped?: boolean };
 type AdminWhatsappSendConfirmationResponse = { success: boolean; deduped?: boolean };
+type AdminWhatsappDisconnectResponse = { success: boolean; alreadyDisconnected?: boolean };
 
 type ApiError = { error?: string };
 
@@ -183,6 +184,13 @@ export const api = {
         method: 'POST',
         admin: true,
         body: JSON.stringify(payload ?? {}),
+      });
+    },
+
+    async whatsappDisconnect() {
+      return apiFetch<AdminWhatsappDisconnectResponse>(`/api/admin/whatsapp/disconnect`, {
+        method: 'POST',
+        admin: true,
       });
     },
 

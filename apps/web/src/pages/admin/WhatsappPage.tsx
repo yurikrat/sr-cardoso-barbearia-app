@@ -25,6 +25,7 @@ export default function WhatsappPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
 
   const [status, setStatus] = useState<{
@@ -48,6 +49,20 @@ export default function WhatsappPage() {
 
   const qrSrc = useMemo(() => asDataUrl(qrBase64), [qrBase64]);
   const canUseEvolution = !!status && status.configured !== false;
+
+  const statusSummary = useMemo(() => {
+    if (!status) return { label: 'Desconhecido', raw: null };
+    if (status.configured === false) return { label: 'Não configurado', raw: null };
+    if (!status.instanceExists) return { label: 'Instância não encontrada', raw: status.connectionState };
+
+    const raw = status.connectionState?.trim() || '';
+    const s = raw.toLowerCase();
+    if (!s) return { label: 'Sem estado', raw: null };
+    if (s === 'open' || s === 'connected') return { label: 'Conectado', raw };
+    if (s === 'connecting') return { label: 'Conectando', raw };
+    if (s === 'close' || s === 'closed' || s === 'disconnected') return { label: 'Desconectado', raw };
+    return { label: raw, raw };
+  }, [status]);
 
   const loadStatus = async () => {
     const data = await api.admin.whatsappStatus();
@@ -114,6 +129,25 @@ export default function WhatsappPage() {
     }
   };
 
+  const onDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await api.admin.whatsappDisconnect();
+      setQrBase64(null);
+      setPairingCode(null);
+      await loadStatus();
+      toast({ title: 'Desconectado', description: 'Sessão do WhatsApp removida. Conecte novamente para usar.' });
+    } catch (e: any) {
+      toast({
+        title: 'Erro ao desconectar',
+        description: e?.message || 'Não foi possível desconectar o WhatsApp.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   const onSendTest = async () => {
     setSendingTest(true);
     try {
@@ -172,18 +206,35 @@ export default function WhatsappPage() {
               <span className="font-medium">Instância:</span> {status?.instanceName || '-'}
             </div>
             <div>
+              <span className="font-medium">Situação:</span> {statusSummary.label}
+              {statusSummary.raw ? <span className="text-muted-foreground"> ({statusSummary.raw})</span> : null}
+            </div>
+            <div>
               <span className="font-medium">Existe:</span> {status?.instanceExists ? 'Sim' : 'Não'}
             </div>
             <div>
-              <span className="font-medium">Connection state:</span> {status?.connectionState || '-'}
+              <span className="font-medium">Estado bruto:</span> {status?.connectionState || '-'}
             </div>
             <div>
-              <span className="font-medium">Checado por:</span> {status?.checkedBy || 'unknown'}
+              <span className="font-medium">Fonte:</span> {status?.checkedBy || 'unknown'}
             </div>
             {status?.hint ? <div className="text-xs text-muted-foreground">{status.hint}</div> : null}
             {status?.configured === false ? (
               <div className="text-xs text-destructive">
                 Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
+              </div>
+            ) : null}
+
+            {claims?.role === 'master' ? (
+              <div className="pt-2">
+                <Button
+                  onClick={onDisconnect}
+                  disabled={disconnecting || !canUseEvolution}
+                  variant="outline"
+                >
+                  {disconnecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Desconectar
+                </Button>
               </div>
             ) : null}
           </CardContent>

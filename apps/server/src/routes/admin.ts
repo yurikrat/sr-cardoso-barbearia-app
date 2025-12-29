@@ -971,7 +971,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
       try {
         const raw = await evo.get(`/instance/connectionState/${encodeURIComponent(instanceName)}`);
-        connectionState = extractConnectionState(raw);
+        const extracted = extractConnectionState(raw);
+        if (!extracted) throw new Error('Sem connectionState no payload do Evolution');
+        connectionState = extracted;
         checkedBy = 'connectionState';
         instanceExists = true;
       } catch (e: any) {
@@ -1037,6 +1039,35 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     } catch (e: any) {
       const msg = typeof e?.message === 'string' ? e.message : 'Erro ao consultar status do WhatsApp';
       return res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/admin/whatsapp/disconnect', requireAdminMw, requireMaster(), async (_req, res) => {
+    try {
+      const instanceName = getEvolutionInstanceName(env);
+      const evo = createEvolutionClient(env);
+
+      try {
+        await evo.delete(`/instance/logout/${encodeURIComponent(instanceName)}`);
+      } catch (e: any) {
+        const err = e as EvolutionRequestError;
+        if (err && typeof err.status === 'number') {
+          const normalizedMsg = String(err.message || '').toLowerCase();
+          if (err.status === 400 && (normalizedMsg.includes('not connected') || normalizedMsg.includes('não conectado'))) {
+            return res.json({ success: true, alreadyDisconnected: true });
+          }
+          const mapped = mapEvolutionError(err);
+          return res.status(mapped.httpStatus).json({ error: mapped.message });
+        }
+        throw e;
+      }
+
+      return res.json({ success: true });
+    } catch (e: any) {
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao desconectar WhatsApp' });
     }
   });
 
