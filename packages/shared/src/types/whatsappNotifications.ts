@@ -22,13 +22,13 @@ export interface WhatsAppNotificationSettings {
 export const DEFAULT_NOTIFICATION_SETTINGS: WhatsAppNotificationSettings = {
   confirmationEnabled: true,
   confirmationMessage:
-    'Seu agendamento foi confirmado! Esperamos você na barbearia.',
+    'Tudo certo! Seu horário está reservado. Chega uns 5 minutinhos antes pra gente te atender com calma.',
   reminderEnabled: true,
   reminderMinutesBefore: 60,
   reminderMessage:
-    'Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!',
+    'Falta pouco pro seu horário! Te vejo daqui a pouco aqui na barbearia.',
   cancellationMessage:
-    'Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!',
+    'Cancelado! Quando quiser reagendar, é só clicar no link abaixo. Vai ser um prazer te atender.',
 };
 
 /**

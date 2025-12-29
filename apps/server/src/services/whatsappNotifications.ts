@@ -20,11 +20,11 @@ export async function getNotificationSettings(db: Firestore): Promise<WhatsAppNo
   if (!doc.exists) {
     return {
       confirmationEnabled: true,
-      confirmationMessage: 'Seu agendamento foi confirmado! Esperamos você na barbearia.',
+      confirmationMessage: 'Tudo certo! Seu horário está reservado. Chega uns 5 minutinhos antes pra gente te atender com calma.',
       reminderEnabled: true,
       reminderMinutesBefore: 60,
-      reminderMessage: 'Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!',
-      cancellationMessage: 'Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!',
+      reminderMessage: 'Falta pouco pro seu horário! Te vejo daqui a pouco aqui na barbearia.',
+      cancellationMessage: 'Cancelado! Quando quiser reagendar, é só clicar no link abaixo. Vai ser um prazer te atender.',
     };
   }
   return doc.data() as WhatsAppNotificationSettings;
@@ -107,20 +107,16 @@ async function buildConfirmationMessage(
   const barberName = await getBarberName(db, booking.barberId);
   
   const lines = [
-    `Olá, ${booking.customer.firstName}! 👋`,
+    `E aí, ${booking.customer.firstName}! ✂️`,
     '',
     customMessage,
     '',
-    '📋 *Detalhes do agendamento:*',
-    `• Serviço: ${serviceName}`,
-    `• Profissional: ${barberName}`,
-    `• Data: ${data}`,
-    `• Horário: ${hora}`,
+    `*${serviceName}* com ${barberName}`,
+    `📅 ${data}`,
+    `🕐 ${hora}`,
     '',
-    '🔗 Precisa cancelar ou reagendar?',
+    'Precisa mudar algo? Sem problema:',
     cancelLink,
-    '',
-    'Até breve! ✂️',
   ];
   
   return lines.join('\n');
@@ -138,14 +134,12 @@ async function buildReminderMessage(
   const serviceName = await getServiceName(db, booking.serviceType);
   
   const lines = [
-    `Olá, ${booking.customer.firstName}! ⏰`,
+    `${booking.customer.firstName}, bora? ⏰`,
     '',
     customMessage,
     '',
-    `📋 Seu horário: *${hora}*`,
-    `✂️ Serviço: ${serviceName}`,
-    '',
-    'Te esperamos!',
+    `Seu horário: *${hora}*`,
+    `Serviço: ${serviceName}`,
   ];
   
   return lines.join('\n');
@@ -161,12 +155,12 @@ async function buildCancellationMessage(
   baseUrl: string
 ): Promise<string> {
   const lines = [
-    `Olá, ${booking.customer.firstName}!`,
+    `${booking.customer.firstName}, tudo bem!`,
     '',
     customMessage,
     '',
-    '📅 Quer fazer um novo agendamento?',
-    baseUrl,
+    'Novo agendamento:',
+    `${baseUrl}/agendar`,
   ];
   
   return lines.join('\n');

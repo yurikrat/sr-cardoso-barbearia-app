@@ -446,7 +446,7 @@ export default function WhatsappPage() {
                       onChange={(e) =>
                         setNotificationSettings({ ...notificationSettings, confirmationMessage: e.target.value })
                       }
-                      placeholder="Seu agendamento foi confirmado! Esperamos você na barbearia."
+                      placeholder="Tudo certo! Seu horário está reservado. Chega uns 5 minutinhos antes pra gente te atender com calma."
                       className="w-full min-h-[100px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                       disabled={!notificationSettings.confirmationEnabled}
                     />
@@ -490,6 +490,7 @@ export default function WhatsappPage() {
                         <SelectValue placeholder="Selecione" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="15">15 minutos</SelectItem>
                         <SelectItem value="30">30 minutos</SelectItem>
                         <SelectItem value="60">1 hora</SelectItem>
                         <SelectItem value="120">2 horas</SelectItem>
@@ -506,7 +507,7 @@ export default function WhatsappPage() {
                       onChange={(e) =>
                         setNotificationSettings({ ...notificationSettings, reminderMessage: e.target.value })
                       }
-                      placeholder="Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!"
+                      placeholder="Falta pouco pro seu horário! Te vejo daqui a pouco aqui na barbearia."
                       className="w-full min-h-[100px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                       disabled={!notificationSettings.reminderEnabled}
                     />
@@ -538,7 +539,7 @@ export default function WhatsappPage() {
                       onChange={(e) =>
                         setNotificationSettings({ ...notificationSettings, cancellationMessage: e.target.value })
                       }
-                      placeholder="Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!"
+                      placeholder="Cancelado! Quando quiser reagendar, é só clicar no link abaixo. Vai ser um prazer te atender."
                       className="w-full min-h-[80px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                     <p className="text-xs text-muted-foreground">
