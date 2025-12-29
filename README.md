@@ -102,6 +102,9 @@ gcloud firestore rules create \
 gcloud firestore indexes create \
   --file=firebase/firestore.indexes.json \
   --project=sr-cardoso-barbearia-prd
+
+# Nota: o arquivo de índices inclui o composto `bookings(status, slotStart)`
+# usado pelo cron de lembretes do WhatsApp.
 ```
 
 ### 6. Deploy do Cloud Run
@@ -279,11 +282,33 @@ Se um cliente pedir para parar de receber mensagens, o admin deve:
 
 ## 🧑‍💼 Runbook operacional (admin)
 
-### Confirmar agendamento via WhatsApp (MVP)
+### Confirmar agendamento via WhatsApp (manual)
 - Abra a agenda do dia.
 - Clique na reserva.
 - Use o botão **“Enviar no WhatsApp”** (abre `wa.me` com mensagem pronta).
 - Após enviar, marque **“WhatsApp enviado”** para manter o CRM consistente.
+
+### Notificações WhatsApp automáticas (Evolution API)
+Além do envio manual acima, o sistema também pode enviar mensagens automaticamente:
+
+- **Confirmação** ao criar um agendamento (`POST /api/bookings`) com link de cancelamento.
+- **Lembrete** X minutos antes do horário (configurável).
+- **Cancelamento** quando o cliente cancela pelo link público.
+
+Configuração:
+- UI: `/admin/whatsapp` (master)
+- Firestore: `settings/whatsapp-notifications`
+
+Operação (cron):
+- `POST /api/cron/send-reminders` (Cloud Scheduler)
+- `POST /api/cron/process-queue` (Cloud Scheduler)
+- Autenticação: header `x-cron-secret: <CRON_SECRET>` (compat: `x-cron-key`)
+
+Falhas:
+- Mensagens que falham entram na fila `whatsappMessageQueue` (até 3 tentativas).
+
+Observação importante:
+- O nome do serviço exibido nas mensagens vem do catálogo do financeiro (`settings/finance.services[].label`), com fallback para defaults (ex.: `cabelo_barba` → `Cabelo + Barba`).
 
 ### Cancelar reserva
 - Abra a reserva.

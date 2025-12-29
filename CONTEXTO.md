@@ -145,7 +145,10 @@ A forma mais segura de saber “o que o frontend chama” é olhar:
 - `POST /api/admin/me/password` (autenticado)
 - `GET /api/admin/whatsapp/notification-settings` (master)
 - `PUT /api/admin/whatsapp/notification-settings` (master)
-- `POST /api/admin/whatsapp/send-reminders` (cron/scheduler)
+
+### Endpoints de cron (públicos, protegidos por secret)
+- `POST /api/cron/send-reminders`
+- `POST /api/cron/process-queue`
 
 ### Endpoints principais (cliente)
 - `GET /api/availability?barberId=...&dateKey=YYYY-MM-DD`
@@ -269,43 +272,45 @@ O sistema envia notificações WhatsApp automaticamente para clientes via Evolut
   confirmationEnabled: boolean,      // Ativa/desativa confirmação automática
   reminderEnabled: boolean,          // Ativa/desativa lembretes
   reminderMinutesBefore: number,     // Minutos antes para enviar lembrete (padrão: 60)
-  
-  // Templates (texto simples, placeholders substituídos automaticamente)
-  confirmationTemplate: string,      // Ex: "Olá Maria! Seu horário está confirmado..."
-  reminderTemplate: string,          // Ex: "Lembrete: seu horário é em 1 hora..."
-  cancellationTemplate: string       // Ex: "Seu agendamento foi cancelado..."
+
+  // Mensagens (texto simples). O sistema monta o restante automaticamente.
+  confirmationMessage: string,
+  reminderMessage: string,
+  cancellationMessage: string
 }
 ```
 
-### Placeholders disponíveis nos templates
-Os templates usam texto simples. O sistema substitui automaticamente:
-- Nome do cliente
-- Data formatada (ex: "Segunda-feira, 30 de dezembro")
-- Horário (ex: "14:30")
-- Nome do serviço (ex: "Cabelo + Barba")
-- Nome do barbeiro
-- Link de cancelamento (apenas na confirmação)
+### Como o texto final é montado
+- O admin edita apenas o “miolo” da mensagem (texto livre) no painel.
+- O sistema adiciona automaticamente: serviço (nome legível), barbeiro, data/hora e link de cancelamento (na confirmação).
+- O nome do serviço vem do catálogo do financeiro (`settings/finance.services[].label`). Se o catálogo não existir, usa defaults (ex.: `cabelo_barba` → `Cabelo + Barba`).
 
-### Fila de Retry (Firestore: `whatsappRetryQueue`)
+### Fila de Retry (Firestore: `whatsappMessageQueue`)
 Mensagens que falham são salvas para reenvio automático:
 ```typescript
 {
   bookingId: string,
+  customerId: string,
   messageType: 'confirmation' | 'reminder' | 'cancellation',
-  customerPhone: string,
+  phoneE164: string,
   messageText: string,
-  attempts: number,           // Máximo: 3 tentativas
-  lastAttemptAt: Timestamp,
-  nextRetryAt: Timestamp,
-  error: string
+  status: 'pending' | 'sent' | 'failed',
+  attempts: number,                 // Máximo: 3 tentativas
+  maxAttempts: number,
+  createdAt: Date,
+  lastAttemptAt?: Date,
+  lastError?: string
 }
 ```
 
 ### Endpoints
 - `GET /api/admin/whatsapp/notification-settings` - Carrega configurações
 - `PUT /api/admin/whatsapp/notification-settings` - Salva configurações
-- `POST /api/admin/whatsapp/send-reminders` - Processa lembretes pendentes (chamado por cron)
-- `POST /api/admin/whatsapp/process-retry-queue` - Reprocessa fila de retry
+
+#### Cron (Cloud Scheduler)
+- `POST /api/cron/send-reminders` - Processa lembretes pendentes
+- `POST /api/cron/process-queue` - Reprocessa fila de retry
+- Autenticação: header `x-cron-secret: <CRON_SECRET>` (o backend também aceita `x-cron-key` por compat)
 
 ### Fluxo de Envio
 1. **Ao criar booking** (`POST /api/bookings`):
@@ -314,11 +319,12 @@ Mensagens que falham são salvas para reenvio automático:
 
 2. **Cron de lembretes** (a cada 15 min):
    - Query bookings onde `slotStart` está dentro do intervalo configurado
-   - Filtra por `status=booked` e `reminderSent!=true`
-   - Envia lembrete e marca `reminderSent=true`
+  - Filtra por `status=booked` e sem `reminderSentAt`
+  - Envia lembrete e marca `reminderSentAt`
 
-3. **Ao cancelar** (`POST /api/bookings/:id/cancel` público):
-   - Se `cancellationEnabled=true`, envia confirmação de cancelamento
+3. **Ao cancelar** (link público de cancelamento):
+  - O cancelamento público usa `POST /api/public/cancel/:cancelCode`
+  - Se `cancellationEnabled=true`, envia confirmação de cancelamento
 
 ### UI Admin (`/admin/whatsapp`)
 Seção "Notificações Automáticas" permite:

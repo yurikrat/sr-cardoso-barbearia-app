@@ -441,42 +441,44 @@ interface WhatsAppNotificationSettings {
   confirmationEnabled: boolean;
   reminderEnabled: boolean;
   reminderMinutesBefore: number;  // padrão: 60
-  
-  // Templates (texto livre, placeholders substituídos automaticamente)
-  confirmationTemplate: string;
-  reminderTemplate: string;
-  cancellationTemplate: string;
+
+  // Mensagens (texto livre). O sistema adiciona automaticamente os detalhes.
+  confirmationMessage: string;
+  reminderMessage: string;
+  cancellationMessage: string;
 }
 ```
 
-### Placeholders nos Templates
-O sistema substitui automaticamente nos textos:
-- Nome do cliente (primeiro nome)
-- Data formatada (ex: "Segunda-feira, 30 de dezembro")
-- Horário (ex: "14:30")
-- Nome do serviço (ex: "Cabelo + Barba")
-- Nome do barbeiro
-- Link de cancelamento (apenas confirmação)
+### Como o texto final é montado
+- O admin edita apenas o “miolo” (texto livre) no painel.
+- O sistema adiciona automaticamente: serviço (nome legível), barbeiro, data/hora e link de cancelamento (na confirmação).
+- O nome do serviço vem do catálogo do financeiro (`settings/finance.services[].label`). Se o catálogo não existir, usa defaults.
 
-### Fila de Retry (Firestore: `whatsappRetryQueue`)
+### Fila de Retry (Firestore: `whatsappMessageQueue`)
 ```typescript
-interface RetryQueueItem {
+interface WhatsAppMessageQueueItem {
   bookingId: string;
+  customerId: string;
   messageType: 'confirmation' | 'reminder' | 'cancellation';
-  customerPhone: string;
+  phoneE164: string;
   messageText: string;
+  status: 'pending' | 'sent' | 'failed';
   attempts: number;        // máx: 3
-  lastAttemptAt: Timestamp;
-  nextRetryAt: Timestamp;
-  error: string;
+  maxAttempts: number;
+  createdAt: Date;
+  lastAttemptAt?: Date;
+  lastError?: string;
 }
 ```
 
 ### Endpoints Adicionados
 - `GET /api/admin/whatsapp/notification-settings` - Carrega config (master)
 - `PUT /api/admin/whatsapp/notification-settings` - Salva config (master)
-- `POST /api/admin/whatsapp/send-reminders` - Processa lembretes (cron)
-- `POST /api/admin/whatsapp/process-retry-queue` - Reprocessa falhas (cron)
+
+Cron (Cloud Scheduler):
+- `POST /api/cron/send-reminders` - Processa lembretes
+- `POST /api/cron/process-queue` - Reprocessa fila de retry
+- Autenticação: header `x-cron-secret: <CRON_SECRET>` (compat: `x-cron-key`)
 
 ### Integração no Fluxo de Booking
 
@@ -487,32 +489,35 @@ Cliente cria booking → API salva no Firestore → Envia confirmação WhatsApp
                                     Se falhar → Adiciona à fila de retry
 ```
 
+Observação (Firestore index):
+- O cron de lembretes consulta `bookings` por `status` e `slotStart`, então é necessário o índice composto `bookings(status ASC, slotStart ASC)` (definido em `firebase/firestore.indexes.json`).
+
 #### Cancelamento público (`POST /api/public/cancel/:cancelCode`)
 ```
 Cliente cancela → API atualiza booking → Envia msg de cancelamento WhatsApp
 ```
 
-### Cloud Scheduler (Configuração Pendente)
+### Cloud Scheduler (Configuração)
 
-Para lembretes automáticos, criar job no GCP:
+Para lembretes e retries automáticos, criar jobs no GCP (exemplo):
 
 ```bash
 # Criar job para enviar lembretes a cada 15 min
 gcloud scheduler jobs create http whatsapp-send-reminders \
   --location=us-central1 \
   --schedule="*/15 * * * *" \
-  --uri="https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/send-reminders" \
+  --uri="https://sr-cardoso-barbearia-....run.app/api/cron/send-reminders" \
   --http-method=POST \
-  --headers="x-cron-key=<SECRET>" \
+  --headers="x-cron-secret=<CRON_SECRET>" \
   --time-zone="America/Sao_Paulo"
 
 # Criar job para processar retry queue a cada 5 min
 gcloud scheduler jobs create http whatsapp-process-retry \
   --location=us-central1 \
   --schedule="*/5 * * * *" \
-  --uri="https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/process-retry-queue" \
+  --uri="https://sr-cardoso-barbearia-....run.app/api/cron/process-queue" \
   --http-method=POST \
-  --headers="x-cron-key=<SECRET>" \
+  --headers="x-cron-secret=<CRON_SECRET>" \
   --time-zone="America/Sao_Paulo"
 ```
 
@@ -520,5 +525,5 @@ gcloud scheduler jobs create http whatsapp-process-retry \
 Seção "Notificações Automáticas" permite:
 - Toggle para ativar/desativar cada tipo de notificação
 - Campo para configurar minutos do lembrete
-- Textarea para editar templates de mensagem
+- Textarea para editar mensagens (texto livre)
 - Preview com dados de exemplo

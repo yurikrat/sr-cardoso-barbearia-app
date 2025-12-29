@@ -1,6 +1,6 @@
 # GCP — Documentação viva (sr-cardoso-barbearia-prd)
 
-Data de referência: 2025-12-28 (BRT)
+Data de referência: 2025-12-29 (BRT)
 
 Este documento descreve **o que existe** e **o que foi criado/alterado** na Google Cloud Platform para o projeto `sr-cardoso-barbearia-prd`, com foco em:
 - Cloud Run (app)
@@ -26,11 +26,12 @@ Este documento descreve **o que existe** e **o que foi criado/alterado** na Goog
 Habilitadas no projeto:
 - `compute.googleapis.com`
 - `run.googleapis.com`
+- `cloudscheduler.googleapis.com`
 - `secretmanager.googleapis.com`
 - `vpcaccess.googleapis.com`
 
 Comando usado:
-- `gcloud services list --enabled --format="value(config.name)" | egrep "^(run.googleapis.com|compute.googleapis.com|secretmanager.googleapis.com|vpcaccess.googleapis.com)$"`
+- `gcloud services list --enabled --format="value(config.name)" | egrep "^(run.googleapis.com|compute.googleapis.com|cloudscheduler.googleapis.com|secretmanager.googleapis.com|vpcaccess.googleapis.com)$"`
 
 ---
 
@@ -40,7 +41,7 @@ Comando usado:
 
 - Região: `us-central1`
 - URL: `https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app`
-- Latest ready revision (na coleta): `sr-cardoso-barbearia-00086-xj2`
+- Latest ready revision (na coleta): `sr-cardoso-barbearia-00116-hl5`
 
 Comando usado:
 - `gcloud run services list --region us-central1 --format="table(metadata.name,status.url,status.latestReadyRevisionName)"`
@@ -50,6 +51,7 @@ Comando usado:
 Presentes:
 - `ADMIN_PASSWORD` (via Secret Manager: `ADMIN_PASSWORD`, key `latest`)
 - `ADMIN_JWT_SECRET` (via Secret Manager: `ADMIN_JWT_SECRET`, key `latest`)
+- `CRON_SECRET` (via Secret Manager: `CRON_SECRET`, key `latest`)
 - `GCP_STORAGE_BUCKET=sr-cardoso-assets`
 - `GCP_PROJECT_ID=sr-cardoso-barbearia-prd`
 
@@ -177,6 +179,7 @@ Comandos executados (em sequência):
 Secrets existentes (na coleta):
 - `ADMIN_PASSWORD` (criado em 2025-12-24)
 - `ADMIN_JWT_SECRET` (criado em 2025-12-24)
+- `CRON_SECRET` (criado em 2025-12-29)
 - `EVOLUTION_API_KEY` (criado em 2025-12-28)
 - `EVOLUTION_POSTGRES_PASSWORD` (criado em 2025-12-28)
 
@@ -387,22 +390,29 @@ Implementado sistema de envio automático de mensagens WhatsApp via Evolution AP
 - `confirmationEnabled`: ativa/desativa confirmação automática
 - `reminderEnabled`: ativa/desativa lembretes
 - `reminderMinutesBefore`: minutos de antecedência do lembrete
-- Templates de mensagem editáveis (texto livre)
+- Mensagens editáveis (texto livre): `confirmationMessage`, `reminderMessage`, `cancellationMessage`
 
-### Fila de Retry (Firestore: `whatsappRetryQueue`)
+### Fila de Retry (Firestore: `whatsappMessageQueue`)
 Mensagens que falham são enfileiradas para reenvio automático (máx. 3 tentativas).
 
 ### Endpoints adicionados
 - `GET /api/admin/whatsapp/notification-settings` (master)
 - `PUT /api/admin/whatsapp/notification-settings` (master)
-- `POST /api/admin/whatsapp/send-reminders` (cron)
-- `POST /api/admin/whatsapp/process-retry-queue` (cron)
+- `POST /api/cron/send-reminders` (cron)
+- `POST /api/cron/process-queue` (cron)
 
 ### UI Admin
 Seção "Notificações Automáticas" em `/admin/whatsapp` permite configurar tudo pelo painel.
 
-### Cron (Cloud Scheduler) — pendente
-Para lembretes automáticos, criar job no Cloud Scheduler que chama:
-- `POST https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/send-reminders`
-- Frequência sugerida: a cada 15 minutos
-- Autenticação: header `x-cron-key` com secret
+### Cron (Cloud Scheduler) — criado
+Foram criados 2 jobs no Cloud Scheduler (região `us-central1`) chamando o Cloud Run:
+
+1) `whatsapp-send-reminders`
+- `POST https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/send-reminders`
+- Schedule: `*/15 * * * *`
+
+2) `whatsapp-process-retry`
+- `POST https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/process-queue`
+- Schedule: `*/5 * * * *`
+
+Autenticação (ambos): header `x-cron-secret: <CRON_SECRET>` (por compat, o backend também aceita `x-cron-key`).

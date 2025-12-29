@@ -2,6 +2,7 @@ import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
 import { DateTime } from 'luxon';
 import { createEvolutionClient, getEvolutionInstanceName, toEvolutionNumber, type EvolutionRequestError } from '../lib/evolutionApi.js';
 import type { Env } from '../lib/env.js';
+import { getFinanceConfig, getServiceFromConfig } from '../lib/finance.js';
 import type {
   WhatsAppNotificationSettings,
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -60,12 +61,8 @@ function formatDateTime(date: Date): { data: string; hora: string } {
  * Busca o nome do serviço pelo ID
  */
 async function getServiceName(db: Firestore, serviceType: string): Promise<string> {
-  const configDoc = await db.doc('settings/finance').get();
-  if (!configDoc.exists) return serviceType;
-  
-  const config = configDoc.data();
-  const services = config?.services || [];
-  const service = services.find((s: any) => s.id === serviceType);
+  const config = await getFinanceConfig(db);
+  const service = getServiceFromConfig(config, serviceType);
   return service?.label || serviceType;
 }
 
