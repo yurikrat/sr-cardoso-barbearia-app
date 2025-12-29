@@ -598,7 +598,8 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       return false;
     }
     
-    const providedKey = req.headers['x-cron-key'] as string;
+    // Aceita tanto x-cron-secret quanto x-cron-key para flexibilidade
+    const providedKey = (req.headers['x-cron-secret'] || req.headers['x-cron-key']) as string;
     if (!providedKey || providedKey !== cronSecret) {
       console.warn('Invalid cron key attempt');
       res.status(401).json({ error: 'Invalid cron key' });
