@@ -12,7 +12,6 @@ import {
   Download,
   Trash2
 } from 'lucide-react';
-import ExcelJS from 'exceljs';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -149,7 +148,8 @@ export default function FinancePage() {
   const handleExport = async () => {
     if (!summary) return;
 
-    const workbook = new ExcelJS.Workbook();
+    const { Workbook } = await import('exceljs');
+    const workbook = new Workbook();
 
     // Sheet 1: Resumo
     const wsSummary = workbook.addWorksheet('Resumo');

@@ -19,7 +19,6 @@ import {
   Users
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import ExcelJS from 'exceljs';
 
 type TimestampLike =
   | { toDate?: () => Date }
@@ -105,7 +104,8 @@ export default function CustomersPage() {
   const handleExport = async () => {
     if (customers.length === 0) return;
 
-    const workbook = new ExcelJS.Workbook();
+    const { Workbook } = await import('exceljs');
+    const workbook = new Workbook();
     const worksheet = workbook.addWorksheet('Clientes');
 
     worksheet.columns = [

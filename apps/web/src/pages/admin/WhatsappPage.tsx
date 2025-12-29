@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw, Smartphone, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Link2, QrCode, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -213,7 +213,7 @@ export default function WhatsappPage() {
             <p className="text-muted-foreground">Gerenciar conexão e enviar mensagens.</p>
           </div>
           <Button onClick={onRefresh} disabled={refreshing} variant="outline" size="sm">
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-2 flex-none ${refreshing ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
         </div>
@@ -223,7 +223,7 @@ export default function WhatsappPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Smartphone className="h-8 w-8 text-primary" />
+                <Link2 className="h-6 w-6 flex-none text-primary" />
                 <div>
                   <div className="text-sm text-muted-foreground mb-1">Status da Conexão</div>
                   <Badge variant={statusSummary.variant} className="text-base px-3 py-1">
@@ -238,7 +238,7 @@ export default function WhatsappPage() {
                   variant="outline"
                   size="sm"
                 >
-                  {disconnecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  {disconnecting ? <RefreshCw className="h-4 w-4 mr-2 flex-none animate-spin" /> : null}
                   Desconectar
                 </Button>
               ) : null}
@@ -264,7 +264,11 @@ export default function WhatsappPage() {
                   onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
                   className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showTechnicalDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    {showTechnicalDetails ? (
+                    <ChevronUp className="h-4 w-4 flex-none" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 flex-none" />
+                  )}
                   {showTechnicalDetails ? 'Ocultar detalhes técnicos' : 'Ver detalhes técnicos'}
                 </button>
                 {showTechnicalDetails ? (
@@ -284,12 +288,12 @@ export default function WhatsappPage() {
         {claims?.role === 'master' ? (
           <Tabs defaultValue="connect" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="connect">
-                <Smartphone className="h-4 w-4 mr-2" />
+              <TabsTrigger value="connect" className="flex items-center">
+                <QrCode className="h-5 w-5 mr-2 flex-none" />
                 Conectar
               </TabsTrigger>
-              <TabsTrigger value="test">
-                <MessageSquare className="h-4 w-4 mr-2" />
+              <TabsTrigger value="test" className="flex items-center">
+                <MessageSquare className="h-5 w-5 mr-2 flex-none" />
                 Testar Envio
               </TabsTrigger>
             </TabsList>
@@ -341,7 +345,7 @@ export default function WhatsappPage() {
                     }
                     className="w-full bg-primary hover:bg-primary/90"
                   >
-                    {connecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    {connecting ? <RefreshCw className="h-4 w-4 mr-2 flex-none animate-spin" /> : null}
                     {connectMode === 'pairingCode' ? 'Gerar Código' : 'Gerar QR Code'}
                   </Button>
 
@@ -409,7 +413,11 @@ export default function WhatsappPage() {
                     disabled={sendingTest || !canUseEvolution}
                     className="w-full bg-primary hover:bg-primary/90"
                   >
-                    {sendingTest ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-2" />}
+                    {sendingTest ? (
+                      <RefreshCw className="h-4 w-4 mr-2 shrink-0 aspect-square animate-spin" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4 mr-2 shrink-0 aspect-square" />
+                    )}
                     Enviar Mensagem
                   </Button>
                 </CardContent>
