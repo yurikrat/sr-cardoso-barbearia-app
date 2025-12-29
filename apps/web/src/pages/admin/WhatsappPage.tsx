@@ -5,10 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Smartphone, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -27,6 +31,8 @@ export default function WhatsappPage() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const [status, setStatus] = useState<{
     instanceName: string;
@@ -51,17 +57,17 @@ export default function WhatsappPage() {
   const canUseEvolution = !!status && status.configured !== false;
 
   const statusSummary = useMemo(() => {
-    if (!status) return { label: 'Desconhecido', raw: null };
-    if (status.configured === false) return { label: 'Não configurado', raw: null };
-    if (!status.instanceExists) return { label: 'Instância não encontrada', raw: status.connectionState };
+    if (!status) return { label: 'Desconhecido', variant: 'secondary' as const, raw: null, isConnecting: false };
+    if (status.configured === false) return { label: 'Não configurado', variant: 'destructive' as const, raw: null, isConnecting: false };
+    if (!status.instanceExists) return { label: 'Sessão não encontrada', variant: 'destructive' as const, raw: status.connectionState, isConnecting: false };
 
     const raw = status.connectionState?.trim() || '';
     const s = raw.toLowerCase();
-    if (!s) return { label: 'Sem estado', raw: null };
-    if (s === 'open' || s === 'connected') return { label: 'Conectado', raw };
-    if (s === 'connecting') return { label: 'Conectando', raw };
-    if (s === 'close' || s === 'closed' || s === 'disconnected') return { label: 'Desconectado', raw };
-    return { label: raw, raw };
+    if (!s) return { label: 'Sem estado', variant: 'secondary' as const, raw: null, isConnecting: false };
+    if (s === 'open' || s === 'connected') return { label: 'Conectado', variant: 'default' as const, raw, isConnecting: false };
+    if (s === 'connecting') return { label: 'Conectando...', variant: 'outline' as const, raw, isConnecting: true };
+    if (s === 'close' || s === 'closed' || s === 'disconnected') return { label: 'Desconectado', variant: 'secondary' as const, raw, isConnecting: false };
+    return { label: raw, variant: 'outline' as const, raw, isConnecting: false };
   }, [status]);
 
   const loadStatus = async () => {
@@ -84,6 +90,21 @@ export default function WhatsappPage() {
       }
     })();
   }, [toast]);
+
+  // Auto-refresh when connecting
+  useEffect(() => {
+    if (!statusSummary.isConnecting) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await loadStatus();
+      } catch {
+        // Silent fail during auto-refresh
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [statusSummary.isConnecting]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -130,13 +151,14 @@ export default function WhatsappPage() {
   };
 
   const onDisconnect = async () => {
+    setShowDisconnectDialog(false);
     setDisconnecting(true);
     try {
       await api.admin.whatsappDisconnect();
       setQrBase64(null);
       setPairingCode(null);
       await loadStatus();
-      toast({ title: 'Desconectado', description: 'Sessão do WhatsApp removida. Conecte novamente para usar.' });
+      toast({ title: 'Desconectado', description: 'WhatsApp desconectado com sucesso.' });
     } catch (e: any) {
       toast({
         title: 'Erro ao desconectar',
@@ -184,164 +206,243 @@ export default function WhatsappPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 max-w-2xl mx-auto">
+      <div className="space-y-6 max-w-4xl mx-auto px-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-serif font-bold text-foreground">WhatsApp</h2>
-            <p className="text-muted-foreground">Conexão e testes via Evolution.</p>
+            <p className="text-muted-foreground">Gerenciar conexão e enviar mensagens.</p>
           </div>
-          <Button onClick={onRefresh} disabled={refreshing} className="bg-primary hover:bg-primary/90">
-            {refreshing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+          <Button onClick={onRefresh} disabled={refreshing} variant="outline" size="sm">
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
         </div>
 
+        {/* Status Summary Card */}
         <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle>Status</CardTitle>
-            <CardDescription>Estado atual da instância configurada no servidor.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div>
-              <span className="font-medium">Instância:</span> {status?.instanceName || '-'}
-            </div>
-            <div>
-              <span className="font-medium">Situação:</span> {statusSummary.label}
-              {statusSummary.raw ? <span className="text-muted-foreground"> ({statusSummary.raw})</span> : null}
-            </div>
-            <div>
-              <span className="font-medium">Existe:</span> {status?.instanceExists ? 'Sim' : 'Não'}
-            </div>
-            <div>
-              <span className="font-medium">Estado bruto:</span> {status?.connectionState || '-'}
-            </div>
-            <div>
-              <span className="font-medium">Fonte:</span> {status?.checkedBy || 'unknown'}
-            </div>
-            {status?.hint ? <div className="text-xs text-muted-foreground">{status.hint}</div> : null}
-            {status?.configured === false ? (
-              <div className="text-xs text-destructive">
-                Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Smartphone className="h-8 w-8 text-primary" />
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">Status da Conexão</div>
+                  <Badge variant={statusSummary.variant} className="text-base px-3 py-1">
+                    {statusSummary.label}
+                  </Badge>
+                </div>
               </div>
-            ) : null}
-
-            {claims?.role === 'master' ? (
-              <div className="pt-2">
+              {claims?.role === 'master' && statusSummary.label === 'Conectado' ? (
                 <Button
-                  onClick={onDisconnect}
-                  disabled={disconnecting || !canUseEvolution}
+                  onClick={() => setShowDisconnectDialog(true)}
+                  disabled={disconnecting}
                   variant="outline"
+                  size="sm"
                 >
                   {disconnecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
                   Desconectar
                 </Button>
+              ) : null}
+            </div>
+
+            {status?.hint ? (
+              <div className="mt-4 p-3 bg-muted/50 rounded-md text-sm text-muted-foreground">
+                💡 {status.hint}
               </div>
+            ) : null}
+
+            {status?.configured === false ? (
+              <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
+                ⚠️ Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
+              </div>
+            ) : null}
+
+            {/* Technical Details Toggle */}
+            {claims?.role === 'master' ? (
+              <>
+                <Separator className="my-4" />
+                <button
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showTechnicalDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  {showTechnicalDetails ? 'Ocultar detalhes técnicos' : 'Ver detalhes técnicos'}
+                </button>
+                {showTechnicalDetails ? (
+                  <div className="mt-3 space-y-1 text-xs text-muted-foreground font-mono bg-muted/30 p-3 rounded">
+                    <div><span className="font-semibold">Sessão:</span> {status?.instanceName || '-'}</div>
+                    <div><span className="font-semibold">Existe:</span> {status?.instanceExists ? 'Sim' : 'Não'}</div>
+                    <div><span className="font-semibold">Estado bruto:</span> {status?.connectionState || '-'}</div>
+                    <div><span className="font-semibold">Fonte:</span> {status?.checkedBy || 'unknown'}</div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </CardContent>
         </Card>
 
-        <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle>Conectar</CardTitle>
-            <CardDescription>Gera um QR Code para conectar a instância (somente master).</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Modo</Label>
-              <Select value={connectMode} onValueChange={(v) => setConnectMode(v as any)}>
-                <SelectTrigger disabled={claims?.role !== 'master' || !canUseEvolution}>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="qr">QR Code</SelectItem>
-                  <SelectItem value="pairingCode">Código (sem QR)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        {/* Tabs for Connection and Test */}
+        {claims?.role === 'master' ? (
+          <Tabs defaultValue="connect" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="connect">
+                <Smartphone className="h-4 w-4 mr-2" />
+                Conectar
+              </TabsTrigger>
+              <TabsTrigger value="test">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Testar Envio
+              </TabsTrigger>
+            </TabsList>
 
-            {connectMode === 'pairingCode' ? (
-              <div className="space-y-2">
-                <Label htmlFor="pairingPhone">Número (E.164)</Label>
-                <Input
-                  id="pairingPhone"
-                  value={pairingPhone}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPairingPhone(e.target.value)}
-                  placeholder="Ex: +5579999999999"
-                  disabled={claims?.role !== 'master' || !canUseEvolution}
-                />
-                <div className="text-xs text-muted-foreground">
-                  Dica: use o número do WhatsApp com DDI (ex.: +55...).
-                </div>
-              </div>
-            ) : null}
+            <TabsContent value="connect">
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle>Conectar WhatsApp</CardTitle>
+                  <CardDescription>
+                    Escolha entre escanear um QR Code ou usar um código de pareamento.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Modo de Conexão</Label>
+                    <Select value={connectMode} onValueChange={(v) => setConnectMode(v as any)}>
+                      <SelectTrigger disabled={!canUseEvolution}>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="qr">📱 Escanear QR Code</SelectItem>
+                        <SelectItem value="pairingCode">🔢 Código de Pareamento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-            <Button
-              onClick={onConnect}
-              disabled={
-                connecting ||
-                claims?.role !== 'master' ||
-                !canUseEvolution ||
-                (connectMode === 'pairingCode' && !pairingPhone.trim())
-              }
-              className="bg-primary hover:bg-primary/90"
-            >
-              {connecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {connectMode === 'pairingCode' ? 'Gerar código' : 'Gerar QR'}
-            </Button>
+                  {connectMode === 'pairingCode' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="pairingPhone">Número do Celular</Label>
+                      <Input
+                        id="pairingPhone"
+                        value={pairingPhone}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPairingPhone(e.target.value)}
+                        placeholder="Ex: +5511999998888"
+                        disabled={!canUseEvolution}
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        💡 Digite o número completo com código do país (ex: +55 11 99999-8888).
+                      </div>
+                    </div>
+                  ) : null}
 
-            {pairingCode ? (
-              <div className="p-3 border border-primary/10 rounded-md bg-background/40 text-sm">
-                <div className="font-medium">Pairing code</div>
-                <div className="font-mono text-base break-all">{pairingCode}</div>
-              </div>
-            ) : null}
+                  <Button
+                    onClick={onConnect}
+                    disabled={
+                      connecting ||
+                      !canUseEvolution ||
+                      (connectMode === 'pairingCode' && !pairingPhone.trim())
+                    }
+                    className="w-full bg-primary hover:bg-primary/90"
+                  >
+                    {connecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    {connectMode === 'pairingCode' ? '🔢 Gerar Código' : '📱 Gerar QR Code'}
+                  </Button>
 
-            {qrSrc ? (
-              <div className="flex items-center justify-center p-4 border border-primary/10 rounded-md bg-background/40">
-                <img src={qrSrc} alt="QR Code WhatsApp" className="max-h-72 w-auto" />
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">Nenhum QR gerado.</div>
-            )}
-          </CardContent>
-        </Card>
+                  {pairingCode ? (
+                    <div className="p-4 border-2 border-primary/30 rounded-lg bg-primary/5">
+                      <div className="text-sm font-medium mb-2">✅ Código de Pareamento Gerado</div>
+                      <div className="font-mono text-2xl font-bold text-center tracking-wider text-primary">
+                        {pairingCode}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-3">
+                        📲 Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Digite este código.
+                      </div>
+                    </div>
+                  ) : null}
 
-        <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle>Mensagem teste</CardTitle>
-            <CardDescription>Envia um texto para um número E.164 (somente master).</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="toE164">Número (E.164)</Label>
-              <Input
-                id="toE164"
-                value={toE164}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setToE164(e.target.value)}
-                placeholder="Ex: +5579999999999"
-                disabled={claims?.role !== 'master' || !canUseEvolution}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="text">Texto</Label>
-              <Input
-                id="text"
-                value={text}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
-                placeholder="Mensagem de teste"
-                disabled={claims?.role !== 'master' || !canUseEvolution}
-              />
-            </div>
-            <Button
-              onClick={onSendTest}
-              disabled={sendingTest || claims?.role !== 'master' || !canUseEvolution}
-              className="bg-primary hover:bg-primary/90"
-            >
-              {sendingTest ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Enviar
-            </Button>
-          </CardContent>
-        </Card>
+                  {qrSrc ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-center p-6 border-2 border-primary/30 rounded-lg bg-white">
+                        <img src={qrSrc} alt="QR Code WhatsApp" className="max-w-full h-auto" style={{ maxHeight: '280px' }} />
+                      </div>
+                      <div className="text-xs text-muted-foreground text-center">
+                        📲 Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Escaneie este QR Code.
+                      </div>
+                    </div>
+                  ) : connectMode === 'qr' && !connecting ? (
+                    <div className="text-center text-sm text-muted-foreground py-8">
+                      Clique em "Gerar QR Code" para começar.
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="test">
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle>Enviar Mensagem de Teste</CardTitle>
+                  <CardDescription>
+                    Teste a conexão enviando uma mensagem para qualquer número.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="toE164">Número do Celular</Label>
+                    <Input
+                      id="toE164"
+                      value={toE164}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setToE164(e.target.value)}
+                      placeholder="Ex: +5511999998888"
+                      disabled={!canUseEvolution}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="text">Mensagem</Label>
+                    <Input
+                      id="text"
+                      value={text}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
+                      placeholder="Digite sua mensagem de teste aqui"
+                      disabled={!canUseEvolution}
+                    />
+                  </div>
+                  <Button
+                    onClick={onSendTest}
+                    disabled={sendingTest || !canUseEvolution}
+                    className="w-full bg-primary hover:bg-primary/90"
+                  >
+                    {sendingTest ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-2" />}
+                    Enviar Mensagem
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+            <CardContent className="pt-6 text-center text-muted-foreground">
+              Apenas usuários master podem gerenciar a conexão do WhatsApp.
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Disconnect Confirmation Dialog */}
+        <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Desconectar WhatsApp?</DialogTitle>
+              <DialogDescription>
+                Esta ação irá desconectar o WhatsApp da barbearia. Você precisará escanear o QR Code ou usar o código de pareamento novamente para reconectar.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDisconnectDialog(false)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={onDisconnect}>
+                Desconectar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
