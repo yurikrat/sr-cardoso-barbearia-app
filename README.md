@@ -194,6 +194,13 @@ npm run serve
 - ✅ Integração de calendário (feed iCal para barbeiros)
 - ✅ Deep links WhatsApp para confirmações
 - ✅ Envio de mensagens de reativação e aniversário
+- ✅ **Notificações WhatsApp automáticas** (via Evolution API):
+  - Confirmação automática ao agendar (com link de cancelamento)
+  - Lembrete configurável antes do atendimento (padrão: 1h antes)
+  - Mensagem de cancelamento ao cliente
+  - Templates editáveis pelo admin (texto simples, sem código)
+  - Fila de retry para mensagens que falharam
+  - Painel de configuração em `/admin/whatsapp`
 
 ## 🏗️ Arquitetura
 

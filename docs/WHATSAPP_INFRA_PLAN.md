@@ -415,3 +415,110 @@ Definition of Done (validável):
 - Admin mostra QR e status.
 - Mensagem teste enviada com sucesso.
 - Webhook (se habilitado na fase 2): recebe ao menos 1 evento real e persiste no Firestore com `secretOk=true`.
+
+---
+
+## 9. Sistema de Notificações Automáticas (Implementado - 2025-12-29)
+
+### Visão Geral
+Sistema completo de notificações WhatsApp automáticas para clientes:
+
+1. **Confirmação de agendamento**: enviada automaticamente ao criar reserva
+2. **Lembrete**: enviado X minutos antes do atendimento (configurável)
+3. **Cancelamento**: enviado quando cliente cancela pelo link público
+
+### Serviço de Notificações
+- **Localização**: `apps/server/src/services/whatsappNotifications.ts`
+- **Responsabilidades**:
+  - Carregar configurações do Firestore
+  - Montar mensagens a partir de templates
+  - Enviar via Evolution API
+  - Gerenciar fila de retry para falhas
+
+### Configurações (Firestore: `settings/whatsapp-notifications`)
+```typescript
+interface WhatsAppNotificationSettings {
+  confirmationEnabled: boolean;
+  reminderEnabled: boolean;
+  reminderMinutesBefore: number;  // padrão: 60
+  
+  // Templates (texto livre, placeholders substituídos automaticamente)
+  confirmationTemplate: string;
+  reminderTemplate: string;
+  cancellationTemplate: string;
+}
+```
+
+### Placeholders nos Templates
+O sistema substitui automaticamente nos textos:
+- Nome do cliente (primeiro nome)
+- Data formatada (ex: "Segunda-feira, 30 de dezembro")
+- Horário (ex: "14:30")
+- Nome do serviço (ex: "Cabelo + Barba")
+- Nome do barbeiro
+- Link de cancelamento (apenas confirmação)
+
+### Fila de Retry (Firestore: `whatsappRetryQueue`)
+```typescript
+interface RetryQueueItem {
+  bookingId: string;
+  messageType: 'confirmation' | 'reminder' | 'cancellation';
+  customerPhone: string;
+  messageText: string;
+  attempts: number;        // máx: 3
+  lastAttemptAt: Timestamp;
+  nextRetryAt: Timestamp;
+  error: string;
+}
+```
+
+### Endpoints Adicionados
+- `GET /api/admin/whatsapp/notification-settings` - Carrega config (master)
+- `PUT /api/admin/whatsapp/notification-settings` - Salva config (master)
+- `POST /api/admin/whatsapp/send-reminders` - Processa lembretes (cron)
+- `POST /api/admin/whatsapp/process-retry-queue` - Reprocessa falhas (cron)
+
+### Integração no Fluxo de Booking
+
+#### Criação de reserva (`POST /api/bookings`)
+```
+Cliente cria booking → API salva no Firestore → Envia confirmação WhatsApp
+                                              ↓
+                                    Se falhar → Adiciona à fila de retry
+```
+
+#### Cancelamento público (`POST /api/public/cancel/:cancelCode`)
+```
+Cliente cancela → API atualiza booking → Envia msg de cancelamento WhatsApp
+```
+
+### Cloud Scheduler (Configuração Pendente)
+
+Para lembretes automáticos, criar job no GCP:
+
+```bash
+# Criar job para enviar lembretes a cada 15 min
+gcloud scheduler jobs create http whatsapp-send-reminders \
+  --location=us-central1 \
+  --schedule="*/15 * * * *" \
+  --uri="https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/send-reminders" \
+  --http-method=POST \
+  --headers="x-cron-key=<SECRET>" \
+  --time-zone="America/Sao_Paulo"
+
+# Criar job para processar retry queue a cada 5 min
+gcloud scheduler jobs create http whatsapp-process-retry \
+  --location=us-central1 \
+  --schedule="*/5 * * * *" \
+  --uri="https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/process-retry-queue" \
+  --http-method=POST \
+  --headers="x-cron-key=<SECRET>" \
+  --time-zone="America/Sao_Paulo"
+```
+
+### UI Admin (`/admin/whatsapp`)
+Seção "Notificações Automáticas" permite:
+- Toggle para ativar/desativar cada tipo de notificação
+- Campo para configurar minutos do lembrete
+- Textarea para editar templates de mensagem
+- Preview com dados de exemplo

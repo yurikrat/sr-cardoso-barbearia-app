@@ -143,6 +143,9 @@ A forma mais segura de saber “o que o frontend chama” é olhar:
 - `POST /api/admin/users/:username/reset-password` (master)
 - `DELETE /api/admin/users/:username` (master)
 - `POST /api/admin/me/password` (autenticado)
+- `GET /api/admin/whatsapp/notification-settings` (master)
+- `PUT /api/admin/whatsapp/notification-settings` (master)
+- `POST /api/admin/whatsapp/send-reminders` (cron/scheduler)
 
 ### Endpoints principais (cliente)
 - `GET /api/availability?barberId=...&dateKey=YYYY-MM-DD`
@@ -249,5 +252,79 @@ Detalhes completos e deploy estão no `README.md`.
 - Implementado RBAC (master vs barber) com JWT e claims.
 - Criado fluxo de criação automática: profissional + login + senha gerada.
 - Excluir usuário barbeiro desativa o barbeiro para remover da agenda sem perder histórico.
+
+---
+
+## 16) Notificações WhatsApp Automáticas (Evolution API)
+
+### Visão Geral
+O sistema envia notificações WhatsApp automaticamente para clientes via Evolution API:
+- **Confirmação de agendamento**: enviada imediatamente ao criar uma reserva
+- **Lembrete**: enviado X minutos antes do atendimento (configurável, padrão 60 min)
+- **Cancelamento**: enviado quando o cliente cancela pelo link
+
+### Configuração (Firestore: `settings/whatsapp-notifications`)
+```typescript
+{
+  confirmationEnabled: boolean,      // Ativa/desativa confirmação automática
+  reminderEnabled: boolean,          // Ativa/desativa lembretes
+  reminderMinutesBefore: number,     // Minutos antes para enviar lembrete (padrão: 60)
+  
+  // Templates (texto simples, placeholders substituídos automaticamente)
+  confirmationTemplate: string,      // Ex: "Olá Maria! Seu horário está confirmado..."
+  reminderTemplate: string,          // Ex: "Lembrete: seu horário é em 1 hora..."
+  cancellationTemplate: string       // Ex: "Seu agendamento foi cancelado..."
+}
+```
+
+### Placeholders disponíveis nos templates
+Os templates usam texto simples. O sistema substitui automaticamente:
+- Nome do cliente
+- Data formatada (ex: "Segunda-feira, 30 de dezembro")
+- Horário (ex: "14:30")
+- Nome do serviço (ex: "Cabelo + Barba")
+- Nome do barbeiro
+- Link de cancelamento (apenas na confirmação)
+
+### Fila de Retry (Firestore: `whatsappRetryQueue`)
+Mensagens que falham são salvas para reenvio automático:
+```typescript
+{
+  bookingId: string,
+  messageType: 'confirmation' | 'reminder' | 'cancellation',
+  customerPhone: string,
+  messageText: string,
+  attempts: number,           // Máximo: 3 tentativas
+  lastAttemptAt: Timestamp,
+  nextRetryAt: Timestamp,
+  error: string
+}
+```
+
+### Endpoints
+- `GET /api/admin/whatsapp/notification-settings` - Carrega configurações
+- `PUT /api/admin/whatsapp/notification-settings` - Salva configurações
+- `POST /api/admin/whatsapp/send-reminders` - Processa lembretes pendentes (chamado por cron)
+- `POST /api/admin/whatsapp/process-retry-queue` - Reprocessa fila de retry
+
+### Fluxo de Envio
+1. **Ao criar booking** (`POST /api/bookings`):
+   - Se `confirmationEnabled=true`, envia confirmação com link de cancelamento
+   - Se falhar, adiciona à fila de retry
+
+2. **Cron de lembretes** (a cada 15 min):
+   - Query bookings onde `slotStart` está dentro do intervalo configurado
+   - Filtra por `status=booked` e `reminderSent!=true`
+   - Envia lembrete e marca `reminderSent=true`
+
+3. **Ao cancelar** (`POST /api/bookings/:id/cancel` público):
+   - Se `cancellationEnabled=true`, envia confirmação de cancelamento
+
+### UI Admin (`/admin/whatsapp`)
+Seção "Notificações Automáticas" permite:
+- Ativar/desativar cada tipo de notificação
+- Configurar tempo do lembrete (em minutos)
+- Editar templates de mensagem (texto livre)
+- Preview das mensagens com dados de exemplo
 - Agenda do Dia redesenhada para layout em grade; Agenda da Semana deve seguir padrão visual consistente.
 

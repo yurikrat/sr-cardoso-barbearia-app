@@ -371,3 +371,38 @@ Passo-a-passo aplicado:
 4) Clicar "Gerar código" e concluir o pareamento no celular.
 5) Confirmar em "Status" que `connectionState` sai de `connecting` e fica `open/connected`.
 6) Executar envio de mensagem teste (e validar o envio automático em reservas).
+
+---
+
+## Sistema de Notificações WhatsApp Automáticas (2025-12-29)
+
+Implementado sistema de envio automático de mensagens WhatsApp via Evolution API:
+
+### Funcionalidades
+- **Confirmação automática**: enviada ao cliente imediatamente após criar um agendamento
+- **Lembrete configurável**: enviado X minutos antes do atendimento (padrão: 60 min)
+- **Cancelamento**: enviado quando o cliente cancela pelo link público
+
+### Configurações (Firestore: `settings/whatsapp-notifications`)
+- `confirmationEnabled`: ativa/desativa confirmação automática
+- `reminderEnabled`: ativa/desativa lembretes
+- `reminderMinutesBefore`: minutos de antecedência do lembrete
+- Templates de mensagem editáveis (texto livre)
+
+### Fila de Retry (Firestore: `whatsappRetryQueue`)
+Mensagens que falham são enfileiradas para reenvio automático (máx. 3 tentativas).
+
+### Endpoints adicionados
+- `GET /api/admin/whatsapp/notification-settings` (master)
+- `PUT /api/admin/whatsapp/notification-settings` (master)
+- `POST /api/admin/whatsapp/send-reminders` (cron)
+- `POST /api/admin/whatsapp/process-retry-queue` (cron)
+
+### UI Admin
+Seção "Notificações Automáticas" em `/admin/whatsapp` permite configurar tudo pelo painel.
+
+### Cron (Cloud Scheduler) — pendente
+Para lembretes automáticos, criar job no Cloud Scheduler que chama:
+- `POST https://sr-cardoso-barbearia-....run.app/api/admin/whatsapp/send-reminders`
+- Frequência sugerida: a cada 15 minutos
+- Autenticação: header `x-cron-key` com secret
