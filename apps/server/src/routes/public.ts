@@ -19,7 +19,7 @@ import {
   getServiceFromConfig,
 } from '../lib/finance.js';
 import { getBrandingConfig } from '../lib/branding.js';
-import { sendBookingConfirmation, sendCancellationConfirmation } from '../services/whatsappNotifications.js';
+import { sendBookingConfirmation, sendCancellationConfirmation, processReminders, processMessageQueue } from '../services/whatsappNotifications.js';
 
 export type PublicRouteDeps = {
   env: Env;
@@ -583,6 +583,65 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       console.error('Error creating booking:', e);
       const msg = e instanceof Error ? e.message : 'Erro desconhecido';
       return res.status(400).json({ error: `Erro ao criar reserva: ${msg}` });
+    }
+  });
+
+  // ==========================================================================
+  // Rotas de Cron (protegidas por CRON_SECRET)
+  // ==========================================================================
+  
+  const validateCronSecret = (req: express.Request, res: express.Response): boolean => {
+    const cronSecret = env.CRON_SECRET;
+    if (!cronSecret) {
+      console.error('CRON_SECRET not configured');
+      res.status(500).json({ error: 'Cron not configured' });
+      return false;
+    }
+    
+    const providedKey = req.headers['x-cron-key'] as string;
+    if (!providedKey || providedKey !== cronSecret) {
+      console.warn('Invalid cron key attempt');
+      res.status(401).json({ error: 'Invalid cron key' });
+      return false;
+    }
+    return true;
+  };
+
+  // Endpoint para processar lembretes (chamado via Cloud Scheduler)
+  app.post('/api/cron/send-reminders', async (req, res) => {
+    if (!validateCronSecret(req, res)) return;
+    
+    try {
+      const result = await processReminders(db, env);
+      console.log(`Cron send-reminders: processed=${result.processed}, sent=${result.sent}, queued=${result.queued}`);
+      return res.json({
+        success: true,
+        processed: result.processed,
+        sent: result.sent,
+        queued: result.queued,
+      });
+    } catch (e: any) {
+      console.error('Error processing reminders:', e);
+      return res.status(500).json({ error: 'Erro ao processar lembretes' });
+    }
+  });
+
+  // Endpoint para processar fila de retry (chamado via Cloud Scheduler)
+  app.post('/api/cron/process-queue', async (req, res) => {
+    if (!validateCronSecret(req, res)) return;
+    
+    try {
+      const result = await processMessageQueue(db, env);
+      console.log(`Cron process-queue: processed=${result.processed}, sent=${result.sent}, failed=${result.failed}`);
+      return res.json({
+        success: true,
+        processed: result.processed,
+        sent: result.sent,
+        failed: result.failed,
+      });
+    } catch (e: any) {
+      console.error('Error processing message queue:', e);
+      return res.status(500).json({ error: 'Erro ao processar fila de mensagens' });
     }
   });
 }
