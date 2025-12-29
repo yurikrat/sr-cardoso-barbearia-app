@@ -206,7 +206,7 @@ export default function WhatsappPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 max-w-4xl mx-auto px-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-serif font-bold text-foreground">WhatsApp</h2>
@@ -246,13 +246,13 @@ export default function WhatsappPage() {
 
             {status?.hint ? (
               <div className="mt-4 p-3 bg-muted/50 rounded-md text-sm text-muted-foreground">
-                💡 {status.hint}
+                {status.hint}
               </div>
             ) : null}
 
             {status?.configured === false ? (
               <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
-                ⚠️ Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
+                Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
               </div>
             ) : null}
 
@@ -310,8 +310,8 @@ export default function WhatsappPage() {
                         <SelectValue placeholder="Selecione" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="qr">📱 Escanear QR Code</SelectItem>
-                        <SelectItem value="pairingCode">🔢 Código de Pareamento</SelectItem>
+                        <SelectItem value="qr">Escanear QR Code</SelectItem>
+                        <SelectItem value="pairingCode">Código de Pareamento</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -327,7 +327,7 @@ export default function WhatsappPage() {
                         disabled={!canUseEvolution}
                       />
                       <div className="text-xs text-muted-foreground">
-                        💡 Digite o número completo com código do país (ex: +55 11 99999-8888).
+                        Digite o número completo com código do país (ex: +55 11 99999-8888).
                       </div>
                     </div>
                   ) : null}
@@ -342,17 +342,17 @@ export default function WhatsappPage() {
                     className="w-full bg-primary hover:bg-primary/90"
                   >
                     {connecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    {connectMode === 'pairingCode' ? '🔢 Gerar Código' : '📱 Gerar QR Code'}
+                    {connectMode === 'pairingCode' ? 'Gerar Código' : 'Gerar QR Code'}
                   </Button>
 
                   {pairingCode ? (
                     <div className="p-4 border-2 border-primary/30 rounded-lg bg-primary/5">
-                      <div className="text-sm font-medium mb-2">✅ Código de Pareamento Gerado</div>
+                      <div className="text-sm font-medium mb-2">Código de Pareamento Gerado</div>
                       <div className="font-mono text-2xl font-bold text-center tracking-wider text-primary">
                         {pairingCode}
                       </div>
                       <div className="text-xs text-muted-foreground mt-3">
-                        📲 Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Digite este código.
+                        Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Digite este código.
                       </div>
                     </div>
                   ) : null}
@@ -363,7 +363,7 @@ export default function WhatsappPage() {
                         <img src={qrSrc} alt="QR Code WhatsApp" className="max-w-full h-auto" style={{ maxHeight: '280px' }} />
                       </div>
                       <div className="text-xs text-muted-foreground text-center">
-                        📲 Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Escaneie este QR Code.
+                        Abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → Escaneie este QR Code.
                       </div>
                     </div>
                   ) : connectMode === 'qr' && !connecting ? (
