@@ -4,11 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -51,17 +52,17 @@ export default function WhatsappPage() {
   const canUseEvolution = !!status && status.configured !== false;
 
   const statusSummary = useMemo(() => {
-    if (!status) return { label: 'Desconhecido', raw: null };
-    if (status.configured === false) return { label: 'Não configurado', raw: null };
-    if (!status.instanceExists) return { label: 'Instância não encontrada', raw: status.connectionState };
+    if (!status) return { label: 'Desconhecido', description: 'Status não disponível', variant: 'secondary' as const, icon: AlertCircle };
+    if (status.configured === false) return { label: 'Não configurado', description: 'Configuração pendente no servidor', variant: 'destructive' as const, icon: XCircle };
+    if (!status.instanceExists) return { label: 'Instância não encontrada', description: 'Crie ou conecte uma instância', variant: 'secondary' as const, icon: AlertCircle };
 
     const raw = status.connectionState?.trim() || '';
     const s = raw.toLowerCase();
-    if (!s) return { label: 'Sem estado', raw: null };
-    if (s === 'open' || s === 'connected') return { label: 'Conectado', raw };
-    if (s === 'connecting') return { label: 'Conectando', raw };
-    if (s === 'close' || s === 'closed' || s === 'disconnected') return { label: 'Desconectado', raw };
-    return { label: raw, raw };
+    if (!s) return { label: 'Sem estado', description: 'Aguardando informações', variant: 'secondary' as const, icon: AlertCircle };
+    if (s === 'open' || s === 'connected') return { label: 'Conectado', description: 'WhatsApp pronto para enviar mensagens!', variant: 'default' as const, icon: CheckCircle };
+    if (s === 'connecting') return { label: 'Conectando...', description: 'Aguarde ou escaneie o QR Code', variant: 'secondary' as const, icon: AlertCircle };
+    if (s === 'close' || s === 'closed' || s === 'disconnected') return { label: 'Desconectado', description: 'Conecte para usar o WhatsApp', variant: 'destructive' as const, icon: XCircle };
+    return { label: raw, description: 'Status técnico recebido', variant: 'secondary' as const, icon: AlertCircle };
   }, [status]);
 
   const loadStatus = async () => {
@@ -184,13 +185,13 @@ export default function WhatsappPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 max-w-2xl mx-auto">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-serif font-bold text-foreground">WhatsApp</h2>
             <p className="text-muted-foreground">Conexão e testes via Evolution.</p>
           </div>
-          <Button onClick={onRefresh} disabled={refreshing} className="bg-primary hover:bg-primary/90">
+          <Button onClick={onRefresh} disabled={refreshing} className="w-auto bg-primary hover:bg-primary/90">
             {refreshing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
             Atualizar
           </Button>
@@ -198,52 +199,54 @@ export default function WhatsappPage() {
 
         <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle>Status</CardTitle>
-            <CardDescription>Estado atual da instância configurada no servidor.</CardDescription>
+            <CardTitle>Status da Conexão</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div>
-              <span className="font-medium">Instância:</span> {status?.instanceName || '-'}
-            </div>
-            <div>
-              <span className="font-medium">Situação:</span> {statusSummary.label}
-              {statusSummary.raw ? <span className="text-muted-foreground"> ({statusSummary.raw})</span> : null}
-            </div>
-            <div>
-              <span className="font-medium">Existe:</span> {status?.instanceExists ? 'Sim' : 'Não'}
-            </div>
-            <div>
-              <span className="font-medium">Estado bruto:</span> {status?.connectionState || '-'}
-            </div>
-            <div>
-              <span className="font-medium">Fonte:</span> {status?.checkedBy || 'unknown'}
-            </div>
-            {status?.hint ? <div className="text-xs text-muted-foreground">{status.hint}</div> : null}
+          <CardContent className="space-y-4">
+            {(() => {
+              const IconComponent = statusSummary.icon;
+              const iconColor = statusSummary.variant === 'default' ? 'text-green-500' : statusSummary.variant === 'destructive' ? 'text-red-500' : 'text-yellow-500';
+              return (
+                <div className="flex items-center gap-3">
+                  <IconComponent className={`h-8 w-8 ${iconColor}`} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={statusSummary.variant}>{statusSummary.label}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{statusSummary.description}</p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {status?.hint ? <p className="text-xs text-muted-foreground border-l-2 border-primary/20 pl-3">{status.hint}</p> : null}
+            
             {status?.configured === false ? (
-              <div className="text-xs text-destructive">
-                Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
+              <div className="text-sm text-destructive bg-destructive/10 rounded-md p-3">
+                ⚠️ Configuração incompleta no servidor: {(status.missing || []).join(', ') || 'EVOLUTION_*'}
               </div>
             ) : null}
 
-            {claims?.role === 'master' ? (
-              <div className="pt-2">
+            {claims?.role === 'master' && statusSummary.label === 'Conectado' ? (
+              <div className="pt-2 border-t border-primary/10">
                 <Button
                   onClick={onDisconnect}
                   disabled={disconnecting || !canUseEvolution}
                   variant="outline"
+                  className="w-auto"
                 >
                   {disconnecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Desconectar
+                  Desconectar sessão
                 </Button>
               </div>
             ) : null}
           </CardContent>
         </Card>
 
+        <div className="grid lg:grid-cols-2 gap-6">
         <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle>Conectar</CardTitle>
-            <CardDescription>Gera um QR Code para conectar a instância (somente master).</CardDescription>
+            <CardDescription>Gera um QR Code ou código para parear o WhatsApp.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -283,7 +286,7 @@ export default function WhatsappPage() {
                 !canUseEvolution ||
                 (connectMode === 'pairingCode' && !pairingPhone.trim())
               }
-              className="bg-primary hover:bg-primary/90"
+              className="w-auto bg-primary hover:bg-primary/90"
             >
               {connecting ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
               {connectMode === 'pairingCode' ? 'Gerar código' : 'Gerar QR'}
@@ -335,13 +338,14 @@ export default function WhatsappPage() {
             <Button
               onClick={onSendTest}
               disabled={sendingTest || claims?.role !== 'master' || !canUseEvolution}
-              className="bg-primary hover:bg-primary/90"
+              className="w-auto bg-primary hover:bg-primary/90"
             >
               {sendingTest ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
               Enviar
             </Button>
           </CardContent>
         </Card>
+        </div>
       </div>
     </AdminLayout>
   );
