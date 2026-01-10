@@ -242,6 +242,21 @@ export const api = {
       );
     },
 
+    async whatsappBroadcast(message: string) {
+      return apiFetch<{
+        success: boolean;
+        sent: number;
+        failed: number;
+        total: number;
+        errors?: Array<{ customerId: string; error: string }>;
+        message?: string;
+      }>(`/api/admin/whatsapp/broadcast`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify({ message }),
+      });
+    },
+
     async sendBookingWhatsappConfirmation(bookingId: string, payload: { text: string }) {
       return apiFetch<AdminWhatsappSendConfirmationResponse>(
         `/api/admin/bookings/${encodeURIComponent(bookingId)}/whatsapp/send-confirmation`,

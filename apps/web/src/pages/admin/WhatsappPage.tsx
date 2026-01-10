@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save, Send, Users } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -61,6 +61,15 @@ export default function WhatsappPage() {
     reminderMessage: 'Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!',
     cancellationMessage: 'Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!',
   });
+
+  // Estados para disparo em massa
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{
+    sent: number;
+    failed: number;
+    total: number;
+  } | null>(null);
 
   const qrSrc = useMemo(() => asDataUrl(qrBase64), [qrBase64]);
   const canUseEvolution = !!status && status.configured !== false;
@@ -216,6 +225,47 @@ export default function WhatsappPage() {
       });
     } finally {
       setSendingTest(false);
+    }
+  };
+
+  const onSendBroadcast = async () => {
+    if (!broadcastMessage.trim() || broadcastMessage.trim().length < 5) {
+      toast({
+        title: 'Mensagem muito curta',
+        description: 'A mensagem deve ter pelo menos 5 caracteres.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Confirmação antes de enviar
+    const confirmText = `Tem certeza que deseja enviar esta mensagem para TODOS os clientes cadastrados? Esta ação não pode ser desfeita.`;
+    if (!window.confirm(confirmText)) return;
+
+    setSendingBroadcast(true);
+    setBroadcastResult(null);
+    try {
+      const result = await api.admin.whatsappBroadcast(broadcastMessage.trim());
+      setBroadcastResult({
+        sent: result.sent,
+        failed: result.failed,
+        total: result.total,
+      });
+      toast({
+        title: 'Disparo concluído',
+        description: `Enviado: ${result.sent} | Falhou: ${result.failed} | Total: ${result.total}`,
+      });
+      if (result.sent > 0) {
+        setBroadcastMessage('');
+      }
+    } catch (e: any) {
+      toast({
+        title: 'Erro no disparo',
+        description: e?.message || 'Não foi possível enviar as mensagens.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingBroadcast(false);
     }
   };
 
@@ -549,6 +599,86 @@ export default function WhatsappPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Seção de Disparo em Massa */}
+            <Separator className="my-8" />
+            
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-foreground flex items-center gap-2">
+                  <Users className="h-6 w-6" />
+                  Disparo em Massa
+                </h3>
+                <p className="text-muted-foreground">Envie uma mensagem para todos os clientes cadastrados.</p>
+              </div>
+            </div>
+
+            <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-primary" />
+                  <CardTitle>Enviar para Todos os Clientes</CardTitle>
+                </div>
+                <CardDescription>
+                  Esta mensagem será enviada para todos os clientes que possuem WhatsApp cadastrado.
+                  Use <code className="bg-muted px-1 rounded">{'{nome}'}</code> para incluir o nome do cliente.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="broadcastMessage">Mensagem</Label>
+                  <textarea
+                    id="broadcastMessage"
+                    value={broadcastMessage}
+                    onChange={(e) => setBroadcastMessage(e.target.value)}
+                    placeholder="Olá {nome}! Temos novidades na barbearia..."
+                    className="w-full min-h-[120px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    maxLength={1000}
+                    disabled={sendingBroadcast || !canUseEvolution || statusSummary.label !== 'Conectado'}
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Use {'{nome}'} para personalizar com o nome do cliente</span>
+                    <span>{broadcastMessage.length}/1000</span>
+                  </div>
+                </div>
+
+                {broadcastResult && (
+                  <div className="p-3 rounded-md bg-muted/50 text-sm">
+                    <div className="font-medium mb-1">Resultado do último disparo:</div>
+                    <div className="flex gap-4">
+                      <span className="text-green-600">✓ Enviados: {broadcastResult.sent}</span>
+                      <span className="text-red-600">✗ Falhou: {broadcastResult.failed}</span>
+                      <span className="text-muted-foreground">Total: {broadcastResult.total}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-4">
+                  <Button
+                    onClick={onSendBroadcast}
+                    disabled={sendingBroadcast || !broadcastMessage.trim() || broadcastMessage.trim().length < 5 || !canUseEvolution || statusSummary.label !== 'Conectado'}
+                    className="w-auto bg-primary hover:bg-primary/90"
+                  >
+                    {sendingBroadcast ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    {sendingBroadcast ? 'Enviando...' : 'Enviar para Todos'}
+                  </Button>
+                  {statusSummary.label !== 'Conectado' && (
+                    <span className="text-sm text-muted-foreground">
+                      WhatsApp precisa estar conectado para enviar mensagens.
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs text-muted-foreground border-l-2 border-yellow-500 pl-3 bg-yellow-50 dark:bg-yellow-950/20 py-2 rounded-r">
+                  ⚠️ <strong>Atenção:</strong> Esta ação enviará mensagens para TODOS os clientes cadastrados.
+                  Use com responsabilidade para não caracterizar spam.
+                </div>
+              </CardContent>
+            </Card>
           </>
         )}
       </div>

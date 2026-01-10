@@ -1145,6 +1145,79 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // Endpoint para disparo em massa (broadcast) para todos os clientes
+  app.post('/api/admin/whatsapp/broadcast', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const message = String(body.message || '').trim();
+      if (!message || message.length < 5) {
+        return res.status(400).json({ error: 'Mensagem muito curta (mínimo 5 caracteres)' });
+      }
+      if (message.length > 1000) {
+        return res.status(400).json({ error: 'Mensagem muito longa (máximo 1000 caracteres)' });
+      }
+
+      const instanceName = getEvolutionInstanceName(env);
+      const evo = createEvolutionClient(env);
+
+      // Buscar todos os clientes com whatsappE164
+      const customersSnap = await db.collection('customers').get();
+      const customers: Array<{ id: string; firstName: string; whatsappE164: string }> = [];
+      customersSnap.forEach((d) => {
+        const data = d.data() as any;
+        const whatsappE164 = data.identity?.whatsappE164 || data.whatsappE164;
+        const firstName = data.identity?.firstName || data.firstName || 'Cliente';
+        if (whatsappE164 && typeof whatsappE164 === 'string' && whatsappE164.length > 10) {
+          customers.push({ id: d.id, firstName, whatsappE164 });
+        }
+      });
+
+      if (customers.length === 0) {
+        return res.json({ success: true, sent: 0, failed: 0, total: 0, message: 'Nenhum cliente com WhatsApp cadastrado' });
+      }
+
+      let sent = 0;
+      let failed = 0;
+      const errors: Array<{ customerId: string; error: string }> = [];
+
+      for (const customer of customers) {
+        try {
+          // Personalizar mensagem com nome do cliente
+          const personalizedMessage = message.replace(/\{nome\}/gi, customer.firstName);
+
+          await evo.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+            number: toEvolutionNumber(customer.whatsappE164),
+            text: personalizedMessage,
+          });
+          sent++;
+
+          // Pequena pausa para não sobrecarregar a API
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } catch (e: any) {
+          failed++;
+          errors.push({ customerId: customer.id, error: e?.message || 'Erro desconhecido' });
+        }
+      }
+
+      // Logar resultado
+      console.log(`[Broadcast] Enviado: ${sent}/${customers.length}, Falhou: ${failed}`);
+
+      return res.json({
+        success: true,
+        sent,
+        failed,
+        total: customers.length,
+        errors: errors.slice(0, 10), // Retorna apenas os 10 primeiros erros
+      });
+    } catch (e: any) {
+      console.error('Error sending broadcast:', e);
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao enviar mensagem em massa' });
+    }
+  });
+
   app.post('/api/admin/whatsapp/connect', requireAdminMw, requireMaster(), async (req, res) => {
     try {
       const instanceName = getEvolutionInstanceName(env);
