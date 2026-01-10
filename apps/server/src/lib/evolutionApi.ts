@@ -117,12 +117,35 @@ export function createEvolutionClient(env: Env): EvolutionClient {
 
       return json;
     } catch (e: any) {
+      // Log the actual error for debugging
+      console.error(`[Evolution] ${method} ${path} failed:`, {
+        name: e?.name,
+        message: e?.message,
+        code: e?.code,
+        cause: e?.cause?.message || e?.cause?.code || e?.cause,
+      });
+
       if (e && typeof e === 'object' && typeof e.status === 'number' && typeof e.message === 'string') {
         throw e;
       }
+
+      // More descriptive error messages
+      let message = 'Falha ao chamar Evolution';
+      if (e?.name === 'AbortError') {
+        message = 'Timeout ao chamar Evolution (12s)';
+      } else if (e?.code === 'ECONNREFUSED' || e?.cause?.code === 'ECONNREFUSED') {
+        message = 'Evolution indisponível (conexão recusada)';
+      } else if (e?.code === 'ENOTFOUND' || e?.cause?.code === 'ENOTFOUND') {
+        message = 'Evolution indisponível (host não encontrado)';
+      } else if (e?.code === 'ETIMEDOUT' || e?.cause?.code === 'ETIMEDOUT') {
+        message = 'Evolution indisponível (timeout de conexão)';
+      } else if (e?.code === 'ECONNRESET' || e?.cause?.code === 'ECONNRESET') {
+        message = 'Evolution indisponível (conexão resetada)';
+      }
+
       const err: EvolutionRequestError = {
         status: 502,
-        message: e?.name === 'AbortError' ? 'Timeout ao chamar Evolution' : 'Falha ao chamar Evolution',
+        message,
         url: maskUrlForLogs(buildUrl(baseUrl || '(missing)', path)),
         method,
       };

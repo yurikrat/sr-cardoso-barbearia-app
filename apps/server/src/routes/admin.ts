@@ -125,6 +125,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     if (e.status === 409) {
       return { httpStatus: 409, message: 'Operação inválida no Evolution (instância pode estar desconectada)' };
     }
+    // Preserve detailed error messages from evolutionApi.ts
+    if (e.status === 502 && e.message && e.message !== 'Falha ao chamar Evolution') {
+      return { httpStatus: 502, message: e.message };
+    }
     if (e.status >= 500) {
       return { httpStatus: 502, message: 'Evolution indisponível no momento' };
     }
