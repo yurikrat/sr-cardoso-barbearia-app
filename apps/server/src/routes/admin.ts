@@ -10,6 +10,8 @@ import {
   getDateKey,
   isSunday,
   isValidTimeSlot,
+  generateCustomerId,
+  normalizeToE164,
   adminWhatsappConnectRequestSchema,
   adminWhatsappSendTestRequestSchema,
   adminWhatsappSendConfirmationRequestSchema,
@@ -59,6 +61,8 @@ import {
   saveNotificationSettings,
   processReminders,
   processMessageQueue,
+  processBirthdayMessages,
+  broadcastWithMedia,
 } from '../services/whatsappNotifications.js';
 
 export type AdminRouteDeps = {
@@ -791,6 +795,163 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // ==========================================================================
+  // Criar Agendamento (Admin)
+  // ==========================================================================
+  app.post('/api/admin/bookings', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const { barberId, serviceType, slotStart, customer } = req.body;
+
+      if (!barberId || !serviceType || !slotStart || !customer) {
+        return res.status(400).json({ error: 'Campos obrigatórios: barberId, serviceType, slotStart, customer' });
+      }
+
+      if (!customer.firstName || !customer.lastName || !customer.whatsapp) {
+        return res.status(400).json({ error: 'Cliente deve ter firstName, lastName e whatsapp' });
+      }
+
+      // Verifica permissão do barbeiro
+      if (admin.role === 'barber' && admin.barberId !== barberId) {
+        return res.status(403).json({ error: 'Você só pode criar agendamentos para seu próprio perfil' });
+      }
+
+      // Verifica se barbeiro existe e está ativo
+      const barberRef = db.collection('barbers').doc(barberId);
+      const barberDoc = await barberRef.get();
+      if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
+      const barberData = barberDoc.data() as { active?: unknown; schedule?: any } | undefined;
+      if (!barberData?.active) return res.status(400).json({ error: 'Barbeiro indisponível' });
+
+      const slotDateTime = DateTime.fromISO(slotStart, { zone: 'America/Sao_Paulo' });
+      if (!slotDateTime.isValid) {
+        return res.status(400).json({ error: 'Data/hora inválida' });
+      }
+
+      // Valida contra a agenda do barbeiro
+      if (barberData?.schedule) {
+        const dayKey = slotDateTime.weekday === 7 ? '0' : slotDateTime.weekday.toString();
+        const dayConfig = barberData.schedule[dayKey];
+        if (!dayConfig || !dayConfig.active) {
+          return res.status(400).json({ error: 'Barbeiro não atende neste dia' });
+        }
+
+        const slotTime = slotDateTime.toFormat('HH:mm');
+        const [startH, startM] = dayConfig.start.split(':').map(Number);
+        const [endH, endM] = dayConfig.end.split(':').map(Number);
+        const dayStart = slotDateTime.set({ hour: startH, minute: startM });
+        const dayEnd = slotDateTime.set({ hour: endH, minute: endM });
+        const lastSlotStart = dayEnd.minus({ minutes: 30 });
+
+        if (slotDateTime < dayStart || slotDateTime > lastSlotStart) {
+          return res.status(400).json({ error: 'Horário fora do expediente configurado' });
+        }
+
+        // Verifica pausas
+        if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+          const isInBreak = dayConfig.breaks.some((brk: any) => {
+            return slotTime >= brk.start && slotTime < brk.end;
+          });
+          if (isInBreak) {
+            return res.status(400).json({ error: 'Horário está em período de pausa' });
+          }
+        }
+      }
+
+      // Normaliza telefone usando a mesma função do fluxo público
+      let whatsappE164: string;
+      try {
+        whatsappE164 = normalizeToE164(customer.whatsapp);
+      } catch {
+        return res.status(400).json({ error: 'Formato de telefone inválido' });
+      }
+
+      // Gera IDs usando as mesmas funções do fluxo público
+      const customerId = generateCustomerId(whatsappE164);
+      const slotId = generateSlotId(slotDateTime);
+      const dateKey = getDateKey(slotDateTime);
+      const bookingId = db.collection('bookings').doc().id;
+
+      await db.runTransaction(async (tx) => {
+        const slotRef = db.collection('barbers').doc(barberId).collection('slots').doc(slotId);
+        const customerRef = db.collection('customers').doc(customerId);
+        const [slotDoc, customerDoc] = await Promise.all([tx.get(slotRef), tx.get(customerRef)]);
+
+        if (slotDoc.exists) {
+          const err = new Error('already-exists');
+          (err as any).code = 'already-exists';
+          throw err;
+        }
+
+        const now = Timestamp.now();
+
+        tx.set(slotRef, {
+          slotStart: Timestamp.fromDate(slotDateTime.toJSDate()),
+          dateKey,
+          kind: 'booking',
+          bookingId,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        const bookingRef = db.collection('bookings').doc(bookingId);
+        tx.set(bookingRef, {
+          customerId,
+          barberId,
+          serviceType,
+          slotStart: Timestamp.fromDate(slotDateTime.toJSDate()),
+          dateKey,
+          customer: {
+            firstName: customer.firstName.trim(),
+            lastName: customer.lastName.trim(),
+            whatsappE164,
+          },
+          status: 'booked',
+          whatsappStatus: 'pending',
+          createdBy: admin.username,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        if (!customerDoc.exists) {
+          tx.set(customerRef, {
+            identity: {
+              firstName: customer.firstName.trim(),
+              lastName: customer.lastName.trim(),
+              whatsappE164,
+            },
+            profile: {
+              birthday: customer.birthDate || null,
+            },
+            consent: { marketingOptIn: false },
+            stats: {
+              firstBookingAt: now,
+              lastBookingAt: now,
+              totalBookings: 1,
+              totalCompleted: 0,
+              noShowCount: 0,
+            },
+          });
+        } else {
+          const updates: Record<string, any> = {
+            'stats.lastBookingAt': now,
+            'stats.totalBookings': FieldValue.increment(1),
+          };
+          tx.update(customerRef, updates);
+        }
+      });
+
+      return res.json({ success: true, bookingId });
+    } catch (e: unknown) {
+      if (e && typeof e === 'object' && (e as any).code === 'already-exists') {
+        return res.status(409).json({ error: 'Este horário já foi reservado. Selecione outro.' });
+      }
+      console.error('Error creating booking (admin):', e);
+      const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+      return res.status(400).json({ error: `Erro ao criar reserva: ${msg}` });
+    }
+  });
+
   app.post('/api/admin/bookings/:bookingId/cancel', requireAdminMw, async (req, res) => {
     try {
       const admin = getAdminFromReq(req);
@@ -1107,6 +1268,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         reminderMinutesBefore: Math.max(15, Math.min(1440, Number(body.reminderMinutesBefore) || 60)),
         reminderMessage: String(body.reminderMessage || '').slice(0, 500),
         cancellationMessage: String(body.cancellationMessage || '').slice(0, 500),
+        birthdayEnabled: body.birthdayEnabled === true,
+        birthdayMessage: String(body.birthdayMessage || '').slice(0, 500),
       };
 
       await saveNotificationSettings(db, settings, admin?.username || 'unknown');
@@ -1219,6 +1382,151 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         return res.status(500).json({ error: e.message });
       }
       return res.status(500).json({ error: 'Erro ao enviar mensagem em massa' });
+    }
+  });
+
+  // Endpoint para disparo em massa COM IMAGEM para todos os clientes
+  // Suporta tanto URL quanto base64 (upload do dispositivo)
+  app.post('/api/admin/whatsapp/broadcast-media', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const mediaUrlOrBase64 = String(body.mediaUrl || '').trim();
+      const caption = String(body.caption || '').trim();
+
+      if (!mediaUrlOrBase64) {
+        return res.status(400).json({ error: 'Imagem é obrigatória (URL ou base64)' });
+      }
+
+      // Valida se é uma URL válida ou base64
+      const isBase64 = mediaUrlOrBase64.startsWith('data:image/');
+      const isUrl = mediaUrlOrBase64.startsWith('http://') || mediaUrlOrBase64.startsWith('https://');
+      
+      if (!isBase64 && !isUrl) {
+        return res.status(400).json({ error: 'Formato de imagem inválido. Envie uma URL ou base64' });
+      }
+
+      // Valida URL se não for base64
+      if (isUrl) {
+        try {
+          new URL(mediaUrlOrBase64);
+        } catch {
+          return res.status(400).json({ error: 'URL da mídia inválida' });
+        }
+      }
+
+      // Valida base64 se for base64
+      if (isBase64) {
+        // Verifica se o base64 não é muito grande (10MB max)
+        const base64Size = (mediaUrlOrBase64.length * 3) / 4;
+        if (base64Size > 10 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Imagem muito grande (máximo 10MB)' });
+        }
+      }
+
+      // Caption é opcional quando tem imagem
+      if (caption && caption.length > 1000) {
+        return res.status(400).json({ error: 'Legenda muito longa (máximo 1000 caracteres)' });
+      }
+
+      const result = await broadcastWithMedia(db, env, mediaUrlOrBase64, caption);
+
+      return res.json({
+        success: true,
+        sent: result.sent,
+        failed: result.failed,
+        total: result.total,
+        errors: result.errors.slice(0, 10),
+      });
+    } catch (e: any) {
+      console.error('Error sending broadcast with media:', e);
+      if (typeof e?.message === 'string' && e.message.includes('EVOLUTION_')) {
+        return res.status(500).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao enviar mídia em massa' });
+    }
+  });
+
+  // Endpoint para processar mensagens de aniversário (chamado por cron)
+  app.post('/api/admin/whatsapp/send-birthdays', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      // Pega a baseUrl do header ou do env
+      const origin = req.get('origin') || req.get('referer') || '';
+      const baseUrl = origin ? new URL(origin).origin : (env.APP_BASE_URL || 'https://sr-cardoso.app');
+
+      const result = await processBirthdayMessages(db, env, baseUrl);
+
+      // Monta mensagem informativa baseada no resultado
+      let message: string;
+      if (result.noCustomers) {
+        message = 'Nenhum cliente aniversariando hoje';
+      } else if (result.sent > 0) {
+        message = `${result.sent} mensagem(ns) de aniversário enviada(s)!`;
+      } else if (result.skipped > 0) {
+        message = 'Clientes já receberam mensagem de aniversário hoje ou não têm WhatsApp válido';
+      } else {
+        message = 'Nenhuma mensagem enviada';
+      }
+
+      return res.json({
+        success: true,
+        message,
+        processed: result.processed,
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skipped,
+        noCustomers: result.noCustomers,
+      });
+    } catch (e: any) {
+      console.error('Error sending birthday messages:', e);
+      return res.status(500).json({ error: 'Erro ao enviar mensagens de aniversário' });
+    }
+  });
+
+  // Endpoint público para cron de aniversário (validado por secret header)
+  app.post('/api/cron/send-birthdays', async (req, res) => {
+    try {
+      // Valida secret do cron (Cloud Scheduler)
+      const cronSecret = req.get('x-cron-secret') || req.get('authorization');
+      const expectedSecret = env.CRON_SECRET;
+      
+      if (expectedSecret && cronSecret !== expectedSecret && cronSecret !== `Bearer ${expectedSecret}`) {
+        return res.status(401).json({ error: 'Não autorizado' });
+      }
+
+      const baseUrl = env.APP_BASE_URL || 'https://sr-cardoso.app';
+      const result = await processBirthdayMessages(db, env, baseUrl);
+
+      // Log detalhado para o Cloud Scheduler
+      if (result.noCustomers) {
+        console.log('[CRON Birthday] Nenhum cliente aniversariando hoje');
+      } else {
+        console.log(`[CRON Birthday] Processados: ${result.processed}, Enviados: ${result.sent}, Pulados: ${result.skipped}, Falhas: ${result.failed}`);
+      }
+
+      // Monta mensagem informativa baseada no resultado
+      let message: string;
+      if (result.noCustomers) {
+        message = 'Nenhum cliente aniversariando hoje';
+      } else if (result.sent > 0) {
+        message = `${result.sent} mensagem(ns) de aniversário enviada(s)!`;
+      } else if (result.skipped > 0) {
+        message = 'Clientes já receberam mensagem de aniversário hoje ou não têm WhatsApp válido';
+      } else {
+        message = 'Nenhuma mensagem enviada';
+      }
+
+      return res.json({
+        success: true,
+        message,
+        processed: result.processed,
+        sent: result.sent,
+        failed: result.failed,
+        skipped: result.skipped,
+        noCustomers: result.noCustomers,
+      });
+    } catch (e: any) {
+      console.error('Error in birthday cron:', e);
+      return res.status(500).json({ error: 'Erro ao processar aniversários' });
     }
   });
 
@@ -1532,6 +1840,89 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // Endpoint para desbloquear um slot específico
+  app.delete('/api/admin/blocks/:barberId/:slotId', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const { barberId, slotId } = req.params;
+
+      // Validação de permissão
+      if (admin.role === 'barber' && admin.barberId !== barberId) {
+        return res.status(403).json({ error: 'Sem permissão para este barbeiro' });
+      }
+
+      if (!barberId || !slotId) {
+        return res.status(400).json({ error: 'Parâmetros inválidos' });
+      }
+
+      const slotRef = db.collection('barbers').doc(barberId).collection('slots').doc(slotId);
+      const slotDoc = await slotRef.get();
+
+      if (!slotDoc.exists) {
+        return res.status(404).json({ error: 'Slot não encontrado' });
+      }
+
+      const slotData = slotDoc.data();
+      if (slotData?.kind !== 'block') {
+        return res.status(400).json({ error: 'Este slot não é um bloqueio' });
+      }
+
+      await slotRef.delete();
+
+      return res.json({ success: true, message: 'Bloqueio removido com sucesso' });
+    } catch (e) {
+      console.error('Error unblocking slot:', e);
+      return res.status(500).json({ error: 'Erro ao remover bloqueio' });
+    }
+  });
+
+  // Endpoint para desbloquear múltiplos slots de uma vez
+  app.post('/api/admin/blocks/unblock', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const body = req.body as {
+        barberId?: unknown;
+        slotIds?: unknown;
+      };
+
+      const barberId = typeof body.barberId === 'string' ? body.barberId : null;
+      const slotIds = Array.isArray(body.slotIds) ? body.slotIds.filter((id): id is string => typeof id === 'string') : [];
+
+      if (!barberId || slotIds.length === 0) {
+        return res.status(400).json({ error: 'Parâmetros inválidos' });
+      }
+
+      // Validação de permissão
+      if (admin.role === 'barber' && admin.barberId !== barberId) {
+        return res.status(403).json({ error: 'Sem permissão para este barbeiro' });
+      }
+
+      const batch = db.batch();
+      let deletedCount = 0;
+
+      for (const slotId of slotIds) {
+        const slotRef = db.collection('barbers').doc(barberId).collection('slots').doc(slotId);
+        const slotDoc = await slotRef.get();
+
+        if (slotDoc.exists && slotDoc.data()?.kind === 'block') {
+          batch.delete(slotRef);
+          deletedCount++;
+        }
+      }
+
+      await batch.commit();
+
+      return res.json({ 
+        success: true, 
+        message: `${deletedCount} bloqueio(s) removido(s)`,
+        deleted: deletedCount 
+      });
+    } catch (e) {
+      console.error('Error unblocking slots:', e);
+      return res.status(500).json({ error: 'Erro ao remover bloqueios' });
+    }
+  });
+
   app.post('/api/admin/blocks', requireAdminMw, async (req, res) => {
     try {
       const admin = getAdminFromReq(req);
@@ -1676,6 +2067,59 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       return res.json({ items });
     } catch {
       return res.status(500).json({ error: 'Erro ao carregar clientes' });
+    }
+  });
+
+  // Endpoint para atualizar dados do cliente (apenas master)
+  app.patch('/api/admin/customers/:customerId', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const customerId = req.params.customerId;
+      if (!customerId) return res.status(400).json({ error: 'customerId é obrigatório' });
+
+      const customerDoc = await db.collection('customers').doc(customerId).get();
+      if (!customerDoc.exists) return res.status(404).json({ error: 'Cliente não encontrado' });
+
+      const { birthdayMmdd, notes, tags } = req.body;
+      const updateData: Record<string, any> = {};
+
+      // Atualiza data de aniversário (formato MMDD)
+      if (birthdayMmdd !== undefined) {
+        if (birthdayMmdd === null || birthdayMmdd === '') {
+          updateData['profile.birthdayMmdd'] = null;
+          updateData['profile.birthday'] = null;
+        } else if (typeof birthdayMmdd === 'string' && /^\d{4}$/.test(birthdayMmdd)) {
+          updateData['profile.birthdayMmdd'] = birthdayMmdd;
+          // Também atualiza birthday com formato ISO para compatibilidade
+          const month = parseInt(birthdayMmdd.slice(0, 2), 10);
+          const day = parseInt(birthdayMmdd.slice(2, 4), 10);
+          const currentYear = new Date().getFullYear();
+          updateData['profile.birthday'] = new Date(currentYear, month - 1, day).toISOString().split('T')[0];
+        } else {
+          return res.status(400).json({ error: 'Formato de data inválido. Use MMDD (ex: 0110 para 10/Jan)' });
+        }
+      }
+
+      // Atualiza notas
+      if (notes !== undefined) {
+        updateData['profile.notes'] = notes || null;
+      }
+
+      // Atualiza tags
+      if (tags !== undefined) {
+        updateData['profile.tags'] = Array.isArray(tags) ? tags : [];
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'Nenhum dado para atualizar' });
+      }
+
+      await db.collection('customers').doc(customerId).update(updateData);
+
+      const updated = await db.collection('customers').doc(customerId).get();
+      return res.json({ success: true, item: { id: updated.id, ...updated.data() } });
+    } catch (e) {
+      console.error('Error updating customer:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar cliente' });
     }
   });
 

@@ -645,4 +645,26 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       return res.status(500).json({ error: 'Erro ao processar fila de mensagens' });
     }
   });
+
+  // Endpoint para processar remarketing de clientes inativos (chamado via Cloud Scheduler)
+  app.post('/api/cron/send-remarketing', async (req, res) => {
+    if (!validateCronSecret(req, res)) return;
+    
+    try {
+      const { processInactiveCustomerRemarketing } = await import('../services/whatsappNotifications.js');
+      const baseUrl = 'https://sr-cardoso-barbearia-200966434576.us-central1.run.app';
+      const result = await processInactiveCustomerRemarketing(db, env, baseUrl);
+      console.log(`Cron send-remarketing: processed=${result.processed}, sent=${result.sent}, errors=${result.errors.length}`);
+      return res.json({
+        success: true,
+        processed: result.processed,
+        sent: result.sent,
+        skipped: result.skipped,
+        errors: result.errors.length,
+      });
+    } catch (e: any) {
+      console.error('Error processing remarketing:', e);
+      return res.status(500).json({ error: 'Erro ao processar remarketing' });
+    }
+  });
 }

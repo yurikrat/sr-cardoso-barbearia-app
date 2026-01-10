@@ -15,6 +15,10 @@ export interface WhatsAppNotificationSettings {
   // Mensagem de cancelamento
   cancellationMessage: string;
 
+  // Mensagem de aniversário automática
+  birthdayEnabled: boolean;
+  birthdayMessage: string; // Mensagem enviada no aniversário do cliente
+
   updatedAt?: Date;
   updatedBy?: string;
 }
@@ -29,12 +33,15 @@ export const DEFAULT_NOTIFICATION_SETTINGS: WhatsAppNotificationSettings = {
     'Falta pouco pro seu horário! Te vejo daqui a pouco aqui na barbearia.',
   cancellationMessage:
     'Cancelado! Quando quiser reagendar, é só clicar no link abaixo. Vai ser um prazer te atender.',
+  birthdayEnabled: true,
+  birthdayMessage:
+    'Feliz aniversário! 🎂🎉 A Barbearia Sr. Cardoso deseja a você um dia incrível cheio de alegrias. Como presente, que tal passar aqui pra ficar ainda mais bonito? Te esperamos!',
 };
 
 /**
  * Fila de retry para mensagens que falharam
  */
-export type MessageType = 'confirmation' | 'reminder' | 'cancellation';
+export type MessageType = 'confirmation' | 'reminder' | 'cancellation' | 'birthday' | 'broadcast';
 
 export interface WhatsAppMessageQueue {
   id: string;

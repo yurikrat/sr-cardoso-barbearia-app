@@ -26,9 +26,17 @@ export async function getNotificationSettings(db: Firestore): Promise<WhatsAppNo
       reminderMinutesBefore: 60,
       reminderMessage: 'Falta pouco pro seu horário! Te vejo daqui a pouco aqui na barbearia.',
       cancellationMessage: 'Cancelado! Quando quiser reagendar, é só clicar no link abaixo. Vai ser um prazer te atender.',
+      birthdayEnabled: true,
+      birthdayMessage: 'Feliz aniversário! 🎂🎉 A Barbearia Sr. Cardoso deseja a você um dia incrível cheio de alegrias. Como presente, que tal passar aqui pra ficar ainda mais bonito? Te esperamos!',
     };
   }
-  return doc.data() as WhatsAppNotificationSettings;
+  const data = doc.data() as WhatsAppNotificationSettings;
+  // Garante defaults para novos campos se não existirem
+  return {
+    ...data,
+    birthdayEnabled: data.birthdayEnabled ?? true,
+    birthdayMessage: data.birthdayMessage ?? 'Feliz aniversário! 🎂🎉 A Barbearia Sr. Cardoso deseja a você um dia incrível cheio de alegrias. Como presente, que tal passar aqui pra ficar ainda mais bonito? Te esperamos!',
+  };
 }
 
 /**
@@ -235,7 +243,7 @@ export async function sendBookingConfirmation(
     return { sent: false, queued: false };
   }
   
-  const cancelLink = `${baseUrl}/cancelar/${booking.id}?code=${cancelCode}`;
+  const cancelLink = `${baseUrl}/cancelar/${cancelCode}`;
   const message = await buildConfirmationMessage(db, booking, settings.confirmationMessage, cancelLink);
   
   const result = await sendWhatsAppMessage(env, booking.customer.whatsappE164, message);
@@ -427,4 +435,382 @@ export async function processReminders(
   }
   
   return { processed: bookings.length, sent, queued };
+}
+
+/**
+ * Constrói mensagem de aniversário personalizada
+ */
+function buildBirthdayMessage(
+  firstName: string,
+  customMessage: string,
+  baseUrl: string
+): string {
+  const lines = [
+    `Olá, ${firstName}! 🎉`,
+    '',
+    customMessage,
+    '',
+    '📅 Agende seu horário especial:',
+    `${baseUrl}/agendar`,
+  ];
+  
+  return lines.join('\n');
+}
+
+/**
+ * Busca clientes que fazem aniversário hoje
+ */
+export async function getCustomersWithBirthdayToday(
+  db: Firestore
+): Promise<Array<{ id: string; firstName: string; whatsappE164: string }>> {
+  const now = DateTime.now().setZone('America/Sao_Paulo');
+  const todayMmdd = now.toFormat('MMdd'); // Ex: "0110" para 10 de janeiro
+  
+  // Busca clientes com birthdayMmdd igual a hoje
+  const snap = await db
+    .collection('customers')
+    .where('profile.birthdayMmdd', '==', todayMmdd)
+    .get();
+  
+  const customers: Array<{ id: string; firstName: string; whatsappE164: string }> = [];
+  
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const whatsappE164 = data.identity?.whatsappE164;
+    const firstName = data.identity?.firstName || 'Cliente';
+    
+    if (whatsappE164 && typeof whatsappE164 === 'string' && whatsappE164.length > 10) {
+      customers.push({ id: doc.id, firstName, whatsappE164 });
+    }
+  }
+  
+  return customers;
+}
+
+/**
+ * Envia mensagem de aniversário para um cliente
+ */
+export async function sendBirthdayMessage(
+  db: Firestore,
+  env: Env,
+  customer: { id: string; firstName: string; whatsappE164: string },
+  baseUrl: string
+): Promise<{ sent: boolean; error?: string }> {
+  const settings = await getNotificationSettings(db);
+  
+  if (!settings.birthdayEnabled) {
+    return { sent: false };
+  }
+  
+  const message = buildBirthdayMessage(customer.firstName, settings.birthdayMessage, baseUrl);
+  
+  const result = await sendWhatsAppMessage(env, customer.whatsappE164, message);
+  
+  if (result.success) {
+    // Registra que enviamos mensagem de aniversário este ano
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    await db.doc(`customers/${customer.id}`).update({
+      'stats.lastBirthdaySentYear': now.year,
+      'stats.lastContactAt': FieldValue.serverTimestamp(),
+    });
+    return { sent: true };
+  }
+  
+  return { sent: false, error: result.error };
+}
+
+/**
+ * Processa envio de mensagens de aniversário
+ */
+export async function processBirthdayMessages(
+  db: Firestore,
+  env: Env,
+  baseUrl: string
+): Promise<{ processed: number; sent: number; failed: number; skipped: number; noCustomers: boolean }> {
+  const customers = await getCustomersWithBirthdayToday(db);
+  const now = DateTime.now().setZone('America/Sao_Paulo');
+  const currentYear = now.year;
+  const todayMmdd = now.toFormat('MMdd');
+  
+  // Se não há aniversariantes hoje
+  if (customers.length === 0) {
+    console.log(`[Birthday] Nenhum cliente aniversariando hoje (${todayMmdd})`);
+    return { processed: 0, sent: 0, failed: 0, skipped: 0, noCustomers: true };
+  }
+  
+  console.log(`[Birthday] Encontrados ${customers.length} cliente(s) aniversariando hoje (${todayMmdd})`);
+  
+  let sent = 0;
+  let failed = 0;
+  let skipped = 0;
+  
+  for (const customer of customers) {
+    // Verifica se já enviamos mensagem de aniversário este ano
+    const customerDoc = await db.doc(`customers/${customer.id}`).get();
+    const lastBirthdaySentYear = customerDoc.data()?.stats?.lastBirthdaySentYear;
+    
+    if (lastBirthdaySentYear === currentYear) {
+      console.log(`[Birthday] Pulando ${customer.firstName} (${customer.id}) - já recebeu este ano`);
+      skipped++;
+      continue;
+    }
+    
+    const result = await sendBirthdayMessage(db, env, customer, baseUrl);
+    
+    if (result.sent) {
+      console.log(`[Birthday] ✓ Mensagem enviada para ${customer.firstName} (${customer.id})`);
+      sent++;
+    } else {
+      console.log(`[Birthday] ✗ Falha ao enviar para ${customer.firstName} (${customer.id}): ${result.error}`);
+      failed++;
+    }
+    
+    // Pequena pausa para não sobrecarregar a API
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  
+  console.log(`[Birthday] Resumo: ${sent} enviado(s), ${failed} falha(s), ${skipped} pulado(s) de ${customers.length} aniversariante(s)`);
+  
+  return { processed: customers.length, sent, failed, skipped, noCustomers: false };
+}
+
+/**
+ * Envia mensagem com mídia (imagem) via Evolution API
+ * Suporta tanto URL quanto base64 (data:image/...)
+ */
+export async function sendWhatsAppMedia(
+  env: Env,
+  phoneE164: string,
+  mediaUrlOrBase64: string,
+  caption: string,
+  mediaType: 'image' | 'document' = 'image'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const evo = createEvolutionClient(env);
+    const instanceName = getEvolutionInstanceName(env);
+    
+    // Detecta se é base64 ou URL
+    const isBase64 = mediaUrlOrBase64.startsWith('data:');
+    
+    await evo.post(`/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+      number: toEvolutionNumber(phoneE164),
+      mediatype: mediaType,
+      media: mediaUrlOrBase64,
+      caption,
+      // Se for base64, podemos adicionar um filename
+      ...(isBase64 && { fileName: `image_${Date.now()}.jpg` }),
+    });
+    
+    return { success: true };
+  } catch (e: any) {
+    const err = e as EvolutionRequestError;
+    const errorMsg = err?.message || 'Erro desconhecido ao enviar mídia';
+    console.error('WhatsApp sendMedia error:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Broadcast de mensagem com mídia para todos os clientes
+ * Suporta tanto URL quanto base64 (data:image/...)
+ */
+export async function broadcastWithMedia(
+  db: Firestore,
+  env: Env,
+  mediaUrlOrBase64: string,
+  caption: string
+): Promise<{ sent: number; failed: number; total: number; errors: Array<{ customerId: string; error: string }> }> {
+  // Buscar todos os clientes com whatsappE164
+  const customersSnap = await db.collection('customers').get();
+  const customers: Array<{ id: string; firstName: string; whatsappE164: string }> = [];
+  
+  customersSnap.forEach((d) => {
+    const data = d.data();
+    const whatsappE164 = data.identity?.whatsappE164;
+    const firstName = data.identity?.firstName || 'Cliente';
+    
+    if (whatsappE164 && typeof whatsappE164 === 'string' && whatsappE164.length > 10) {
+      customers.push({ id: d.id, firstName, whatsappE164 });
+    }
+  });
+  
+  if (customers.length === 0) {
+    return { sent: 0, failed: 0, total: 0, errors: [] };
+  }
+  
+  let sent = 0;
+  let failed = 0;
+  const errors: Array<{ customerId: string; error: string }> = [];
+  
+  for (const customer of customers) {
+    try {
+      // Personalizar caption com nome do cliente
+      const personalizedCaption = caption.replace(/\{nome\}/gi, customer.firstName);
+      
+      const result = await sendWhatsAppMedia(env, customer.whatsappE164, mediaUrlOrBase64, personalizedCaption);
+      
+      if (result.success) {
+        sent++;
+        // Atualiza último contato
+        await db.doc(`customers/${customer.id}`).update({
+          'stats.lastContactAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        failed++;
+        errors.push({ customerId: customer.id, error: result.error || 'Erro desconhecido' });
+      }
+      
+      // Pausa para não sobrecarregar a API (800ms para mídia)
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    } catch (e: any) {
+      failed++;
+      errors.push({ customerId: customer.id, error: e?.message || 'Erro desconhecido' });
+    }
+  }
+  
+  console.log(`[Broadcast Media] Enviado: ${sent}/${customers.length}, Falhou: ${failed}`);
+  
+  return { sent, failed, total: customers.length, errors };
+}
+
+/**
+ * Processa remarketing para clientes inativos (sem agendamento há X dias)
+ * Envia mensagem convidando a agendar novamente
+ */
+export async function processInactiveCustomerRemarketing(
+  db: Firestore,
+  env: Env,
+  baseUrl: string = 'https://sr-cardoso-barbearia-200966434576.us-central1.run.app'
+): Promise<{ processed: number; sent: number; skipped: number; errors: Array<{ customerId: string; error: string }> }> {
+  const settings = await getNotificationSettings(db);
+  
+  // Configurações de remarketing
+  const INACTIVE_DAYS = 20; // Clientes sem agendamento há 20 dias
+  const REMARKETING_COOLDOWN_DAYS = 20; // Não enviar mais de uma vez a cada 20 dias
+  
+  const now = DateTime.now().setZone('America/Sao_Paulo');
+  const inactiveThreshold = now.minus({ days: INACTIVE_DAYS }).toJSDate();
+  const cooldownThreshold = now.minus({ days: REMARKETING_COOLDOWN_DAYS }).toJSDate();
+  
+  // Buscar todos os clientes
+  const customersSnap = await db.collection('customers').get();
+  
+  const inactiveCustomers: Array<{
+    id: string;
+    firstName: string;
+    whatsappE164: string;
+    lastBookingAt?: Date;
+    lastRemarketingAt?: Date;
+    marketingOptIn?: boolean;
+  }> = [];
+  
+  customersSnap.forEach((d) => {
+    const data = d.data();
+    const whatsappE164 = data.identity?.whatsappE164;
+    const firstName = data.identity?.firstName || 'Cliente';
+    
+    if (!whatsappE164 || typeof whatsappE164 !== 'string' || whatsappE164.length < 10) {
+      return; // Sem telefone válido
+    }
+    
+    // Verificar se opt-in para marketing (default: true para compatibilidade)
+    const marketingOptIn = data.consent?.marketingOptIn !== false;
+    if (!marketingOptIn) {
+      return; // Não quer receber marketing
+    }
+    
+    // Verificar se está inativo
+    let lastBookingAt: Date | undefined;
+    if (data.stats?.lastCompletedAt) {
+      lastBookingAt = data.stats.lastCompletedAt.toDate ? data.stats.lastCompletedAt.toDate() : new Date(data.stats.lastCompletedAt);
+    } else if (data.stats?.lastBookingAt) {
+      lastBookingAt = data.stats.lastBookingAt.toDate ? data.stats.lastBookingAt.toDate() : new Date(data.stats.lastBookingAt);
+    }
+    
+    // Se nunca agendou ou o último agendamento foi há mais de 20 dias
+    const isInactive = !lastBookingAt || lastBookingAt < inactiveThreshold;
+    if (!isInactive) {
+      return; // Cliente ativo
+    }
+    
+    // Verificar cooldown de remarketing
+    let lastRemarketingAt: Date | undefined;
+    if (data.stats?.lastRemarketingAt) {
+      lastRemarketingAt = data.stats.lastRemarketingAt.toDate ? data.stats.lastRemarketingAt.toDate() : new Date(data.stats.lastRemarketingAt);
+    }
+    
+    if (lastRemarketingAt && lastRemarketingAt > cooldownThreshold) {
+      return; // Já recebeu remarketing recentemente
+    }
+    
+    inactiveCustomers.push({
+      id: d.id,
+      firstName,
+      whatsappE164,
+      lastBookingAt,
+      lastRemarketingAt,
+      marketingOptIn,
+    });
+  });
+  
+  if (inactiveCustomers.length === 0) {
+    console.log('[Remarketing] Nenhum cliente inativo elegível');
+    return { processed: 0, sent: 0, skipped: 0, errors: [] };
+  }
+  
+  console.log(`[Remarketing] ${inactiveCustomers.length} clientes inativos elegíveis`);
+  
+  let sent = 0;
+  let skipped = 0;
+  const errors: Array<{ customerId: string; error: string }> = [];
+  
+  // Mensagem personalizada no estilo Sr. Cardoso
+  const buildRemarketingMessage = (firstName: string): string => {
+    const lines = [
+      `E aí, ${firstName}! ✂️`,
+      '',
+      'Faz um tempinho que você não aparece aqui na Barbearia Sr. Cardoso. Tá tudo bem?',
+      '',
+      'Seu cabelo deve tá pedindo um trato, hein! 😄',
+      '',
+      'Bora marcar um horário? É rapidinho:',
+      `${baseUrl}`,
+      '',
+      'Te espero! 🪒',
+    ];
+    return lines.join('\n');
+  };
+  
+  for (const customer of inactiveCustomers) {
+    try {
+      const message = buildRemarketingMessage(customer.firstName);
+      
+      const result = await sendWhatsAppMessage(env, customer.whatsappE164, message);
+      
+      if (result.success) {
+        sent++;
+        // Atualiza timestamps
+        await db.doc(`customers/${customer.id}`).update({
+          'stats.lastContactAt': FieldValue.serverTimestamp(),
+          'stats.lastRemarketingAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        errors.push({ customerId: customer.id, error: result.error || 'Erro desconhecido' });
+      }
+      
+      // Pausa de 500ms entre mensagens para não sobrecarregar
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } catch (e: any) {
+      errors.push({ customerId: customer.id, error: e?.message || 'Erro desconhecido' });
+    }
+  }
+  
+  console.log(`[Remarketing] Enviado: ${sent}/${inactiveCustomers.length}, Erros: ${errors.length}`);
+  
+  return {
+    processed: inactiveCustomers.length,
+    sent,
+    skipped,
+    errors,
+  };
 }

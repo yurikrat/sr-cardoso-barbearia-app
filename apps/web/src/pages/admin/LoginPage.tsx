@@ -42,7 +42,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 overflow-x-hidden">
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 safe-top-p4 safe-bottom-p4 overflow-x-hidden">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">

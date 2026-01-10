@@ -23,7 +23,11 @@ export default defineConfig({
         theme_color: '#0B0C0D',
         background_color: '#0B0C0D',
         display: 'standalone',
+        orientation: 'portrait',
         start_url: '/',
+        scope: '/',
+        lang: 'pt-BR',
+        categories: ['business', 'lifestyle'],
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -34,6 +38,12 @@ export default defineConfig({
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },

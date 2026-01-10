@@ -130,7 +130,7 @@ export default function SmartListsPage() {
         birthdays.push(c);
       }
 
-      // No-Show
+      // Faltas
       if (c.stats.noShowCount > 0) {
         noShows.push(c);
       }
@@ -217,7 +217,7 @@ export default function SmartListsPage() {
                 <AlertTriangle className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">No-Show (Faltas)</p>
+                <p className="text-sm text-muted-foreground">Faltas</p>
                 <p className="text-2xl font-bold">{lists.noShows.length}</p>
               </div>
             </CardContent>
@@ -236,7 +236,7 @@ export default function SmartListsPage() {
             </TabsTrigger>
             <TabsTrigger value="noshow" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 hidden sm:inline" />
-              No-Show
+              Faltas
             </TabsTrigger>
           </TabsList>
 

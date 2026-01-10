@@ -7,13 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
+import { CreateBookingModal } from '@/components/admin/CreateBookingModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
-import { adminCancelBookingFn, adminSendBookingWhatsappConfirmationFn } from '@/lib/api-compat';
+import { adminCancelBookingFn } from '@/lib/api-compat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { generateBookingConfirmationMessage } from '@/utils/whatsapp';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
@@ -96,10 +97,14 @@ export default function AgendaPage() {
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [blockedTimes, setBlockedTimes] = useState<Set<string>>(new Set());
+  const [blockedTimes, setBlockedTimes] = useState<Map<string, string>>(new Map()); // Map<timeKey, slotId>
+  const [selectedBlock, setSelectedBlock] = useState<{ timeKey: string; slotId: string } | null>(null);
+  const [unblockDialogOpen, setUnblockDialogOpen] = useState(false);
+  const [unblocking, setUnblocking] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
   const [barberSchedule, setBarberSchedule] = useState<any>(null);
@@ -267,7 +272,7 @@ export default function AgendaPage() {
     setLoading(true);
     try {
       let items: any[] = [];
-      let nextBlocked = new Set<string>();
+      let nextBlocked = new Map<string, string>(); // Map<timeKey, slotId>
 
       if (viewMode === 'day') {
         const [res, availability] = await Promise.all([
@@ -276,8 +281,10 @@ export default function AgendaPage() {
         ]);
         items = res.items;
         (availability?.blockedSlotIds ?? []).forEach((slotId) => {
-          const tk = typeof slotId === 'string' ? slotIdToTimeKey(slotId) : null;
-          if (tk) nextBlocked.add(tk);
+          if (typeof slotId === 'string') {
+            const tk = slotIdToTimeKey(slotId);
+            if (tk) nextBlocked.set(tk, slotId);
+          }
         });
       } else {
         let start: DateTime, end: DateTime;
@@ -324,7 +331,7 @@ export default function AgendaPage() {
     }
   };
 
-  // Mutations (Cancel, WhatsApp, Status)
+  // Mutations (Cancel, Status)
   const cancelMutation = useMutation({
     mutationFn: async (bookingId: string) => {
       await adminCancelBookingFn({ bookingId });
@@ -337,21 +344,6 @@ export default function AgendaPage() {
     },
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : 'Erro ao cancelar.';
-      toast({ title: 'Erro', description: msg, variant: 'destructive' });
-    },
-  });
-
-  const sendWhatsappConfirmationMutation = useMutation({
-    mutationFn: async (payload: { bookingId: string; text: string }) => {
-      await adminSendBookingWhatsappConfirmationFn(payload);
-    },
-    onSuccess: () => {
-      loadBookings();
-      setSelectedBooking(null);
-      toast({ title: 'Sucesso', description: 'Confirmação enviada no WhatsApp.' });
-    },
-    onError: (e: unknown) => {
-      const msg = e instanceof Error ? e.message : 'Erro ao enviar WhatsApp.';
       toast({ title: 'Erro', description: msg, variant: 'destructive' });
     },
   });
@@ -371,12 +363,33 @@ export default function AgendaPage() {
     },
   });
 
-  const handleSendWhatsApp = (booking: Booking) => {
-    const barberName = barbers.find((b) => b.id === booking.barberId)?.name || 'Barbeiro';
-    const slotStart = DateTime.fromJSDate(booking.slotStart, { zone: 'America/Sao_Paulo' });
-    const customerName = `${booking.customer.firstName} ${booking.customer.lastName}`;
-    const message = generateBookingConfirmationMessage(customerName, booking.serviceType, barberName, slotStart);
-    sendWhatsappConfirmationMutation.mutate({ bookingId: booking.id, text: message });
+  const handleOpenWhatsApp = (booking: Booking) => {
+    // Extrai apenas os dígitos do número E.164 (remove o +)
+    const phoneNumber = booking.customer.whatsappE164.replace(/\D/g, '');
+    // Abre a conversa direta no WhatsApp Web/App
+    window.open(`https://wa.me/${phoneNumber}`, '_blank');
+  };
+
+  // Função para desbloquear slot
+  const handleUnblockSlot = async () => {
+    if (!selectedBlock || !selectedBarber) return;
+    
+    setUnblocking(true);
+    try {
+      await api.admin.unblockSlot(selectedBarber, selectedBlock.slotId);
+      toast({ 
+        title: 'Sucesso', 
+        description: `Horário ${selectedBlock.timeKey} desbloqueado.` 
+      });
+      setUnblockDialogOpen(false);
+      setSelectedBlock(null);
+      loadBookings();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao desbloquear horário.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
+    } finally {
+      setUnblocking(false);
+    }
   };
 
   // Render Helpers
@@ -395,12 +408,12 @@ export default function AgendaPage() {
         const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
         return { kind: 'booking' as const, booking: b, topPx, heightPx: GRID_ROW_PX };
       }),
-      ...Array.from(blockedTimes).map(timeKey => {
+      ...Array.from(blockedTimes.entries()).map(([timeKey, slotId]) => {
         const [h, m] = timeKey.split(':').map(Number);
         const start = dayStart.set({ hour: h, minute: m });
         const minutesFromStart = start.diff(dayStart, 'minutes').minutes;
         const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
-        return { kind: 'block' as const, timeKey, topPx, heightPx: GRID_ROW_PX };
+        return { kind: 'block' as const, timeKey, slotId, topPx, heightPx: GRID_ROW_PX };
       })
     ].filter(e => e.topPx >= 0 && e.topPx < TIME_SLOTS.length * GRID_ROW_PX);
 
@@ -438,13 +451,18 @@ export default function AgendaPage() {
             {events.map((ev) => {
               if (ev.kind === 'block') {
                 return (
-                  <div
+                  <button
                     key={`block-${ev.timeKey}`}
-                    className="absolute left-1 right-1 rounded bg-muted/80 border border-border p-2 text-xs text-muted-foreground flex items-center justify-center"
+                    onClick={() => {
+                      setSelectedBlock({ timeKey: ev.timeKey, slotId: ev.slotId });
+                      setUnblockDialogOpen(true);
+                    }}
+                    className="absolute left-1 right-1 rounded bg-muted/80 border border-border p-2 text-xs text-muted-foreground flex items-center justify-center gap-2 cursor-pointer hover:bg-muted hover:border-primary/50 transition-colors active:scale-[0.98]"
                     style={{ top: ev.topPx, height: ev.heightPx - 4 }}
                   >
+                    <Lock className="h-3 w-3" />
                     Fechado
-                  </div>
+                  </button>
                 );
               }
               const b = ev.booking;
@@ -699,7 +717,7 @@ export default function AgendaPage() {
                 <p><span className="font-medium">Status:</span> <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge></p>
               </div>
               <div className="flex gap-2 flex-wrap">
-                <Button onClick={() => handleSendWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
+                <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -740,17 +758,62 @@ export default function AgendaPage() {
         }}
         selectedDate={selectedDate}
       />
+
+      <CreateBookingModal
+        open={createBookingModalOpen}
+        onOpenChange={setCreateBookingModalOpen}
+        selectedDate={selectedDate}
+        selectedBarber={selectedBarber}
+        onSuccess={() => loadBookings()}
+      />
       
-      {/* Floating Action Button for Blocking Slots (only visible in Day view for now) */}
+      {/* Floating Action Buttons (only visible in Day view) */}
       {viewMode === 'day' && (
-        <Button
-          className="fixed bottom-6 right-6 rounded-full h-14 w-14 shadow-lg z-50"
-          onClick={() => setBlockModalOpen(true)}
-        >
-          <CalendarIcon className="h-6 w-6" />
-        </Button>
+        <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
+          <Button
+            className="rounded-full h-14 w-14 shadow-lg"
+            variant="secondary"
+            onClick={() => setBlockModalOpen(true)}
+            title="Bloquear horários"
+          >
+            <CalendarIcon className="h-6 w-6" />
+          </Button>
+          <Button
+            className="rounded-full h-14 w-14 shadow-lg"
+            onClick={() => setCreateBookingModalOpen(true)}
+            title="Novo agendamento"
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+        </div>
       )}
+
+      {/* Dialog de confirmação para desbloquear */}
+      <AlertDialog open={unblockDialogOpen} onOpenChange={setUnblockDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Unlock className="h-5 w-5" />
+              Desbloquear Horário
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja remover o bloqueio do horário <strong>{selectedBlock?.timeKey}</strong>?
+              <br />
+              Este horário ficará disponível para agendamentos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unblocking}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnblockSlot}
+              disabled={unblocking}
+              className="bg-primary"
+            >
+              {unblocking ? 'Desbloqueando...' : 'Desbloquear'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }
-

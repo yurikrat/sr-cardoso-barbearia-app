@@ -155,6 +155,23 @@ export const api = {
         { admin: true }
       );
     },
+    async createBooking(payload: {
+      barberId: string;
+      serviceType: string;
+      slotStart: string;
+      customer: {
+        firstName: string;
+        lastName: string;
+        whatsapp: string;
+        birthDate?: string;
+      };
+    }) {
+      return apiFetch<{ success: boolean; bookingId: string }>(`/api/admin/bookings`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
     async cancelBooking(bookingId: string) {
       return apiFetch<{ success: boolean }>(`/api/admin/bookings/${bookingId}/cancel`, {
         method: 'POST',
@@ -210,6 +227,8 @@ export const api = {
         reminderMinutesBefore: number;
         reminderMessage: string;
         cancellationMessage: string;
+        birthdayEnabled: boolean;
+        birthdayMessage: string;
       }>(`/api/admin/whatsapp/notification-settings`, { admin: true });
     },
 
@@ -220,6 +239,8 @@ export const api = {
       reminderMinutesBefore: number;
       reminderMessage: string;
       cancellationMessage: string;
+      birthdayEnabled: boolean;
+      birthdayMessage: string;
     }) {
       return apiFetch<{ success: boolean }>(`/api/admin/whatsapp/notification-settings`, {
         method: 'PUT',
@@ -254,6 +275,33 @@ export const api = {
         method: 'POST',
         admin: true,
         body: JSON.stringify({ message }),
+      });
+    },
+
+    async whatsappBroadcastMedia(mediaUrl: string, caption: string) {
+      return apiFetch<{
+        success: boolean;
+        sent: number;
+        failed: number;
+        total: number;
+        errors?: Array<{ customerId: string; error: string }>;
+      }>(`/api/admin/whatsapp/broadcast-media`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify({ mediaUrl, caption }),
+      });
+    },
+
+    async whatsappSendBirthdays() {
+      return apiFetch<{
+        success: boolean;
+        processed: number;
+        sent: number;
+        failed: number;
+        skipped: number;
+      }>(`/api/admin/whatsapp/send-birthdays`, {
+        method: 'POST',
+        admin: true,
       });
     },
 
@@ -336,11 +384,31 @@ export const api = {
         body: JSON.stringify(payload),
       });
     },
+    async unblockSlot(barberId: string, slotId: string) {
+      return apiFetch<{ success: boolean; message: string }>(`/api/admin/blocks/${encodeURIComponent(barberId)}/${encodeURIComponent(slotId)}`, {
+        method: 'DELETE',
+        admin: true,
+      });
+    },
+    async unblockSlots(barberId: string, slotIds: string[]) {
+      return apiFetch<{ success: boolean; message: string; deleted: number }>(`/api/admin/blocks/unblock`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify({ barberId, slotIds }),
+      });
+    },
     async listCustomers(limit = 100) {
       return apiFetch<{ items: unknown[] }>(`/api/admin/customers?limit=${limit}`, { admin: true });
     },
     async getCustomer(customerId: string) {
       return apiFetch<{ item: unknown }>(`/api/admin/customers/${encodeURIComponent(customerId)}`, { admin: true });
+    },
+    async updateCustomer(customerId: string, data: { birthdayMmdd?: string | null; notes?: string | null; tags?: string[] }) {
+      return apiFetch<{ success: boolean; item: unknown }>(`/api/admin/customers/${encodeURIComponent(customerId)}`, {
+        method: 'PATCH',
+        admin: true,
+        body: JSON.stringify(data),
+      });
     },
     async listCustomerBookings(customerId: string, limit = 50) {
       return apiFetch<{ items: unknown[] }>(

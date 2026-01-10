@@ -55,7 +55,7 @@ Agende seu horário e venha nos visitar! ✂️🎂`;
 }
 
 /**
- * Gera mensagem para clientes que faltaram (No-Show)
+ * Gera mensagem para clientes que faltaram
  */
 export function generateNoShowMessage(customerName: string): string {
   return `Olá ${customerName}! 

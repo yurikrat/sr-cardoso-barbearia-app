@@ -16,6 +16,9 @@ export type Env = {
 
   // Cron jobs
   CRON_SECRET?: string;
+
+  // App base URL (usado para links em mensagens)
+  APP_BASE_URL?: string;
 };
 
 export function getEnv(): Env {
@@ -35,5 +38,7 @@ export function getEnv(): Env {
     EVOLUTION_INSTANCE_NAME: process.env.EVOLUTION_INSTANCE_NAME,
 
     CRON_SECRET: process.env.CRON_SECRET,
+
+    APP_BASE_URL: process.env.APP_BASE_URL,
   };
 }

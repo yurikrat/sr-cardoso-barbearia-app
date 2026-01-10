@@ -83,4 +83,94 @@
   .safe-bottom-p4 {
     padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
   }
+  
+  /* Shorthand for bottom padding with safe area */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  
+  /* Safe margins (útil para footers fixos) */
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* iOS/Mobile Touch Optimizations */
+@layer base {
+  /* Remove tap highlight on iOS */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Prevent text selection on touch-based UI elements */
+  button, 
+  [role="button"],
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Smooth scrolling for iOS momentum */
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Prevent pull-to-refresh on PWA */
+  body {
+    overscroll-behavior-y: none;
+  }
+  
+  /* Disable callout on long press (images, links) */
+  img,
+  a {
+    -webkit-touch-callout: none;
+  }
+  
+  /* Fix for iOS input zoom - ensure font size >= 16px */
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="date"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  
+  @media (min-width: 640px) {
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    input[type="number"],
+    input[type="search"],
+    input[type="date"],
+    textarea,
+    select {
+      font-size: inherit !important;
+    }
+  }
+}
+
+/* Touch-friendly interactive elements */
+@layer components {
+  /* Ensure minimum touch target size (44x44px recommended by Apple) */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Active state for touch feedback */
+  .touch-feedback {
+    transition: transform 0.1s ease-out, opacity 0.1s ease-out;
+  }
+  
+  .touch-feedback:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+  }
 }

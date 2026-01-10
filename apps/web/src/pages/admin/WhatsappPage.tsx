@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
-import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save, Send, Users } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save, Send, Users, Image, Cake, Upload, X } from 'lucide-react';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -60,9 +60,11 @@ export default function WhatsappPage() {
     reminderMinutesBefore: 60,
     reminderMessage: 'Lembrete: seu horário na barbearia é daqui a pouco. Não se atrase!',
     cancellationMessage: 'Seu agendamento foi cancelado conforme solicitado. Esperamos você em breve!',
+    birthdayEnabled: true,
+    birthdayMessage: 'Feliz aniversário! 🎂🎉 A Barbearia Sr. Cardoso deseja a você um dia incrível cheio de alegrias. Como presente, que tal passar aqui pra ficar ainda mais bonito? Te esperamos!',
   });
 
-  // Estados para disparo em massa
+  // Estados para disparo em massa (texto)
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<{
@@ -70,6 +72,11 @@ export default function WhatsappPage() {
     failed: number;
     total: number;
   } | null>(null);
+
+  // Estados para disparo em massa COM IMAGEM (upload)
+  const [broadcastImageFile, setBroadcastImageFile] = useState<File | null>(null);
+  const [broadcastImagePreview, setBroadcastImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const qrSrc = useMemo(() => asDataUrl(qrBase64), [qrBase64]);
   const canUseEvolution = !!status && status.configured !== false;
@@ -229,7 +236,9 @@ export default function WhatsappPage() {
   };
 
   const onSendBroadcast = async () => {
-    if (!broadcastMessage.trim() || broadcastMessage.trim().length < 5) {
+    // Se tem imagem mas não tem mensagem, permitir (a legenda pode ser opcional)
+    // Se não tem imagem, precisa de mensagem
+    if (!broadcastImageFile && (!broadcastMessage.trim() || broadcastMessage.trim().length < 5)) {
       toast({
         title: 'Mensagem muito curta',
         description: 'A mensagem deve ter pelo menos 5 caracteres.',
@@ -239,13 +248,25 @@ export default function WhatsappPage() {
     }
 
     // Confirmação antes de enviar
-    const confirmText = `Tem certeza que deseja enviar esta mensagem para TODOS os clientes cadastrados? Esta ação não pode ser desfeita.`;
+    const hasImage = !!broadcastImageFile;
+    const confirmText = hasImage
+      ? `Tem certeza que deseja enviar esta IMAGEM${broadcastMessage.trim() ? ' com mensagem' : ''} para TODOS os clientes cadastrados?`
+      : `Tem certeza que deseja enviar esta mensagem para TODOS os clientes cadastrados?`;
     if (!window.confirm(confirmText)) return;
 
     setSendingBroadcast(true);
     setBroadcastResult(null);
     try {
-      const result = await api.admin.whatsappBroadcast(broadcastMessage.trim());
+      let result;
+      
+      if (broadcastImageFile) {
+        // Converter imagem para base64
+        const base64 = await fileToBase64(broadcastImageFile);
+        result = await api.admin.whatsappBroadcastMedia(base64, broadcastMessage.trim());
+      } else {
+        result = await api.admin.whatsappBroadcast(broadcastMessage.trim());
+      }
+
       setBroadcastResult({
         sent: result.sent,
         failed: result.failed,
@@ -257,6 +278,8 @@ export default function WhatsappPage() {
       });
       if (result.sent > 0) {
         setBroadcastMessage('');
+        setBroadcastImageFile(null);
+        setBroadcastImagePreview(null);
       }
     } catch (e: any) {
       toast({
@@ -266,6 +289,62 @@ export default function WhatsappPage() {
       });
     } finally {
       setSendingBroadcast(false);
+    }
+  };
+
+  // Função auxiliar para converter File para base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result); // Já vem como data:image/...;base64,...
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Handler para upload de imagem
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Arquivo inválido',
+        description: 'Selecione uma imagem (JPG, PNG, etc.)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validar tamanho (máximo 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'Arquivo muito grande',
+        description: 'A imagem deve ter no máximo 5MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setBroadcastImageFile(file);
+    
+    // Criar preview
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBroadcastImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setBroadcastImageFile(null);
+    setBroadcastImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -569,7 +648,7 @@ export default function WhatsappPage() {
               </Card>
 
               {/* Cancelamento */}
-              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm lg:col-span-2">
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <XCircle className="h-5 w-5 text-primary" />
@@ -598,6 +677,46 @@ export default function WhatsappPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Mensagem de Aniversário */}
+              <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Cake className="h-5 w-5 text-primary" />
+                      <CardTitle>Feliz Aniversário</CardTitle>
+                    </div>
+                    <Switch
+                      checked={notificationSettings.birthdayEnabled}
+                      onCheckedChange={(checked) =>
+                        setNotificationSettings({ ...notificationSettings, birthdayEnabled: checked })
+                      }
+                    />
+                  </div>
+                  <CardDescription>
+                    Mensagem enviada automaticamente no dia do aniversário de cada cliente.
+                    Enviada uma vez por ano para quem tem data de nascimento cadastrada.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="birthdayMessage">Mensagem de aniversário</Label>
+                    <textarea
+                      id="birthdayMessage"
+                      value={notificationSettings.birthdayMessage}
+                      onChange={(e) =>
+                        setNotificationSettings({ ...notificationSettings, birthdayMessage: e.target.value })
+                      }
+                      placeholder="Feliz aniversário! 🎂🎉 A Barbearia Sr. Cardoso deseja a você um dia incrível..."
+                      className="w-full min-h-[100px] p-3 rounded-md border border-input bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      disabled={!notificationSettings.birthdayEnabled}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O nome do cliente e link para agendamento serão adicionados automaticamente.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Seção de Disparo em Massa */}
@@ -609,24 +728,71 @@ export default function WhatsappPage() {
                   <Users className="h-6 w-6" />
                   Disparo em Massa
                 </h3>
-                <p className="text-muted-foreground">Envie uma mensagem para todos os clientes cadastrados.</p>
+                <p className="text-muted-foreground">Envie mensagens para todos os clientes cadastrados.</p>
               </div>
             </div>
 
-            <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+            <Card className="border-primary/10 bg-card/50 backdrop-blur-sm max-w-2xl">
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Send className="h-5 w-5 text-primary" />
-                  <CardTitle>Enviar para Todos os Clientes</CardTitle>
+                  <CardTitle>Nova Mensagem</CardTitle>
                 </div>
                 <CardDescription>
-                  Esta mensagem será enviada para todos os clientes que possuem WhatsApp cadastrado.
-                  Use <code className="bg-muted px-1 rounded">{'{nome}'}</code> para incluir o nome do cliente.
+                  Envie uma mensagem de texto ou imagem para todos os clientes.
+                  O nome de cada cliente será inserido automaticamente onde houver {'{nome}'}.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Upload de Imagem (opcional) */}
                 <div className="space-y-2">
-                  <Label htmlFor="broadcastMessage">Mensagem</Label>
+                  <Label>Imagem (opcional)</Label>
+                  
+                  {broadcastImagePreview ? (
+                    <div className="relative inline-block">
+                      <img 
+                        src={broadcastImagePreview} 
+                        alt="Preview" 
+                        className="max-h-48 rounded-lg border border-border object-contain"
+                      />
+                      <button
+                        onClick={removeImage}
+                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-md hover:bg-destructive/90 transition-colors"
+                        type="button"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors active:scale-[0.98]"
+                    >
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Clique ou arraste para enviar uma imagem
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        JPG, PNG até 5MB
+                      </p>
+                    </div>
+                  )}
+                  
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    disabled={sendingBroadcast || !canUseEvolution || statusSummary.label !== 'Conectado'}
+                  />
+                </div>
+
+                {/* Mensagem de Texto */}
+                <div className="space-y-2">
+                  <Label htmlFor="broadcastMessage">
+                    {broadcastImageFile ? 'Legenda (opcional)' : 'Mensagem'}
+                  </Label>
                   <textarea
                     id="broadcastMessage"
                     value={broadcastMessage}
@@ -637,46 +803,45 @@ export default function WhatsappPage() {
                     disabled={sendingBroadcast || !canUseEvolution || statusSummary.label !== 'Conectado'}
                   />
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Use {'{nome}'} para personalizar com o nome do cliente</span>
+                    <span>Use {'{nome}'} para inserir o nome do cliente</span>
                     <span>{broadcastMessage.length}/1000</span>
                   </div>
                 </div>
 
                 {broadcastResult && (
                   <div className="p-3 rounded-md bg-muted/50 text-sm">
-                    <div className="font-medium mb-1">Resultado do último disparo:</div>
-                    <div className="flex gap-4">
-                      <span className="text-green-600">✓ Enviados: {broadcastResult.sent}</span>
-                      <span className="text-red-600">✗ Falhou: {broadcastResult.failed}</span>
+                    <div className="font-medium mb-1">Resultado:</div>
+                    <div className="flex gap-4 flex-wrap">
+                      <span className="text-green-600">✓ {broadcastResult.sent}</span>
+                      <span className="text-red-600">✗ {broadcastResult.failed}</span>
                       <span className="text-muted-foreground">Total: {broadcastResult.total}</span>
                     </div>
                   </div>
                 )}
 
-                <div className="flex items-center gap-4">
-                  <Button
-                    onClick={onSendBroadcast}
-                    disabled={sendingBroadcast || !broadcastMessage.trim() || broadcastMessage.trim().length < 5 || !canUseEvolution || statusSummary.label !== 'Conectado'}
-                    className="w-auto bg-primary hover:bg-primary/90"
-                  >
-                    {sendingBroadcast ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4 mr-2" />
-                    )}
-                    {sendingBroadcast ? 'Enviando...' : 'Enviar para Todos'}
-                  </Button>
-                  {statusSummary.label !== 'Conectado' && (
-                    <span className="text-sm text-muted-foreground">
-                      WhatsApp precisa estar conectado para enviar mensagens.
-                    </span>
+                <Button
+                  onClick={onSendBroadcast}
+                  disabled={
+                    sendingBroadcast || 
+                    (!broadcastImageFile && (!broadcastMessage.trim() || broadcastMessage.trim().length < 5)) || 
+                    !canUseEvolution || 
+                    statusSummary.label !== 'Conectado'
+                  }
+                  className="w-full bg-primary hover:bg-primary/90"
+                >
+                  {sendingBroadcast ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : broadcastImageFile ? (
+                    <Image className="h-4 w-4 mr-2" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
                   )}
-                </div>
-
-                <div className="text-xs text-muted-foreground border-l-2 border-yellow-500 pl-3 bg-yellow-50 dark:bg-yellow-950/20 py-2 rounded-r">
-                  ⚠️ <strong>Atenção:</strong> Esta ação enviará mensagens para TODOS os clientes cadastrados.
-                  Use com responsabilidade para não caracterizar spam.
-                </div>
+                  {sendingBroadcast 
+                    ? 'Enviando...' 
+                    : broadcastImageFile 
+                      ? 'Enviar Imagem para Todos' 
+                      : 'Enviar para Todos'}
+                </Button>
               </CardContent>
             </Card>
           </>
