@@ -171,6 +171,8 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform=managed \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
+  --vpc-connector=evolution-connector \
+  --vpc-egress=private-ranges-only \
   $EXTRA_FLAGS \
   --quiet
 
