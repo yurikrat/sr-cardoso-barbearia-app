@@ -1780,8 +1780,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
       const { buffer, contentType, etag } = await downloadFromGCS(env, 'branding/logo.png');
       res.setHeader('Content-Type', contentType ?? 'image/png');
-      // Ensure updates show immediately after upload.
-      res.setHeader('Cache-Control', 'no-store');
+      // Cache 1h, allow stale while revalidating for 24h. Frontend uses ?v=timestamp for cache busting on updates.
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
       if (etag) res.setHeader('ETag', etag);
       return res.status(200).send(buffer);
     } catch (e: any) {
