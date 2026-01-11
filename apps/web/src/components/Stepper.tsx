@@ -15,13 +15,22 @@ export function Stepper({ currentStep, totalSteps, onStepClick }: StepperProps) 
         const isCompleted = step < currentStep;
         const isClickable = Boolean(onStepClick) && isCompleted;
 
+        const handleActivate = (event: React.SyntheticEvent) => {
+          if (!isClickable) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onStepClick?.(step);
+        };
+
         return (
           <div key={step} className="flex items-center flex-1 min-w-0">
             <button
               type="button"
-              onClick={isClickable ? () => onStepClick?.(step) : undefined}
-              disabled={!isClickable}
+              onClick={handleActivate}
+              onPointerUp={handleActivate}
+              onTouchEnd={handleActivate}
               aria-label={isClickable ? `Voltar para o passo ${step}` : `Passo ${step}`}
+              aria-disabled={!isClickable}
               className={cn(
                 'shrink-0 p-2 -m-2 touch-manipulation rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 isClickable ? 'cursor-pointer' : 'cursor-default'
