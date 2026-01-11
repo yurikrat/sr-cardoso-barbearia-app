@@ -478,7 +478,13 @@ export default function BookingPage() {
             />
           </Link>
           <h1 className="text-2xl font-serif font-bold">Agendar</h1>
-          <Stepper currentStep={step} totalSteps={6} />
+          <Stepper
+            currentStep={step}
+            totalSteps={6}
+            onStepClick={(targetStep) => {
+              if (targetStep < step) setStep(targetStep);
+            }}
+          />
         </div>
 
         {/* Step 1: Serviço */}
@@ -766,9 +772,19 @@ export default function BookingPage() {
               )}
             </div>
             <StickyFooter>
-              <Button type="submit" className="w-full" disabled={lookupLoading}>
-                Continuar
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep(4)}
+                >
+                  Voltar
+                </Button>
+                <Button type="submit" className="flex-1" disabled={lookupLoading}>
+                  Continuar
+                </Button>
+              </div>
             </StickyFooter>
           </form>
         )}
@@ -804,20 +820,31 @@ export default function BookingPage() {
               </p>
             </div>
             <StickyFooter>
-              <Button
-                onClick={handleSubmit}
-                className="w-full"
-                disabled={createBookingMutation.isPending}
-              >
-                {createBookingMutation.isPending ? (
-                  <>
-                    <LoadingSpinner size="sm" className="mr-2" />
-                    Confirmando...
-                  </>
-                ) : (
-                  'Confirmar agendamento'
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep(5)}
+                  disabled={createBookingMutation.isPending}
+                >
+                  Voltar
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  className="flex-1"
+                  disabled={createBookingMutation.isPending}
+                >
+                  {createBookingMutation.isPending ? (
+                    <>
+                      <LoadingSpinner size="sm" className="mr-2" />
+                      Confirmando...
+                    </>
+                  ) : (
+                    'Confirmar agendamento'
+                  )}
+                </Button>
+              </div>
             </StickyFooter>
           </div>
         )}
