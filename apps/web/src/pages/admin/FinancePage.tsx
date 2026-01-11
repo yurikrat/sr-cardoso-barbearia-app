@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 function formatMoneyBRLFromCents(cents: number): string {
   const value = (cents || 0) / 100;
@@ -252,6 +253,7 @@ export default function FinancePage() {
 
   return (
     <AdminLayout>
+      <TooltipProvider>
       <div className="space-y-8">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div>
@@ -337,19 +339,22 @@ export default function FinancePage() {
                     <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                       <span>P: {formatMoneyBRLFromCents(summary.estimatedBarberCents ?? 0)}</span>
                       <span>B: {formatMoneyBRLFromCents(summary.estimatedShopCents ?? 0)}</span>
-                      <span
-                        className="inline-flex items-center cursor-help"
-                        title={
-                          'Divisão (P/B)\n' +
-                          'P = Profissional (comissão)\n' +
-                          'B = Barbearia\n' +
-                          'Previsto: soma de Agendado + Confirmado\n' +
-                          'Dono (Sr. Cardoso): P=100%'
-                        }
-                        aria-label="Entenda P e B"
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" className="inline-flex items-center" aria-label="Entenda P e B">
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <div className="space-y-1">
+                            <div className="font-medium">Divisão (P/B)</div>
+                            <div>P = Profissional (comissão)</div>
+                            <div>B = Barbearia</div>
+                            <div className="text-muted-foreground">Previsto: soma de Agendado + Confirmado.</div>
+                            <div className="text-muted-foreground">Dono (Sr. Cardoso): P=100%.</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   )}
                 </CardContent>
@@ -366,19 +371,22 @@ export default function FinancePage() {
                     <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                       <span>P: {formatMoneyBRLFromCents(summary.realizedBarberCents ?? 0)}</span>
                       <span>B: {formatMoneyBRLFromCents(summary.realizedShopCents ?? 0)}</span>
-                      <span
-                        className="inline-flex items-center cursor-help"
-                        title={
-                          'Divisão (P/B)\n' +
-                          'P = Profissional (comissão)\n' +
-                          'B = Barbearia\n' +
-                          'Realizado: soma de Concluído\n' +
-                          'Dono (Sr. Cardoso): P=100%'
-                        }
-                        aria-label="Entenda P e B"
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" className="inline-flex items-center" aria-label="Entenda P e B">
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <div className="space-y-1">
+                            <div className="font-medium">Divisão (P/B)</div>
+                            <div>P = Profissional (comissão)</div>
+                            <div>B = Barbearia</div>
+                            <div className="text-muted-foreground">Realizado: soma de Concluído.</div>
+                            <div className="text-muted-foreground">Dono (Sr. Cardoso): P=100%.</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   )}
                 </CardContent>
@@ -393,17 +401,20 @@ export default function FinancePage() {
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.projectionRevenueCents ?? summary.revenueCents)}</div>
                   <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                     <span>Baseado no histórico</span>
-                    <span
-                      className="inline-flex items-center cursor-help"
-                      title={
-                        'Como calculamos\n' +
-                        'Realizado até hoje + (agendamentos futuros × taxa de comparecimento)\n' +
-                        'Taxa: últimos 90 dias (Concluído/Falta/Cancelado)'
-                      }
-                      aria-label="Como a projeção é calculada"
-                    >
-                      <Info className="h-3.5 w-3.5" />
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" className="inline-flex items-center" aria-label="Como a projeção é calculada">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <div className="space-y-1">
+                          <div className="font-medium">Como calculamos</div>
+                          <div>Realizado até hoje + (agendamentos futuros × taxa de comparecimento).</div>
+                          <div className="text-muted-foreground">Taxa: últimos 90 dias (Concluído/Falta/Cancelado).</div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </CardContent>
               </Card>
@@ -761,6 +772,7 @@ export default function FinancePage() {
           </div>
         )}
       </div>
+      </TooltipProvider>
     </AdminLayout>
   );
 }
