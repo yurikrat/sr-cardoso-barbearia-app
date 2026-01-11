@@ -26,6 +26,14 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { useNavigate } from 'react-router-dom';
 
 type TimestampLike =
@@ -73,6 +81,22 @@ interface Customer {
   };
 }
 
+type PeriodKey = 'day' | '7d' | '30d' | 'year';
+
+const PERIOD_TO_DAYS: Record<PeriodKey, number> = {
+  day: 1,
+  '7d': 7,
+  '30d': 30,
+  year: 365,
+};
+
+const PERIOD_LABEL: Record<PeriodKey, string> = {
+  day: 'Dia',
+  '7d': '7d',
+  '30d': '30d',
+  year: 'Anual',
+};
+
 export default function SmartListsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -80,6 +104,9 @@ export default function SmartListsPage() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('inactive');
+  const [period, setPeriod] = useState<PeriodKey>('7d');
+  const periodDays = PERIOD_TO_DAYS[period];
+  const periodLabel = PERIOD_LABEL[period];
 
   useEffect(() => {
     loadCustomers();
@@ -103,15 +130,12 @@ export default function SmartListsPage() {
   };
 
   const lists = useMemo(() => {
-    const thirtyDaysAgo = DateTime.now()
-      .setZone('America/Sao_Paulo')
-      .minus({ days: 30 })
-      .toJSDate();
-    
-    const today = DateTime.now().setZone('America/Sao_Paulo');
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const inactiveThresholdDate = now.minus({ days: periodDays }).toJSDate();
+
     const birthdayMmddSet = new Set<string>();
-    for (let i = 0; i < 7; i++) {
-      birthdayMmddSet.add(today.plus({ days: i }).toFormat('MMdd'));
+    for (let i = 0; i < periodDays; i++) {
+      birthdayMmddSet.add(now.plus({ days: i }).toFormat('MMdd'));
     }
 
     const inactive: Customer[] = [];
@@ -121,7 +145,7 @@ export default function SmartListsPage() {
     customers.forEach((c) => {
       // Inativos
       const lastDate = toDateSafe(c.stats.lastCompletedAt) || toDateSafe(c.stats.lastBookingAt);
-      if (lastDate && lastDate < thirtyDaysAgo && c.consent?.marketingOptIn) {
+      if (lastDate && lastDate < inactiveThresholdDate && c.consent?.marketingOptIn) {
         inactive.push(c);
       }
 
@@ -139,7 +163,7 @@ export default function SmartListsPage() {
     noShows.sort((a, b) => b.stats.noShowCount - a.stats.noShowCount);
 
     return { inactive, birthdays, noShows };
-  }, [customers]);
+  }, [customers, periodDays]);
 
   const filteredList = useMemo(() => {
     const currentList = 
@@ -176,14 +200,34 @@ export default function SmartListsPage() {
             <h2 className="text-3xl font-serif font-bold text-foreground">Listas Inteligentes</h2>
             <p className="text-muted-foreground mt-1">Ações rápidas para fidelizar e recuperar clientes.</p>
           </div>
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar na lista..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-card/50 border-primary/10 focus:border-primary/30"
-            />
+          <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3 md:items-end">
+            <div className="w-full sm:w-40 space-y-2">
+              <Label htmlFor="smartlists-period">Período</Label>
+              <Select value={period} onValueChange={(v) => setPeriod(v as PeriodKey)}>
+                <SelectTrigger
+                  id="smartlists-period"
+                  className="bg-card/50 border-primary/10 focus:border-primary/30"
+                >
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Dia</SelectItem>
+                  <SelectItem value="7d">7d</SelectItem>
+                  <SelectItem value="30d">30d</SelectItem>
+                  <SelectItem value="year">Anual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar na lista..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-card/50 border-primary/10 focus:border-primary/30"
+              />
+            </div>
           </div>
         </div>
 
@@ -195,7 +239,7 @@ export default function SmartListsPage() {
                 <UserMinus className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Inativos (30d+)</p>
+                <p className="text-sm text-muted-foreground">Inativos ({periodLabel}+)</p>
                 <p className="text-2xl font-bold">{lists.inactive.length}</p>
               </div>
             </CardContent>
@@ -206,7 +250,7 @@ export default function SmartListsPage() {
                 <Cake className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Aniversariantes (7d)</p>
+                <p className="text-sm text-muted-foreground">Aniversariantes ({periodLabel})</p>
                 <p className="text-2xl font-bold">{lists.birthdays.length}</p>
               </div>
             </CardContent>

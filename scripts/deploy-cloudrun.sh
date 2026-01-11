@@ -26,6 +26,8 @@ REGION="us-central1"
 SERVICE_NAME="sr-cardoso-barbearia"
 AR_REPO="sr-cardoso"
 IMAGE_TAG=""
+USE_REMOTE_CACHE=true
+BUILDER_NAME="sr-cardoso-builder"
 ADMIN_PASSWORD=""
 ADMIN_JWT_SECRET=""
 WEB_ORIGIN=""
@@ -40,6 +42,8 @@ while [[ $# -gt 0 ]]; do
     --service) SERVICE_NAME="${2:-}"; shift 2 ;;
     --repo) AR_REPO="${2:-}"; shift 2 ;;
     --tag) IMAGE_TAG="${2:-}"; shift 2 ;;
+    --no-cache) USE_REMOTE_CACHE=false; shift ;;
+    --builder) BUILDER_NAME="${2:-}"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
     --admin-jwt-secret) ADMIN_JWT_SECRET="${2:-}"; shift 2 ;;
     --web-origin) WEB_ORIGIN="${2:-}"; shift 2 ;;
@@ -67,9 +71,16 @@ echo "Region : $REGION"
 echo "Service: $SERVICE_NAME"
 echo "Repo   : $AR_REPO"
 echo "Tag    : $IMAGE_TAG"
+echo "Cache  : $([[ "$USE_REMOTE_CACHE" = true ]] && echo 'remote (registry)' || echo 'disabled')"
+echo "Builder: $BUILDER_NAME"
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud não encontrado"
 command -v docker >/dev/null 2>&1 || die "docker não encontrado"
+
+# Docker daemon precisa estar rodando (Docker Desktop, Colima, etc.)
+if ! docker info >/dev/null 2>&1; then
+  die "Docker daemon não está acessível. Inicie um daemon Docker (ex: Colima ou Docker Desktop) e tente novamente."
+fi
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
@@ -96,6 +107,7 @@ echo "== Configurando docker auth para Artifact Registry =="
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet >/dev/null
 
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:${IMAGE_TAG}"
+CACHE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:buildcache"
 
 echo "== Build do monorepo (web + server) =="
 # Otimização: O build é feito dentro do Docker (multi-stage).
@@ -111,18 +123,24 @@ fi
 # Cloud Run exige linux/amd64. Em Macs ARM, o build padrão gera arm64 e falha no deploy.
 echo "== Docker buildx (linux/amd64) + push =="
 # Garante que existe um builder ativo
-if ! docker buildx inspect sr-cardoso-builder >/dev/null 2>&1; then
-  docker buildx create --name sr-cardoso-builder --use >/dev/null
+if ! docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
+  docker buildx create --name "$BUILDER_NAME" --use >/dev/null
 else
-  docker buildx use sr-cardoso-builder >/dev/null
+  docker buildx use "$BUILDER_NAME" >/dev/null
 fi
 
 # --provenance=false evita gerar manifest list/attestations que podem confundir alguns runtimes
+BUILD_CACHE_FLAGS=""
+if [[ "$USE_REMOTE_CACHE" = true ]]; then
+  BUILD_CACHE_FLAGS="--cache-from=type=registry,ref=${CACHE_REF} --cache-to=type=registry,ref=${CACHE_REF},mode=max"
+fi
+
 docker buildx build \
   --platform linux/amd64 \
   --provenance=false \
   -f apps/server/Dockerfile \
   -t "$IMAGE_URI" \
+  $BUILD_CACHE_FLAGS \
   --push \
   .
 

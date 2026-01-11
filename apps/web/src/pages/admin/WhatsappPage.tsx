@@ -556,7 +556,7 @@ export default function WhatsappPage() {
                     </div>
                     <Switch
                       checked={notificationSettings.confirmationEnabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setNotificationSettings({ ...notificationSettings, confirmationEnabled: checked })
                       }
                     />
@@ -596,7 +596,7 @@ export default function WhatsappPage() {
                     </div>
                     <Switch
                       checked={notificationSettings.reminderEnabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setNotificationSettings({ ...notificationSettings, reminderEnabled: checked })
                       }
                     />
@@ -688,7 +688,7 @@ export default function WhatsappPage() {
                     </div>
                     <Switch
                       checked={notificationSettings.birthdayEnabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setNotificationSettings({ ...notificationSettings, birthdayEnabled: checked })
                       }
                     />

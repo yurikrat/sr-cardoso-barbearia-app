@@ -16,6 +16,7 @@ import CancelBookingPage from './pages/CancelBookingPage';
 import LoginPage from './pages/admin/LoginPage';
 import AgendaDayPage from './pages/admin/AgendaDayPage';
 import AgendaWeekPage from './pages/admin/AgendaWeekPage';
+import CustomersPage from './pages/admin/CustomersPage';
 import CustomerDetailPage from './pages/admin/CustomerDetailPage';
 import SmartListsPage from './pages/admin/SmartListsPage';
 import CalendarIntegrationPage from './pages/admin/CalendarIntegrationPage';
@@ -113,7 +114,7 @@ function App() {
               path="/admin/clientes"
               element={
                 <ProtectedRoute>
-                  <SmartListsPage />
+                  <CustomersPage />
                 </ProtectedRoute>
               }
             />

@@ -405,14 +405,23 @@ Mensagens que falham são enfileiradas para reenvio automático (máx. 3 tentati
 Seção "Notificações Automáticas" em `/admin/whatsapp` permite configurar tudo pelo painel.
 
 ### Cron (Cloud Scheduler) — criado
-Foram criados 2 jobs no Cloud Scheduler (região `us-central1`) chamando o Cloud Run:
+Foram criados 3 jobs no Cloud Scheduler (região `us-central1`) chamando o Cloud Run:
 
 1) `whatsapp-send-reminders`
-- `POST https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/send-reminders`
+- `POST https://sr-cardoso-barbearia-200966434576.us-central1.run.app/api/cron/send-reminders`
 - Schedule: `*/15 * * * *`
+- Timezone: `America/Sao_Paulo`
 
 2) `whatsapp-process-retry`
-- `POST https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/process-queue`
+- `POST https://sr-cardoso-barbearia-200966434576.us-central1.run.app/api/cron/process-queue`
 - Schedule: `*/5 * * * *`
+- Timezone: `America/Sao_Paulo`
+
+3) `whatsapp-send-remarketing`
+- `POST https://sr-cardoso-barbearia-200966434576.us-central1.run.app/api/cron/send-remarketing`
+- Schedule: `0 10 * * *` (diário)
+- Timezone: `America/Sao_Paulo`
 
 Autenticação (ambos): header `x-cron-secret: <CRON_SECRET>` (por compat, o backend também aceita `x-cron-key`).
+
+Obs.: O Cloud Run também expõe uma URL "hash" (status.url); para cron jobs, padronizamos na URL do serviço.
