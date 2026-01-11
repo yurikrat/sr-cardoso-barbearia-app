@@ -55,7 +55,8 @@ export function getDefaultFinanceConfig(): FinanceConfig {
   return {
     commissions: {
       defaultBarberPct: 0.45,
-      ownerBarberPct: 0,
+      // Dono (Sr. Cardoso) não divide com a barbearia: 100% do valor é do profissional.
+      ownerBarberPct: 1,
     },
     services: [
       {
@@ -103,7 +104,8 @@ export function sanitizeFinanceConfig(input: unknown): FinanceConfig {
 
   const commissionsObj = obj.commissions && typeof obj.commissions === 'object' ? obj.commissions : {};
   const defaultBarberPct = clampPct(commissionsObj.defaultBarberPct, base.commissions.defaultBarberPct);
-  const ownerBarberPct = clampPct(commissionsObj.ownerBarberPct, base.commissions.ownerBarberPct);
+  // Mantemos a chave por compat, mas o dono sempre fica com 100%.
+  const ownerBarberPct = 1;
 
   const servicesRaw = Array.isArray(obj.services) ? obj.services : base.services;
   const services: ServiceCatalogItem[] = [];
@@ -177,7 +179,8 @@ export function getServicePriceCentsFromConfig(config: FinanceConfig, serviceId:
 }
 
 export function getBarberCommissionPct(config: FinanceConfig, barberId: string): number {
-  return barberId === OWNER_BARBER_ID ? config.commissions.ownerBarberPct : config.commissions.defaultBarberPct;
+  // Dono (Sr. Cardoso) sempre fica com 100%.
+  return barberId === OWNER_BARBER_ID ? 1 : config.commissions.defaultBarberPct;
 }
 
 export type PopularityResult = {

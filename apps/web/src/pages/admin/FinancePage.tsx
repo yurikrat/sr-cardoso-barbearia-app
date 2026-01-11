@@ -10,7 +10,8 @@ import {
   ArrowUpRight,
   Users,
   Download,
-  Trash2
+  Trash2,
+  Info
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -333,9 +334,22 @@ export default function FinancePage() {
                 <CardContent>
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.estimatedRevenueCents ?? 0)}</div>
                   {(summary.estimatedBarberCents != null || summary.estimatedShopCents != null) && (
-                    <div className="mt-1 text-xs text-muted-foreground flex gap-2">
-                      <span title="Profissional">P: {formatMoneyBRLFromCents(summary.estimatedBarberCents ?? 0)}</span>
-                      <span title="Barbearia">B: {formatMoneyBRLFromCents(summary.estimatedShopCents ?? 0)}</span>
+                    <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
+                      <span>P: {formatMoneyBRLFromCents(summary.estimatedBarberCents ?? 0)}</span>
+                      <span>B: {formatMoneyBRLFromCents(summary.estimatedShopCents ?? 0)}</span>
+                      <span
+                        className="inline-flex items-center cursor-help"
+                        title={
+                          'Divisão (P/B)\n' +
+                          'P = Profissional (comissão)\n' +
+                          'B = Barbearia\n' +
+                          'Previsto: soma de Agendado + Confirmado\n' +
+                          'Dono (Sr. Cardoso): P=100%'
+                        }
+                        aria-label="Entenda P e B"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
                     </div>
                   )}
                 </CardContent>
@@ -349,9 +363,22 @@ export default function FinancePage() {
                 <CardContent>
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.realizedRevenueCents ?? 0)}</div>
                   {(summary.realizedBarberCents != null || summary.realizedShopCents != null) && (
-                    <div className="mt-1 text-xs text-muted-foreground flex gap-2">
-                      <span title="Profissional">P: {formatMoneyBRLFromCents(summary.realizedBarberCents ?? 0)}</span>
-                      <span title="Barbearia">B: {formatMoneyBRLFromCents(summary.realizedShopCents ?? 0)}</span>
+                    <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
+                      <span>P: {formatMoneyBRLFromCents(summary.realizedBarberCents ?? 0)}</span>
+                      <span>B: {formatMoneyBRLFromCents(summary.realizedShopCents ?? 0)}</span>
+                      <span
+                        className="inline-flex items-center cursor-help"
+                        title={
+                          'Divisão (P/B)\n' +
+                          'P = Profissional (comissão)\n' +
+                          'B = Barbearia\n' +
+                          'Realizado: soma de Concluído\n' +
+                          'Dono (Sr. Cardoso): P=100%'
+                        }
+                        aria-label="Entenda P e B"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
                     </div>
                   )}
                 </CardContent>
@@ -364,9 +391,20 @@ export default function FinancePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.projectionRevenueCents ?? summary.revenueCents)}</div>
-                  <p className="text-xs text-muted-foreground">
-                    Baseado no histórico
-                  </p>
+                  <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
+                    <span>Baseado no histórico</span>
+                    <span
+                      className="inline-flex items-center cursor-help"
+                      title={
+                        'Como calculamos\n' +
+                        'Realizado até hoje + (agendamentos futuros × taxa de comparecimento)\n' +
+                        'Taxa: últimos 90 dias (Concluído/Falta/Cancelado)'
+                      }
+                      aria-label="Como a projeção é calculada"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </span>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -493,7 +531,7 @@ export default function FinancePage() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Comissão da Barbearia (Sr. Cardoso) (%)</label>
+                          <label className="text-sm font-medium">Comissão da Barbearia (%)</label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"

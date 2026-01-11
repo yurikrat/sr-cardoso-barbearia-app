@@ -335,7 +335,14 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         if (barberId && barberId !== OWNER_BARBER_ID) {
           try {
             const barberRef = db.collection('barbers').doc(barberId);
-            await barberRef.set({ active: false }, { merge: true });
+            await barberRef.set(
+              {
+                active: false,
+                archivedAt: FieldValue.serverTimestamp(),
+                archivedBy: admin.username,
+              },
+              { merge: true }
+            );
           } catch (e) {
             console.warn('[server] Failed to deactivate barber on user delete (continuing):', e);
           }
@@ -618,16 +625,20 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         const s = await qq.get();
         let completed = 0;
         let noShow = 0;
+        let cancelled = 0;
         s.forEach((d) => {
           const data = d.data() as any;
           const status = typeof data.status === 'string' ? data.status : 'unknown';
           if (status === 'completed') completed += 1;
           if (status === 'no_show') noShow += 1;
+          if (status === 'cancelled') cancelled += 1;
         });
-        const denom = completed + noShow;
-        if (denom <= 0) return 0.9;
+
+        const denom = completed + noShow + cancelled;
+        // Pouca amostragem: usa um baseline conservador.
+        if (denom < 10) return 0.9;
         const rate = completed / denom;
-        return Math.min(0.98, Math.max(0.5, rate));
+        return Math.min(0.98, Math.max(0.3, rate));
       }
 
       let projectionRevenueCents: number | null = null;
