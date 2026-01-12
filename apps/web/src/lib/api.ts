@@ -332,10 +332,30 @@ export const api = {
         body: JSON.stringify({ schedule }),
       });
     },
-    async listBarbers() {
-      return apiFetch<{ items: Array<{ id: string; name: string; active: boolean }> }>(
-        `/api/admin/barbers`,
+    async listBarbers(opts?: { includeInactive?: boolean }) {
+      const params = new URLSearchParams();
+      if (opts?.includeInactive) params.set('includeInactive', '1');
+      const qs = params.toString();
+      return apiFetch<{ items: Array<{ id: string; name: string; active: boolean; archivedAt?: string | null; archivedBy?: string | null }> }>(
+        `/api/admin/barbers${qs ? `?${qs}` : ''}`,
         { admin: true }
+      );
+    },
+
+    async archiveBarber(barberId: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/barbers/${encodeURIComponent(barberId)}/archive`, {
+        method: 'POST',
+        admin: true,
+      });
+    },
+
+    async createBarberLogin(barberId: string) {
+      return apiFetch<{ success: boolean; username: string; password: string }>(
+        `/api/admin/barbers/${encodeURIComponent(barberId)}/create-login`,
+        {
+          method: 'POST',
+          admin: true,
+        }
       );
     },
     async financeSummary(payload: { startDateKey: string; endDateKey: string; barberId?: string | null }) {

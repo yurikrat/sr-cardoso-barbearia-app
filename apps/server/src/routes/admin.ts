@@ -415,6 +415,69 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  app.post('/api/admin/barbers/:barberId/create-login', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId = normalizeBarberId(req.params.barberId || '');
+      if (!barberId) return res.status(400).json({ error: 'barberId inválido' });
+      if (barberId === OWNER_BARBER_ID) return res.status(400).json({ error: 'Não é permitido gerar login para o barbeiro dono' });
+
+      const barberRef = db.collection('barbers').doc(barberId);
+      const barberSnap = await barberRef.get();
+      if (!barberSnap.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
+
+      const userRef = db.collection('adminUsers').doc(barberId);
+      const userSnap = await userRef.get();
+      if (userSnap.exists) return res.status(409).json({ error: 'Já existe um login para esse profissional' });
+
+      const password = generatePassword();
+      const now = FieldValue.serverTimestamp();
+      const doc: AdminUserDoc = {
+        username: barberId,
+        usernameLower: barberId,
+        role: 'barber',
+        barberId,
+        active: true,
+        passwordHash: hashPassword(password),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await userRef.set(doc);
+
+      return res.json({ success: true, username: barberId, password, createdBy: admin.username });
+    } catch (e) {
+      console.error('Error creating barber login:', e);
+      return res.status(500).json({ error: 'Erro ao gerar login do profissional' });
+    }
+  });
+
+  app.post('/api/admin/barbers/:barberId/archive', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId = normalizeBarberId(req.params.barberId || '');
+      if (!barberId) return res.status(400).json({ error: 'barberId inválido' });
+      if (barberId === OWNER_BARBER_ID) return res.status(400).json({ error: 'Não é permitido arquivar o barbeiro dono' });
+
+      const barberRef = db.collection('barbers').doc(barberId);
+      const barberSnap = await barberRef.get();
+      if (!barberSnap.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
+
+      await barberRef.set(
+        {
+          active: false,
+          archivedAt: FieldValue.serverTimestamp(),
+          archivedBy: admin.username,
+        },
+        { merge: true }
+      );
+
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Error archiving barber:', e);
+      return res.status(500).json({ error: 'Erro ao arquivar barbeiro' });
+    }
+  });
+
   app.post('/api/admin/users/:username/active', requireAdminMw, requireMaster(), async (req, res) => {
     try {
       const username = normalizeUsername(req.params.username || '');
@@ -435,23 +498,30 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
   app.get('/api/admin/barbers', requireAdminMw, async (req, res) => {
     try {
       const admin = getAdminFromReq(req);
+      const includeInactiveRequested = String((req.query as any)?.includeInactive ?? '').toLowerCase();
+      const includeInactive = admin?.role === 'master' && (includeInactiveRequested === '1' || includeInactiveRequested === 'true');
       const snapshot = await db.collection('barbers').get();
       const items = snapshot.docs
         .map((doc) => {
-          const data = doc.data() as { name?: unknown; active?: unknown };
+          const data = doc.data() as { name?: unknown; active?: unknown; archivedAt?: any; archivedBy?: unknown };
           const name = typeof data?.name === 'string' && data.name.trim() ? data.name.trim() : doc.id;
           const active = typeof data?.active === 'boolean' ? data.active : true;
-          return { id: doc.id, name, active };
+          const archivedBy = typeof data?.archivedBy === 'string' && data.archivedBy.trim() ? data.archivedBy.trim() : null;
+          const archivedAt = data?.archivedAt && typeof data.archivedAt?.toDate === 'function' ? data.archivedAt.toDate().toISOString() : null;
+          return { id: doc.id, name, active, archivedAt, archivedBy };
         })
-        .filter((b) => b.active);
 
-      const scopedItems = admin?.role === 'barber' ? items.filter((b) => b.id === admin.barberId) : items;
+      const filteredItems = includeInactive ? items : items.filter((b) => b.active);
+
+      const scopedItems = admin?.role === 'barber' ? filteredItems.filter((b) => b.id === admin.barberId) : filteredItems;
 
       scopedItems.sort((a, b) => {
         const aIsOwner = a.id === OWNER_BARBER_ID;
         const bIsOwner = b.id === OWNER_BARBER_ID;
         if (aIsOwner && !bIsOwner) return -1;
         if (!aIsOwner && bIsOwner) return 1;
+        if (a.active && !b.active) return -1;
+        if (!a.active && b.active) return 1;
         return a.name.localeCompare(b.name, 'pt-BR');
       });
       return res.json({ items: scopedItems });

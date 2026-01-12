@@ -17,6 +17,14 @@ type AdminUser = {
   lastLoginAt: string | null;
 };
 
+type Barber = {
+  id: string;
+  name: string;
+  active: boolean;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+};
+
 export default function UsersPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -25,7 +33,7 @@ export default function UsersPage() {
   const [newProfessionalName, setNewProfessionalName] = useState('');
   const [generatedCredentials, setGeneratedCredentials] = useState<null | { username: string; password: string }>(null);
 
-  const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
 
   const barberNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -33,12 +41,31 @@ export default function UsersPage() {
     return m;
   }, [barbers]);
 
+  const barberUserByBarberId = useMemo(() => {
+    const m = new Map<string, AdminUser>();
+    for (const u of users) {
+      if (u.role !== 'barber') continue;
+      if (u.barberId) m.set(u.barberId, u);
+      else m.set(u.username, u);
+    }
+    return m;
+  }, [users]);
+
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [usersRes, barbersRes] = await Promise.all([api.admin.listAdminUsers(), api.admin.listBarbers()]);
+      const [usersRes, barbersRes] = await Promise.all([
+        api.admin.listAdminUsers(),
+        api.admin.listBarbers({ includeInactive: true }),
+      ]);
       setUsers((usersRes.items ?? []) as AdminUser[]);
-      setBarbers((barbersRes.items ?? []).map((b) => ({ id: b.id, name: b.name })));
+      setBarbers((barbersRes.items ?? []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        active: b.active,
+        archivedAt: (b as any).archivedAt ?? null,
+        archivedBy: (b as any).archivedBy ?? null,
+      })));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({
@@ -89,6 +116,48 @@ export default function UsersPage() {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({ title: 'Erro', description: message || 'Erro ao cadastrar profissional.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateLoginForProfessional = async (barberId: string) => {
+    setGeneratedCredentials(null);
+    setLoading(true);
+    try {
+      const ok = confirm(`Gerar login/senha para o profissional "${barberNameById.get(barberId) || barberId}"?`);
+      if (!ok) return;
+
+      const result = await api.admin.createBarberLogin(barberId);
+      setGeneratedCredentials({ username: result.username, password: result.password });
+      try {
+        await navigator.clipboard.writeText(`${result.username}:${result.password}`);
+      } catch {
+        // ignore
+      }
+      toast({ title: 'Login criado', description: 'A senha foi exibida e copiada (se permitido).' });
+      await loadAll();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
+      toast({ title: 'Erro', description: message || 'Erro ao gerar login.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleArchiveProfessional = async (barberId: string) => {
+    setLoading(true);
+    try {
+      const ok = confirm(
+        `Arquivar o profissional "${barberNameById.get(barberId) || barberId}"?\n\nEle não aparecerá mais no agendamento (mantém histórico).`
+      );
+      if (!ok) return;
+      await api.admin.archiveBarber(barberId);
+      toast({ title: 'Sucesso', description: 'Profissional arquivado.' });
+      await loadAll();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
+      toast({ title: 'Erro', description: message || 'Erro ao arquivar profissional.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -223,6 +292,59 @@ export default function UsersPage() {
                   </div>
                 </div>
               ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-primary/10 bg-card/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="font-serif">Profissionais (agenda)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <LoadingSpinner />
+              </div>
+            ) : barbers.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">Nenhum profissional.</div>
+            ) : (
+              barbers.map((b) => {
+                const linkedUser = barberUserByBarberId.get(b.id);
+                const statusLabel = b.active ? 'Ativo' : 'Arquivado';
+                return (
+                  <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border p-3">
+                    <div>
+                      <div className="font-medium">{b.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        ID: {b.id}
+                        {' · '}Status: {statusLabel}
+                        {linkedUser ? ` · Login: ${linkedUser.username}` : ' · Sem login'}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {linkedUser ? (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => handleResetPassword(linkedUser.username)}>
+                            Resetar senha
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(linkedUser.username)}>
+                            Excluir login
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => handleGenerateLoginForProfessional(b.id)}>
+                          Gerar login
+                        </Button>
+                      )}
+                      {b.active ? (
+                        <Button variant="destructive" size="sm" onClick={() => handleArchiveProfessional(b.id)}>
+                          Arquivar
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </CardContent>
         </Card>
