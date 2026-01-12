@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -93,6 +93,9 @@ export default function AgendaPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const nowLineRef = useRef<HTMLDivElement | null>(null);
+  const didAutoScrollRef = useRef<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
@@ -190,6 +193,39 @@ export default function AgendaPage() {
     const now = DateTime.now().setZone('America/Sao_Paulo').startOf('day');
     return dt.equals(now);
   }, [selectedDate]);
+
+  // Auto-scroll (one-shot) to the current-time (red) line when opening the day view for today.
+  useEffect(() => {
+    if (viewMode !== 'day') return;
+    if (!isToday) return;
+    if (!selectedBarber) return;
+
+    const key = `${dateKey}|${selectedBarber}|${viewMode}`;
+    if (didAutoScrollRef.current === key) return;
+
+    let cancelled = false;
+
+    const tryScroll = (attempt: number) => {
+      if (cancelled) return;
+      const container = scrollContainerRef.current;
+      const target = nowLineRef.current;
+      if (container && target) {
+        const top = target.offsetTop;
+        const desiredTop = Math.max(0, top - Math.floor(container.clientHeight * 0.35));
+        container.scrollTo({ top: desiredTop, behavior: 'smooth' });
+        didAutoScrollRef.current = key;
+        return;
+      }
+      if (attempt >= 20) return;
+      requestAnimationFrame(() => tryScroll(attempt + 1));
+    };
+
+    requestAnimationFrame(() => tryScroll(0));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dateKey, isToday, selectedBarber, viewMode]);
 
   // Navigation handlers
   const handleNavigate = (direction: 'prev' | 'next' | 'today') => {
@@ -440,7 +476,11 @@ export default function AgendaPage() {
             ))}
             
             {showNowLine && (
-              <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: nowTopPx }}>
+              <div
+                ref={nowLineRef}
+                className="absolute left-0 right-0 z-20 pointer-events-none"
+                style={{ top: nowTopPx }}
+              >
                 <div className="relative">
                   <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-red-500 shadow-sm" />
                   <div className="h-0.5 bg-red-500 shadow-sm" />
@@ -690,7 +730,7 @@ export default function AgendaPage() {
               </div>
             )}
             
-            <div className="h-full overflow-y-auto">
+            <div ref={scrollContainerRef} className="h-full overflow-y-auto">
               {viewMode === 'day' && renderDayView()}
               {viewMode === 'week' && renderWeekView()}
               {viewMode === 'month' && renderMonthView()}
