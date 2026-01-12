@@ -27,6 +27,7 @@ SERVICE_NAME="sr-cardoso-barbearia"
 AR_REPO="sr-cardoso"
 IMAGE_TAG=""
 USE_REMOTE_CACHE=true
+USE_CACHE_TO=true
 BUILDER_NAME="sr-cardoso-builder"
 ADMIN_PASSWORD=""
 ADMIN_JWT_SECRET=""
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --repo) AR_REPO="${2:-}"; shift 2 ;;
     --tag) IMAGE_TAG="${2:-}"; shift 2 ;;
     --no-cache) USE_REMOTE_CACHE=false; shift ;;
+    --cache-import-only) USE_CACHE_TO=false; shift ;;
     --builder) BUILDER_NAME="${2:-}"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
     --admin-jwt-secret) ADMIN_JWT_SECRET="${2:-}"; shift 2 ;;
@@ -71,7 +73,11 @@ echo "Region : $REGION"
 echo "Service: $SERVICE_NAME"
 echo "Repo   : $AR_REPO"
 echo "Tag    : $IMAGE_TAG"
-echo "Cache  : $([[ "$USE_REMOTE_CACHE" = true ]] && echo 'remote (registry)' || echo 'disabled')"
+if [[ "$USE_REMOTE_CACHE" = true ]]; then
+  echo "Cache  : remote (registry) $([[ "$USE_CACHE_TO" = true ]] && echo 'import+export' || echo 'import-only')"
+else
+  echo "Cache  : disabled"
+fi
 echo "Builder: $BUILDER_NAME"
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud não encontrado"
@@ -132,7 +138,10 @@ fi
 # --provenance=false evita gerar manifest list/attestations que podem confundir alguns runtimes
 BUILD_CACHE_FLAGS=""
 if [[ "$USE_REMOTE_CACHE" = true ]]; then
-  BUILD_CACHE_FLAGS="--cache-from=type=registry,ref=${CACHE_REF} --cache-to=type=registry,ref=${CACHE_REF},mode=max"
+  BUILD_CACHE_FLAGS="--cache-from=type=registry,ref=${CACHE_REF}"
+  if [[ "$USE_CACHE_TO" = true ]]; then
+    BUILD_CACHE_FLAGS="${BUILD_CACHE_FLAGS} --cache-to=type=registry,ref=${CACHE_REF},mode=max"
+  fi
 fi
 
 docker buildx build \
