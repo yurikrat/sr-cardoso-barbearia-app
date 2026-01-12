@@ -2256,18 +2256,64 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const customerId = req.params.customerId;
       if (!customerId) return res.status(400).json({ error: 'customerId é obrigatório' });
 
-      if (admin.role === 'barber') {
-        const snap = await db.collection('bookings').where('customerId', '==', customerId).limit(50).get();
-        const ok = snap.docs.some((d) => (d.data() as any)?.barberId === admin.barberId);
-        if (!ok) return res.status(404).json({ error: 'Cliente não encontrado' });
+      const scopeBarberId = admin.role === 'barber' ? (admin.barberId as string) : null;
+
+      // For barber users, only allow access to customers that have at least one booking with them.
+      // NOTE: do NOT sample arbitrary docs (limit without order) – that can deny access incorrectly.
+      if (scopeBarberId) {
+        const hasBooking = await db
+          .collection('bookings')
+          .where('customerId', '==', customerId)
+          .where('barberId', '==', scopeBarberId)
+          .limit(1)
+          .get();
+        if (hasBooking.empty) return res.status(404).json({ error: 'Cliente não encontrado' });
       }
 
       const customerDoc = await db.collection('customers').doc(customerId).get();
       if (!customerDoc.exists) return res.status(404).json({ error: 'Cliente não encontrado' });
 
       const data = customerDoc.data() as any;
+
+      // Compute stats from bookings to avoid drift and ensure barber-scoped numbers match the history list.
+      const baseQ = db.collection('bookings').where('customerId', '==', customerId);
+      const scopedQ = scopeBarberId ? baseQ.where('barberId', '==', scopeBarberId) : baseQ;
+
+      const [totalAgg, completedAgg, noShowAgg] = await Promise.all([
+        scopedQ.count().get(),
+        scopedQ.where('status', '==', 'completed').count().get(),
+        scopedQ.where('status', '==', 'no_show').count().get(),
+      ]);
+
+      const totalBookings = totalAgg.data().count ?? 0;
+      const totalCompleted = completedAgg.data().count ?? 0;
+      const noShowCount = noShowAgg.data().count ?? 0;
+
+      let lastBookingAtIso: string | null = null;
+      try {
+        const lastSnap = await scopedQ.orderBy('slotStart', 'desc').limit(1).get();
+        const last = lastSnap.docs[0]?.data() as any;
+        const lastDate: Date | null = last?.slotStart?.toDate ? last.slotStart.toDate() : null;
+        lastBookingAtIso = lastDate ? lastDate.toISOString() : null;
+      } catch {
+        // Fallback: if an index is missing for the ordered query, skip lastBookingAt.
+        lastBookingAtIso = null;
+      }
+
       if (admin.role === 'master') {
-        return res.json({ item: { id: customerDoc.id, ...data } });
+        return res.json({
+          item: {
+            id: customerDoc.id,
+            ...data,
+            stats: {
+              ...(data?.stats ?? {}),
+              totalBookings,
+              totalCompleted,
+              noShowCount,
+              lastBookingAt: lastBookingAtIso,
+            },
+          },
+        });
       }
 
       return res.json({
@@ -2275,7 +2321,12 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           id: customerDoc.id,
           identity: data?.identity ?? {},
           profile: { birthday: data?.profile?.birthday ?? undefined },
-          stats: data?.stats ?? {},
+          stats: {
+            totalBookings,
+            totalCompleted,
+            noShowCount,
+            lastBookingAt: lastBookingAtIso,
+          },
         },
       });
     } catch {
@@ -2292,9 +2343,22 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const lim = typeof req.query.limit === 'string' ? Number(req.query.limit) : 50;
       const limitN = Number.isFinite(lim) ? Math.min(Math.max(lim, 1), 200) : 50;
 
-      const snapshot = await db.collection('bookings').where('customerId', '==', customerId).limit(limitN).get();
+      const scopeBarberId = admin.role === 'barber' ? (admin.barberId as string) : null;
 
-      const items = snapshot.docs
+      // Prefer a deterministic query (last N by slotStart). If indexes are missing, fall back to
+      // an unordered query + in-memory sort.
+      let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      try {
+        let q: FirebaseFirestore.Query = db.collection('bookings').where('customerId', '==', customerId);
+        if (scopeBarberId) q = q.where('barberId', '==', scopeBarberId);
+        const snap = await q.orderBy('slotStart', 'desc').limit(limitN).get();
+        docs = snap.docs;
+      } catch {
+        const snap = await db.collection('bookings').where('customerId', '==', customerId).limit(500).get();
+        docs = snap.docs;
+      }
+
+      const items = docs
         .map((d) => {
           const data = d.data() as any;
           return {
@@ -2303,12 +2367,13 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
             slotStart: data.slotStart?.toDate ? data.slotStart.toDate().toISOString() : null,
           };
         })
-        .filter((b) => (admin.role === 'barber' ? b.barberId === admin.barberId : true))
+        .filter((b) => (scopeBarberId ? b.barberId === scopeBarberId : true))
         .sort((a, b) => {
           const aMs = typeof a.slotStart === 'string' ? Date.parse(a.slotStart) : 0;
           const bMs = typeof b.slotStart === 'string' ? Date.parse(b.slotStart) : 0;
           return bMs - aMs;
-        });
+        })
+        .slice(0, limitN);
 
       return res.json({ items });
     } catch {
