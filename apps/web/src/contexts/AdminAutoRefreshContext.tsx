@@ -11,7 +11,7 @@ const AdminAutoRefreshContext = createContext<AdminAutoRefreshContextValue | nul
 
 export function AdminAutoRefreshProvider({
   children,
-  pollIntervalMs = 10_000,
+  pollIntervalMs = 2_000,
 }: {
   children: React.ReactNode;
   pollIntervalMs?: number;
@@ -39,12 +39,14 @@ export function AdminAutoRefreshProvider({
   useEffect(() => {
     const onChanged = () => bump();
     const onFocus = () => bump();
+    const onOnline = () => bump();
     const onVisibility = () => {
       if (!document.hidden) bump();
     };
 
     window.addEventListener(ADMIN_REFRESH_EVENT, onChanged as EventListener);
     window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisibility);
 
     const id = window.setInterval(() => {
@@ -55,6 +57,7 @@ export function AdminAutoRefreshProvider({
     return () => {
       window.removeEventListener(ADMIN_REFRESH_EVENT, onChanged as EventListener);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisibility);
       window.clearInterval(id);
     };

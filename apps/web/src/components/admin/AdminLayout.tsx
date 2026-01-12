@@ -40,7 +40,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   };
 
   return (
-    <AdminAutoRefreshProvider>
+    <AdminAutoRefreshProvider pollIntervalMs={2000}>
       <div className="min-h-[100dvh] bg-background bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed safe-top-p4 safe-bottom-p4 overflow-x-hidden">
         <header className="border-b border-primary/10 bg-card/50 backdrop-blur-md sticky top-0 z-40">
           <div className="container mx-auto px-4 py-4">
