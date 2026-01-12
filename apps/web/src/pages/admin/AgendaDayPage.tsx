@@ -455,7 +455,14 @@ export default function AgendaPage() {
 
   // Render Helpers
   const renderDayView = () => {
-    const dayStart = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({ hour: 8, minute: 0 });
+    const gridStartTime = TIME_SLOTS[0] ?? '08:00';
+    const [gridStartH, gridStartM] = gridStartTime.split(':').map(Number);
+    const dayStart = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).set({
+      hour: Number.isFinite(gridStartH) ? gridStartH : 8,
+      minute: Number.isFinite(gridStartM) ? gridStartM : 0,
+      second: 0,
+      millisecond: 0,
+    });
     
     // Filter bookings for this day
     const dayBookings = bookings.filter(b => 
