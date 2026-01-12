@@ -82,8 +82,14 @@ export default function ScheduleConfigPage() {
       // Fill missing days with default or disabled
       const fullSchedule: Schedule = {};
       DAYS.forEach(day => {
-        if (loadedSchedule[day.key]) {
-          fullSchedule[day.key] = loadedSchedule[day.key];
+        const loadedDay = loadedSchedule[day.key];
+        if (loadedDay) {
+          fullSchedule[day.key] = {
+            start: loadedDay.start,
+            end: loadedDay.end,
+            active: loadedDay.active,
+            breaks: loadedDay.breaks ?? [],
+          };
         } else {
           fullSchedule[day.key] = { ...DEFAULT_DAY, active: day.key !== '0' }; // Default closed on Sunday
         }

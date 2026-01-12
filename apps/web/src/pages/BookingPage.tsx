@@ -151,10 +151,11 @@ export default function BookingPage() {
            const lastSlotStart = endDt.minus({ minutes: 30 });
            slots = generateSlotsBetween(startDt, lastSlotStart);
 
-           if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+           const breaks = dayConfig.breaks ?? [];
+           if (breaks.length > 0) {
              slots = slots.filter(slot => {
                const slotStr = slot.toFormat('HH:mm');
-               return !dayConfig.breaks.some((brk: any) => {
+               return !breaks.some((brk) => {
                  return slotStr >= brk.start && slotStr < brk.end;
                });
              });

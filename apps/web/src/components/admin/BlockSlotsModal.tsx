@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { adminBlockSlotsFn } from '@/lib/api-compat';
 import { useToast } from '@/components/ui/use-toast';
 import { DateTime } from 'luxon';
-import { BARBERS } from '@/utils/constants';
 
 const TIME_SLOTS = Array.from({ length: 22 }, (_, i) => {
   const hour = 8 + Math.floor(i / 2);
@@ -23,16 +22,45 @@ interface BlockSlotsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedDate?: Date;
+  selectedBarberId?: string;
+  barbers?: Array<{ id: string; name: string }>;
+  disableBarberSelect?: boolean;
 }
 
-export function BlockSlotsModal({ open, onOpenChange, selectedDate }: BlockSlotsModalProps) {
+export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarberId, barbers, disableBarberSelect }: BlockSlotsModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [barberId, setBarberId] = useState<string>('sr-cardoso');
+  const resolvedBarbers = useMemo(() => {
+    const items = barbers ?? [];
+    if (disableBarberSelect && selectedBarberId) {
+      const found = items.find((b) => b.id === selectedBarberId);
+      return found ? [found] : [{ id: selectedBarberId, name: selectedBarberId }];
+    }
+    return items;
+  }, [barbers, disableBarberSelect, selectedBarberId]);
+
+  const [barberId, setBarberId] = useState<string>(selectedBarberId || '');
   const [date, setDate] = useState<Date>(selectedDate || new Date());
   const [startTime, setStartTime] = useState<string>('08:00');
   const [endTime, setEndTime] = useState<string>('09:00');
   const [reason, setReason] = useState<string>('');
+
+  useEffect(() => {
+    if (!open) return;
+    if (selectedDate) setDate(selectedDate);
+    if (selectedBarberId) setBarberId(selectedBarberId);
+  }, [open, selectedDate, selectedBarberId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (disableBarberSelect && selectedBarberId) {
+      setBarberId(selectedBarberId);
+      return;
+    }
+    if (barberId) return;
+    const fallback = resolvedBarbers.find((b) => b.id === 'sr-cardoso')?.id ?? resolvedBarbers[0]?.id ?? '';
+    if (fallback) setBarberId(fallback);
+  }, [open, disableBarberSelect, selectedBarberId, barberId, resolvedBarbers]);
 
   const blockMutation = useMutation({
     mutationFn: async (data: {
@@ -94,12 +122,12 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate }: BlockSlots
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="barber">Barbeiro</Label>
-            <Select value={barberId} onValueChange={setBarberId}>
+            <Select value={barberId} onValueChange={setBarberId} disabled={!!disableBarberSelect}>
               <SelectTrigger id="barber" className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {BARBERS.map((barber) => (
+                {resolvedBarbers.map((barber) => (
                   <SelectItem key={barber.id} value={barber.id}>
                     {barber.name}
                   </SelectItem>

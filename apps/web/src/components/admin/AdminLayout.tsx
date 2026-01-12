@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette, MessageCircle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -16,7 +17,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   type Role = 'master' | 'barber';
 
-  const navItems: Array<{ path: string; label: string; icon: any; roles: Role[] }> = [
+  const navItems: Array<{ path: string; label: string; icon: LucideIcon; roles: Role[] }> = [
     { path: '/admin/agenda', label: 'Agenda', icon: Calendar, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/horarios', label: 'Horários', icon: Clock, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet, roles: ['master', 'barber'] as Role[] },

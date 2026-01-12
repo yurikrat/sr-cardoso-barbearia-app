@@ -83,6 +83,8 @@ interface Customer {
 
 type PeriodKey = 'day' | '7d' | '30d' | 'year';
 
+type ActiveTab = 'inactive' | 'birthday' | 'noshow';
+
 const PERIOD_TO_DAYS: Record<PeriodKey, number> = {
   day: 1,
   '7d': 7,
@@ -103,7 +105,7 @@ export default function SmartListsPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('inactive');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('inactive');
   const [period, setPeriod] = useState<PeriodKey>('7d');
   const periodDays = PERIOD_TO_DAYS[period];
   const periodLabel = PERIOD_LABEL[period];
@@ -268,7 +270,11 @@ export default function SmartListsPage() {
           </Card>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v === 'birthday' ? 'birthday' : v === 'noshow' ? 'noshow' : 'inactive')}
+          className="w-full"
+        >
           <TabsList className="grid grid-cols-3 w-full max-w-md bg-card/50 border border-primary/10 p-1 h-12">
             <TabsTrigger value="inactive" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground flex items-center gap-2">
               <Clock className="h-4 w-4 hidden sm:inline" />
@@ -366,7 +372,12 @@ export default function SmartListsPage() {
                         <Button
                           size="sm"
                           className="bg-green-600 hover:bg-green-700 text-white gap-2 shadow-lg shadow-green-900/20"
-                          onClick={() => handleSendWhatsApp(customer, activeTab as any)}
+                          onClick={() =>
+                            handleSendWhatsApp(
+                              customer,
+                              activeTab === 'inactive' ? 'reactivation' : activeTab === 'birthday' ? 'birthday' : 'noshow'
+                            )
+                          }
                         >
                           <MessageCircle className="h-4 w-4" />
                           <span className="hidden sm:inline">Enviar WhatsApp</span>

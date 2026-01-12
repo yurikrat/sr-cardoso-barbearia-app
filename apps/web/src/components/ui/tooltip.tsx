@@ -43,6 +43,12 @@ export function TooltipTrigger({
   const handleOpen = () => ctx.setOpen(true);
   const handleClose = () => ctx.setOpen(false);
 
+  const triggerChild = asChild
+    ? React.isValidElement(children)
+      ? children
+      : React.createElement('span', null, children)
+    : children;
+
   return (
     <PopoverPrimitive.Trigger
       asChild={asChild}
@@ -51,7 +57,7 @@ export function TooltipTrigger({
       onFocus={handleOpen}
       onBlur={handleClose}
     >
-      {children as any}
+      {triggerChild}
     </PopoverPrimitive.Trigger>
   );
 }

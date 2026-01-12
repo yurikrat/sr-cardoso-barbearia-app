@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
+import type { BarberSchedule } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -93,6 +94,9 @@ export default function AgendaPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
+  const claims = api.admin.getClaims();
+  const forcedBarberId = claims?.role === 'barber' ? (claims.barberId ?? null) : null;
+  const isBarberUser = claims?.role === 'barber';
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const nowLineRef = useRef<HTMLDivElement | null>(null);
   const didAutoScrollRef = useRef<string | null>(null);
@@ -110,7 +114,9 @@ export default function AgendaPage() {
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
-  const [barberSchedule, setBarberSchedule] = useState<any>(null);
+  const [barberSchedule, setBarberSchedule] = useState<BarberSchedule | null>(null);
+
+  const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
   // Force re-render every minute to update "now" line
   useEffect(() => {
@@ -263,12 +269,17 @@ export default function AgendaPage() {
         const qsBarber = searchParams.get('barber');
         const qsDate = searchParams.get('date');
 
+        // Barber users must always operate on their own barberId.
+        if (forcedBarberId) {
+          if (forcedBarberId !== selectedBarber) setSelectedBarber(forcedBarberId);
+        }
+
         const nextBarber =
-          qsBarber && sorted.some((b) => b.id === qsBarber)
+          !forcedBarberId && qsBarber && sorted.some((b) => b.id === qsBarber)
             ? qsBarber
             : sorted.find((b) => b.id === 'sr-cardoso')?.id ?? sorted[0]?.id ?? '';
 
-        if (nextBarber && nextBarber !== selectedBarber) setSelectedBarber(nextBarber);
+        if (!forcedBarberId && nextBarber && nextBarber !== selectedBarber) setSelectedBarber(nextBarber);
 
         if (qsDate) {
           const parsed = DateTime.fromFormat(qsDate, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' });
@@ -276,10 +287,20 @@ export default function AgendaPage() {
         }
       } catch {
         setBarbers([]);
-        if (!selectedBarber) setSelectedBarber('sr-cardoso');
+        if (forcedBarberId) {
+          if (!selectedBarber) setSelectedBarber(forcedBarberId);
+        } else {
+          if (!selectedBarber) setSelectedBarber('sr-cardoso');
+        }
       }
     })();
   }, []);
+
+  // Hard safety-net: if a barber user somehow changes selectedBarber, snap back.
+  useEffect(() => {
+    if (!forcedBarberId) return;
+    if (selectedBarber !== forcedBarberId) setSelectedBarber(forcedBarberId);
+  }, [forcedBarberId, selectedBarber]);
 
   // Fetch barber schedule
   useEffect(() => {
@@ -289,7 +310,7 @@ export default function AgendaPage() {
       try {
         const barberData = await api.admin.getBarber(selectedBarber);
         setBarberSchedule(barberData.schedule || null);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Error loading barber schedule:', err);
         setBarberSchedule(null);
       }
@@ -307,8 +328,8 @@ export default function AgendaPage() {
   const loadBookings = async () => {
     setLoading(true);
     try {
-      let items: any[] = [];
-      let nextBlocked = new Map<string, string>(); // Map<timeKey, slotId>
+      let items: unknown[] = [];
+      const nextBlocked = new Map<string, string>(); // Map<timeKey, slotId>
 
       if (viewMode === 'day') {
         const [res, availability] = await Promise.all([
@@ -342,7 +363,8 @@ export default function AgendaPage() {
       }
 
       const loadedBookings = items.map((raw): Booking | null => {
-        const data = raw as any;
+        if (!isRecord(raw)) return null;
+        const data = raw;
         const slotStartIso = typeof data.slotStart === 'string' ? data.slotStart : null;
         if (!slotStartIso) return null;
         const slotStart = DateTime.fromISO(slotStartIso, { zone: 'America/Sao_Paulo' }).toJSDate();
@@ -458,7 +480,9 @@ export default function AgendaPage() {
     const isToday = now.hasSame(dayStart, 'day');
     const nowMinutes = now.diff(dayStart, 'minutes').minutes;
     const nowTopPx = (nowMinutes / SLOT_MINUTES) * GRID_ROW_PX;
-    const showNowLine = isToday && nowTopPx >= 0 && nowTopPx < TIME_SLOTS.length * GRID_ROW_PX;
+    const gridHeightPx = TIME_SLOTS.length * GRID_ROW_PX;
+    const clampedNowTopPx = gridHeightPx > 0 ? Math.min(Math.max(nowTopPx, 0), gridHeightPx - 1) : 0;
+    const showNowLine = isToday;
 
     return (
       <div className="relative border-t border-border/60">
@@ -479,7 +503,7 @@ export default function AgendaPage() {
               <div
                 ref={nowLineRef}
                 className="absolute left-0 right-0 z-20 pointer-events-none"
-                style={{ top: nowTopPx }}
+                style={{ top: clampedNowTopPx }}
               >
                 <div className="relative">
                   <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-red-500 shadow-sm" />
@@ -720,7 +744,14 @@ export default function AgendaPage() {
           </div>
         </div>
 
-        <Tabs value={selectedBarber} onValueChange={setSelectedBarber} className="flex-1 flex flex-col min-h-0">
+        <Tabs
+          value={selectedBarber}
+          onValueChange={(v) => {
+            if (isBarberUser) return;
+            setSelectedBarber(v);
+          }}
+          className="flex-1 flex flex-col min-h-0"
+        >
           <div className="w-full overflow-x-auto shrink-0 pb-2">
             <TabsList className="w-max min-w-full justify-start flex-nowrap">
               {barbers.map((barber) => (
@@ -805,6 +836,9 @@ export default function AgendaPage() {
           if (!open) loadBookings();
         }}
         selectedDate={selectedDate}
+        selectedBarberId={selectedBarber}
+        barbers={barbers}
+        disableBarberSelect={isBarberUser}
       />
 
       <CreateBookingModal

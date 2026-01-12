@@ -573,12 +573,18 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
   app.get('/api/admin/barbers/:barberId', requireAdminMw, async (req, res) => {
     try {
+      const admin = getAdminFromReq(req);
       const barberId = req.params.barberId;
+
+      if (admin.role !== 'master' && admin.barberId !== barberId) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
+
       const barberDoc = await db.collection('barbers').doc(barberId).get();
       if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
-      const data = barberDoc.data() as any;
+      const data = barberDoc.data() as { calendarFeedToken?: unknown; schedule?: unknown };
       return res.json({ 
-        calendarFeedToken: (data?.calendarFeedToken as string | undefined) ?? null,
+        calendarFeedToken: typeof data?.calendarFeedToken === 'string' ? data.calendarFeedToken : null,
         schedule: data?.schedule ?? null
       });
     } catch {

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/lib/api';
+import type { BarberSchedule } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { DateTime } from 'luxon';
 import { applyPhoneMask } from '@/utils/phone';
@@ -42,7 +43,7 @@ export function CreateBookingModal({
   // Dados carregados
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [services, setServices] = useState<Array<{ id: string; label: string; priceCents: number }>>([]);
-  const [barberSchedule, setBarberSchedule] = useState<any>(null);
+  const [barberSchedule, setBarberSchedule] = useState<BarberSchedule | null>(null);
 
   // Atualiza estados quando props mudam
   useEffect(() => {
@@ -89,7 +90,7 @@ export function CreateBookingModal({
       try {
         const barberData = await api.admin.getBarber(barberId);
         setBarberSchedule(barberData.schedule || null);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Error loading barber schedule:', err);
         setBarberSchedule(null);
       }
@@ -126,9 +127,10 @@ export function CreateBookingModal({
       const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
       
       // Verifica se está em período de pausa
-      const isInBreak = dayConfig.breaks?.some((brk: any) => {
-        return timeStr >= brk.start && timeStr < brk.end;
-      }) ?? false;
+      const isInBreak =
+        dayConfig.breaks?.some((brk) => {
+          return timeStr >= brk.start && timeStr < brk.end;
+        }) ?? false;
       
       if (!isInBreak) {
         slots.push(timeStr);

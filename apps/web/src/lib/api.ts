@@ -1,5 +1,14 @@
 import type { BrandingSettings } from '@sr-cardoso/shared';
 
+export type BarberScheduleBreak = { start: string; end: string };
+export type BarberScheduleDayConfig = {
+  active: boolean;
+  start: string;
+  end: string;
+  breaks?: BarberScheduleBreak[];
+};
+export type BarberSchedule = Record<string, BarberScheduleDayConfig | undefined>;
+
 type AdminWhatsappStatusResponse = {
   instanceName: string;
   instanceExists: boolean;
@@ -29,6 +38,10 @@ type ApiError = { error?: string };
 
 const BASE =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 function getAdminToken() {
   try {
@@ -62,10 +75,11 @@ function decodeJwtClaims(token: string | null): { role: 'master' | 'barber'; use
     const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const padded = payloadB64.padEnd(payloadB64.length + ((4 - (payloadB64.length % 4)) % 4), '=');
     const json = atob(padded);
-    const payload = JSON.parse(json) as any;
-    const role = payload?.role;
-    const username = payload?.username;
-    const barberId = payload?.barberId;
+    const parsed: unknown = JSON.parse(json);
+    if (!isRecord(parsed)) return null;
+    const role = parsed['role'];
+    const username = parsed['username'];
+    const barberId = parsed['barberId'];
     if (role !== 'master' && role !== 'barber') return null;
     if (typeof username !== 'string' || !username) return null;
     return { role, username, barberId: typeof barberId === 'string' ? barberId : null };
@@ -321,11 +335,14 @@ export const api = {
       });
     },
     async getBarber(barberId: string) {
-      return apiFetch<{ calendarFeedToken: string | null; schedule: any }>(`/api/admin/barbers/${barberId}`, {
+      return apiFetch<{ calendarFeedToken: string | null; schedule: BarberSchedule | null }>(
+        `/api/admin/barbers/${barberId}`,
+        {
         admin: true,
-      });
+        }
+      );
     },
-    async updateBarberSchedule(barberId: string, schedule: any) {
+    async updateBarberSchedule(barberId: string, schedule: BarberSchedule | null) {
       return apiFetch<{ success: boolean }>(`/api/admin/barbers/${barberId}/schedule`, {
         method: 'PUT',
         admin: true,
@@ -489,7 +506,7 @@ export const api = {
       return apiFetch<BrandingSettings>(`/api/admin/branding`, { admin: true });
     },
 
-    async updateBranding(payload: Partial<BrandingSettings>) {
+    async updateBranding(payload: Partial<BrandingSettings> & { commitLogo?: boolean }) {
       return apiFetch<{ success: boolean; config: BrandingSettings }>(`/api/admin/branding`, {
         method: 'PATCH',
         admin: true,
@@ -529,8 +546,19 @@ export const api = {
 
       const text = await res.text();
       try {
-        const parsed = JSON.parse(text) as any;
-        return parsed as { success: boolean; url: string; config?: BrandingSettings };
+        const parsed: unknown = JSON.parse(text);
+        if (!isRecord(parsed)) throw new Error('Resposta inválida do servidor no upload');
+        const success = parsed['success'];
+        const url = parsed['url'];
+        const config = parsed['config'];
+        if (typeof success !== 'boolean' || typeof url !== 'string') {
+          throw new Error('Resposta inválida do servidor no upload');
+        }
+        return {
+          success,
+          url,
+          config: isRecord(config) ? (config as unknown as BrandingSettings) : undefined,
+        };
       } catch {
         throw new Error('Resposta inválida do servidor no upload');
       }
@@ -576,7 +604,7 @@ export const api = {
   },
 
   async availability(barberId: string, dateKey: string) {
-    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[]; schedule: any }>(
+    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[]; schedule: BarberSchedule | null }>(
       `/api/availability?barberId=${encodeURIComponent(barberId)}&dateKey=${encodeURIComponent(
         dateKey
       )}`

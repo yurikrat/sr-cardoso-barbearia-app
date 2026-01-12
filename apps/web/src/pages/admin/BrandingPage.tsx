@@ -25,7 +25,7 @@ export default function BrandingPage() {
       try {
         const data = await api.admin.getBranding();
         setSettings(data);
-      } catch (err) {
+      } catch {
         toast({
           title: 'Erro ao carregar branding',
           description: 'Não foi possível carregar as configurações de marca.',
@@ -42,10 +42,7 @@ export default function BrandingPage() {
     if (!settings) return;
     setSaving(true);
     try {
-      await api.admin.updateBranding({
-        ...settings,
-        commitLogo: hasPendingLogoChange,
-      } as any);
+      await api.admin.updateBranding({ ...settings, commitLogo: hasPendingLogoChange });
       
       setHasPendingLogoChange(false);
       await refreshBranding();
@@ -53,10 +50,11 @@ export default function BrandingPage() {
         title: 'Configurações salvas',
         description: 'A identidade visual foi atualizada com sucesso.',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
       toast({
         title: 'Erro ao salvar',
-        description: err.message || 'Ocorreu um erro ao salvar as configurações.',
+        description: message || 'Ocorreu um erro ao salvar as configurações.',
         variant: 'destructive',
       });
     } finally {
@@ -87,10 +85,11 @@ export default function BrandingPage() {
         title: 'Preview atualizado',
         description: 'Clique em Salvar para aplicar as alterações.',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : null;
       toast({
         title: 'Erro no upload',
-        description: err.message || 'Não foi possível enviar a imagem.',
+        description: message || 'Não foi possível enviar a imagem.',
         variant: 'destructive',
       });
     } finally {

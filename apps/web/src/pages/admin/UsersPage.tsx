@@ -71,8 +71,8 @@ export default function UsersPage() {
         id: b.id,
         name: b.name,
         active: b.active,
-        archivedAt: (b as any).archivedAt ?? null,
-        archivedBy: (b as any).archivedBy ?? null,
+        archivedAt: b.archivedAt ?? null,
+        archivedBy: b.archivedBy ?? null,
       })));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
@@ -364,9 +364,6 @@ export default function UsersPage() {
                         <>
                           <Button variant="outline" size="sm" onClick={() => handleResetPassword(linkedUser.username)}>
                             Resetar senha
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(linkedUser.username)}>
-                            Excluir login
                           </Button>
                         </>
                       ) : (

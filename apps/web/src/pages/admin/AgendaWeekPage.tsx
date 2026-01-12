@@ -13,6 +13,9 @@ import { useNavigate } from 'react-router-dom';
 export default function AgendaWeekPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const claims = api.admin.getClaims();
+  const forcedBarberId = claims?.role === 'barber' ? (claims.barberId ?? null) : null;
+  const isBarberUser = claims?.role === 'barber';
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [weekData, setWeekData] = useState<Record<string, { bookings: number; blocks: number }>>({});
@@ -32,14 +35,23 @@ export default function AgendaWeekPage() {
         });
         setBarbers(sorted);
 
-        const nextBarber = sorted.find((b) => b.id === 'sr-cardoso')?.id ?? sorted[0]?.id ?? '';
-        setSelectedBarber(nextBarber);
+        if (forcedBarberId) {
+          setSelectedBarber(forcedBarberId);
+        } else {
+          const nextBarber = sorted.find((b) => b.id === 'sr-cardoso')?.id ?? sorted[0]?.id ?? '';
+          setSelectedBarber(nextBarber);
+        }
       } catch {
         setBarbers([]);
-        setSelectedBarber('sr-cardoso');
+        setSelectedBarber(forcedBarberId ?? 'sr-cardoso');
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!forcedBarberId) return;
+    if (selectedBarber !== forcedBarberId) setSelectedBarber(forcedBarberId);
+  }, [forcedBarberId, selectedBarber]);
 
   useEffect(() => {
     if (!selectedBarber) return;
@@ -97,7 +109,13 @@ export default function AgendaWeekPage() {
           </Button>
         </div>
 
-        <Tabs value={selectedBarber} onValueChange={setSelectedBarber}>
+        <Tabs
+          value={selectedBarber}
+          onValueChange={(v) => {
+            if (isBarberUser) return;
+            setSelectedBarber(v);
+          }}
+        >
           <div className="w-full overflow-x-auto">
             <TabsList className="w-max min-w-full justify-start flex-nowrap">
               {barbers.map((barber) => (

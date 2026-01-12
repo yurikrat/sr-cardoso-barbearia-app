@@ -100,6 +100,7 @@ echo "Builder: $BUILDER_NAME"
 
 command -v gcloud >/dev/null 2>&1 || die "gcloud não encontrado"
 command -v docker >/dev/null 2>&1 || die "docker não encontrado"
+command -v npm >/dev/null 2>&1 || die "npm não encontrado"
 
 # Docker daemon precisa estar rodando (Docker Desktop, Colima, etc.)
 if ! docker info >/dev/null 2>&1; then
@@ -133,11 +134,19 @@ gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet >/dev/null
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:${IMAGE_TAG}"
 CACHE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:buildcache"
 
+echo "== Preflight checks (lint + build) =="
+echo "== (web) lint =="
+npm -w apps/web run lint
+
+echo "== (web) build =="
+npm -w apps/web run build
+
+echo "== (server) build =="
+npm -w apps/server run build
+
 echo "== Build do monorepo (web + server) =="
-# Otimização: O build é feito dentro do Docker (multi-stage).
-# Não precisamos buildar localmente, pois o Dockerfile fará isso.
-# npm run build:web >/dev/null
-# npm run build:server >/dev/null
+# Observação: o Dockerfile também builda em multi-stage.
+# Os checks acima existem para falhar rápido e impedir deploy com repo quebrado.
 
 echo "== Docker build (local) =="
 if ! docker buildx version >/dev/null 2>&1; then

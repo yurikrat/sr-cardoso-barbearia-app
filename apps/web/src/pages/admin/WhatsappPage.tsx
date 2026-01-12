@@ -25,6 +25,8 @@ export default function WhatsappPage() {
   const { toast } = useToast();
   const claims = api.admin.getClaims();
 
+  const getErrorMessage = (e: unknown) => (e instanceof Error ? e.message : null);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -105,7 +107,7 @@ export default function WhatsappPage() {
     try {
       const data = await api.admin.whatsappGetNotificationSettings();
       setNotificationSettings(data);
-    } catch (e: any) {
+    } catch {
       // Se não existir configuração ainda, usa os defaults
       console.log('Using default notification settings');
     } finally {
@@ -118,10 +120,10 @@ export default function WhatsappPage() {
     try {
       await api.admin.whatsappSaveNotificationSettings(notificationSettings);
       toast({ title: 'Salvo', description: 'Configurações de notificações salvas.' });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro ao salvar',
-        description: e?.message || 'Não foi possível salvar as configurações.',
+        description: getErrorMessage(e) || 'Não foi possível salvar as configurações.',
         variant: 'destructive',
       });
     } finally {
@@ -136,10 +138,10 @@ export default function WhatsappPage() {
         if (claims?.role === 'master') {
           await loadNotificationSettings();
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast({
           title: 'Erro ao carregar status',
-          description: e?.message || 'Não foi possível consultar o WhatsApp.',
+          description: getErrorMessage(e) || 'Não foi possível consultar o WhatsApp.',
           variant: 'destructive',
         });
       } finally {
@@ -153,10 +155,10 @@ export default function WhatsappPage() {
     try {
       await loadStatus();
       toast({ title: 'Atualizado', description: 'Status do WhatsApp atualizado.' });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro ao atualizar',
-        description: e?.message || 'Não foi possível atualizar o status.',
+        description: getErrorMessage(e) || 'Não foi possível atualizar o status.',
         variant: 'destructive',
       });
     } finally {
@@ -181,10 +183,10 @@ export default function WhatsappPage() {
             ? 'Use o código no WhatsApp para conectar o dispositivo.'
             : 'Escaneie o QR no WhatsApp para conectar.',
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro ao conectar',
-        description: e?.message || 'Não foi possível gerar o QR.',
+        description: getErrorMessage(e) || 'Não foi possível gerar o QR.',
         variant: 'destructive',
       });
     } finally {
@@ -200,10 +202,10 @@ export default function WhatsappPage() {
       setPairingCode(null);
       await loadStatus();
       toast({ title: 'Desconectado', description: 'Sessão do WhatsApp removida. Conecte novamente para usar.' });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro ao desconectar',
-        description: e?.message || 'Não foi possível desconectar o WhatsApp.',
+        description: getErrorMessage(e) || 'Não foi possível desconectar o WhatsApp.',
         variant: 'destructive',
       });
     } finally {
@@ -224,10 +226,10 @@ export default function WhatsappPage() {
       }
       await api.admin.whatsappSendTest({ toE164: toE164.trim(), text: text.trim() });
       toast({ title: 'Enviado', description: 'Mensagem teste enviada.' });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro ao enviar',
-        description: e?.message || 'Não foi possível enviar a mensagem teste.',
+        description: getErrorMessage(e) || 'Não foi possível enviar a mensagem teste.',
         variant: 'destructive',
       });
     } finally {
@@ -281,10 +283,10 @@ export default function WhatsappPage() {
         setBroadcastImageFile(null);
         setBroadcastImagePreview(null);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         title: 'Erro no disparo',
-        description: e?.message || 'Não foi possível enviar as mensagens.',
+        description: getErrorMessage(e) || 'Não foi possível enviar as mensagens.',
         variant: 'destructive',
       });
     } finally {
@@ -426,7 +428,10 @@ export default function WhatsappPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Modo</Label>
-              <Select value={connectMode} onValueChange={(v) => setConnectMode(v as any)}>
+              <Select
+                value={connectMode}
+                onValueChange={(v) => setConnectMode(v === 'pairingCode' ? 'pairingCode' : 'qr')}
+              >
                 <SelectTrigger disabled={claims?.role !== 'master' || !canUseEvolution}>
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
