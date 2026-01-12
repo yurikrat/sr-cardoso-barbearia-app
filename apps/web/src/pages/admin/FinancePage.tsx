@@ -51,6 +51,7 @@ export default function FinancePage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isMaster = user?.role === 'master';
+  const isBarber = user?.role === 'barber';
 
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>('all');
@@ -150,6 +151,20 @@ export default function FinancePage() {
   const handleExport = async () => {
     if (!summary) return;
 
+    const barberPct = summary.commissions
+      ? selectedBarberId === 'sr-cardoso'
+        ? summary.commissions.ownerBarberPct
+        : summary.commissions.defaultBarberPct
+      : null;
+
+    const displayedEstimatedCents = isBarber ? (summary.estimatedBarberCents ?? 0) : (summary.estimatedRevenueCents ?? 0);
+    const displayedRealizedCents = isBarber ? (summary.realizedBarberCents ?? 0) : (summary.realizedRevenueCents ?? 0);
+    const projectionBaseCents = summary.projectionRevenueCents ?? summary.revenueCents ?? 0;
+    const displayedProjectionCents = isBarber && barberPct != null ? Math.round(projectionBaseCents * barberPct) : projectionBaseCents;
+    const displayedTotalCents = isBarber
+      ? (summary.estimatedBarberCents ?? 0) + (summary.realizedBarberCents ?? 0)
+      : (summary.revenueCents ?? 0);
+
     const { Workbook } = await import('exceljs');
     const workbook = new Workbook();
 
@@ -162,15 +177,15 @@ export default function FinancePage() {
     wsSummary.addRows([
       ['Mês', selectedMonth],
       ['Agendamentos', summary.totalBookings],
-      ['Previsto', (summary.estimatedRevenueCents ?? 0) / 100],
-      ['Realizado', (summary.realizedRevenueCents ?? 0) / 100],
-      ['Projeção', (summary.projectionRevenueCents ?? summary.revenueCents ?? 0) / 100],
-      ['Total', (summary.revenueCents ?? 0) / 100],
+      ['Previsto', displayedEstimatedCents / 100],
+      ['Realizado', displayedRealizedCents / 100],
+      ['Projeção', displayedProjectionCents / 100],
+      ['Total', displayedTotalCents / 100],
       [],
       ['Previsto (Profissional)', (summary.estimatedBarberCents ?? 0) / 100],
-      ['Previsto (Barbearia)', (summary.estimatedShopCents ?? 0) / 100],
+      ...(isBarber ? [] : [['Previsto (Barbearia)', (summary.estimatedShopCents ?? 0) / 100]]),
       ['Realizado (Profissional)', (summary.realizedBarberCents ?? 0) / 100],
-      ['Realizado (Barbearia)', (summary.realizedShopCents ?? 0) / 100],
+      ...(isBarber ? [] : [['Realizado (Barbearia)', (summary.realizedShopCents ?? 0) / 100]]),
     ]);
 
     // Sheet 2: Serviços
@@ -258,7 +273,7 @@ export default function FinancePage() {
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
           <div>
             <h2 className="text-3xl font-serif font-bold tracking-tight">Financeiro</h2>
-            <p className="text-muted-foreground">Acompanhe o desempenho da barbearia.</p>
+            <p className="text-muted-foreground">{isBarber ? 'Acompanhe seus resultados.' : 'Acompanhe o desempenho da barbearia.'}</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <Select 
@@ -313,8 +328,22 @@ export default function FinancePage() {
           </Card>
         ) : (
           <div className="space-y-8">
-            {/* KPI Grid */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {(() => {
+              const pct = summary.commissions
+                ? selectedBarberId === 'sr-cardoso'
+                  ? summary.commissions.ownerBarberPct
+                  : summary.commissions.defaultBarberPct
+                : null;
+
+              const displayedEstimatedCents = isBarber ? (summary.estimatedBarberCents ?? 0) : (summary.estimatedRevenueCents ?? 0);
+              const displayedRealizedCents = isBarber ? (summary.realizedBarberCents ?? 0) : (summary.realizedRevenueCents ?? 0);
+              const projectionBaseCents = summary.projectionRevenueCents ?? summary.revenueCents;
+              const displayedProjectionCents = isBarber && pct != null ? Math.round(projectionBaseCents * pct) : projectionBaseCents;
+
+              return (
+                <>
+                  {/* KPI Grid */}
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Agendamentos</CardTitle>
@@ -334,8 +363,8 @@ export default function FinancePage() {
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.estimatedRevenueCents ?? 0)}</div>
-                  {(summary.estimatedBarberCents != null || summary.estimatedShopCents != null) && (
+                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(displayedEstimatedCents)}</div>
+                  {isMaster && (summary.estimatedBarberCents != null || summary.estimatedShopCents != null) && (
                     <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                       <span>P: {formatMoneyBRLFromCents(summary.estimatedBarberCents ?? 0)}</span>
                       <span>B: {formatMoneyBRLFromCents(summary.estimatedShopCents ?? 0)}</span>
@@ -366,8 +395,8 @@ export default function FinancePage() {
                   <CheckCircle className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.realizedRevenueCents ?? 0)}</div>
-                  {(summary.realizedBarberCents != null || summary.realizedShopCents != null) && (
+                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(displayedRealizedCents)}</div>
+                  {isMaster && (summary.realizedBarberCents != null || summary.realizedShopCents != null) && (
                     <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                       <span>P: {formatMoneyBRLFromCents(summary.realizedBarberCents ?? 0)}</span>
                       <span>B: {formatMoneyBRLFromCents(summary.realizedShopCents ?? 0)}</span>
@@ -398,7 +427,7 @@ export default function FinancePage() {
                   <Wallet className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(summary.projectionRevenueCents ?? summary.revenueCents)}</div>
+                  <div className="text-2xl font-bold">{formatMoneyBRLFromCents(displayedProjectionCents)}</div>
                   <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
                     <span>Baseado no histórico</span>
                     <Tooltip>
@@ -412,6 +441,9 @@ export default function FinancePage() {
                           <div className="font-medium">Como calculamos</div>
                           <div>Realizado até hoje + (agendamentos futuros × taxa de comparecimento).</div>
                           <div className="text-muted-foreground">Taxa: últimos 90 dias (Concluído/Falta/Cancelado).</div>
+                          {isBarber && pct != null && (
+                            <div className="text-muted-foreground">Aplicamos sua comissão ({Math.round(pct * 100)}%).</div>
+                          )}
                         </div>
                       </TooltipContent>
                     </Tooltip>
@@ -419,6 +451,11 @@ export default function FinancePage() {
                 </CardContent>
               </Card>
             </div>
+
+                </>
+
+              );
+            })()}
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
               {/* Mix de Serviços */}
