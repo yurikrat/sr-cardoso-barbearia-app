@@ -654,16 +654,24 @@ export default function AgendaPage() {
               </div>
               <div className="space-y-1">
                 {dayBookings.slice(0, 4).map(b => (
-                  <div key={b.id} className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded truncate border",
-                    b.status === 'confirmed' ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200" :
-                    b.status === 'completed' ? "bg-green-50 border-green-100 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200" :
-                    b.status === 'no_show' ? "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200" :
-                    b.status === 'cancelled' ? "bg-muted/60 border-border text-muted-foreground" :
-                    "bg-muted border-transparent"
-                  )}>
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedBooking(b);
+                    }}
+                    className={cn(
+                      "w-full text-left text-[10px] px-1.5 py-0.5 rounded truncate border hover:opacity-90",
+                      b.status === 'confirmed' ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200" :
+                      b.status === 'completed' ? "bg-green-50 border-green-100 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200" :
+                      b.status === 'no_show' ? "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-blue-800 dark:text-amber-200" :
+                      b.status === 'cancelled' ? "bg-muted/60 border-border text-muted-foreground" :
+                      "bg-muted border-transparent"
+                    )}
+                  >
                     {DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm')} {b.customer.firstName} • {formatBookingStatusPtBr(b.status)}
-                  </div>
+                  </button>
                 ))}
                 {dayBookings.length > 4 && (
                   <div className="text-[10px] text-muted-foreground font-medium pl-1">
