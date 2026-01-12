@@ -313,6 +313,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const admin = getAdminFromReq(req);
       const username = normalizeUsername(req.params.username || '');
       if (!username) return res.status(400).json({ error: 'username inválido' });
+      if (username === OWNER_BARBER_ID) {
+        return res.status(400).json({ error: 'Não é permitido excluir o usuário master principal' });
+      }
       if (username === normalizeUsername(admin.username)) {
         return res.status(400).json({ error: 'Não é possível excluir o próprio usuário' });
       }
@@ -518,6 +521,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const active = (req.body as { active?: unknown })?.active;
       if (!username) return res.status(400).json({ error: 'username inválido' });
       if (typeof active !== 'boolean') return res.status(400).json({ error: 'active deve ser boolean' });
+      if (username === OWNER_BARBER_ID) {
+        return res.status(400).json({ error: 'Não é permitido desativar o usuário master principal' });
+      }
       const ref = db.collection('adminUsers').doc(username);
       const snap = await ref.get();
       if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });

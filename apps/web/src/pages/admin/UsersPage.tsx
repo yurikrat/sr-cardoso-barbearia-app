@@ -153,19 +153,19 @@ export default function UsersPage() {
     }
   };
 
-  const handleArchiveProfessional = async (barberId: string) => {
+  const handleDeactivateProfessional = async (barberId: string) => {
     setLoading(true);
     try {
       const ok = confirm(
-        `Arquivar o profissional "${barberNameById.get(barberId) || barberId}"?\n\nEle não aparecerá mais no agendamento (mantém histórico).`
+        `Desativar o profissional "${barberNameById.get(barberId) || barberId}"?\n\nEle não aparecerá mais no agendamento (mantém histórico).`
       );
       if (!ok) return;
       await api.admin.archiveBarber(barberId);
-      toast({ title: 'Sucesso', description: 'Profissional arquivado.' });
+      toast({ title: 'Sucesso', description: 'Profissional desativado.' });
       await loadAll();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
-      toast({ title: 'Erro', description: message || 'Erro ao arquivar profissional.', variant: 'destructive' });
+      toast({ title: 'Erro', description: message || 'Erro ao desativar profissional.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -305,16 +305,20 @@ export default function UsersPage() {
                     <Button variant="outline" size="sm" onClick={() => handleResetPassword(u.username)}>
                       Resetar senha
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.username)}>
-                      Excluir
-                    </Button>
-                    <Button
-                      variant={u.active ? 'destructive' : 'secondary'}
-                      size="sm"
-                      onClick={() => handleToggleActive(u.username, !u.active)}
-                    >
-                      {u.active ? 'Desativar' : 'Ativar'}
-                    </Button>
+                    {u.role === 'master' && u.username === OWNER_BARBER_ID ? null : (
+                      <>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.username)}>
+                          Excluir
+                        </Button>
+                        <Button
+                          variant={u.active ? 'destructive' : 'secondary'}
+                          size="sm"
+                          onClick={() => handleToggleActive(u.username, !u.active)}
+                        >
+                          {u.active ? 'Desativar' : 'Ativar'}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))
@@ -338,7 +342,7 @@ export default function UsersPage() {
                 const linkedUser = barberUserByBarberId.get(b.id);
                 const isOwner = b.id === OWNER_BARBER_ID;
                 const ownerMasterUser = isOwner ? adminUserByUsername.get(OWNER_BARBER_ID) : null;
-                const statusLabel = b.active ? 'Ativo' : 'Arquivado';
+                const statusLabel = b.active ? 'Ativo' : 'Desativado';
                 return (
                   <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border p-3">
                     <div>
@@ -373,8 +377,8 @@ export default function UsersPage() {
                       {isOwner ? null : (
                         <>
                           {b.active ? (
-                            <Button variant="destructive" size="sm" onClick={() => handleArchiveProfessional(b.id)}>
-                              Arquivar
+                            <Button variant="destructive" size="sm" onClick={() => handleDeactivateProfessional(b.id)}>
+                              Desativar
                             </Button>
                           ) : null}
                           <Button variant="destructive" size="sm" onClick={() => handleDeleteProfessional(b.id)}>
