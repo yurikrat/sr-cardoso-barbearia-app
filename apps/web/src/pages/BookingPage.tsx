@@ -451,14 +451,16 @@ export default function BookingPage() {
 
   const getSlotStatus = (slot: DateTime): 'available' | 'booked' | 'blocked' | 'past' => {
     const slotId = slot.toFormat('yyyyMMdd_HHmm');
+    // Legacy compatibility: hour may not be zero-padded for <10 (e.g. 20260112_900).
+    const legacySlotId = slot.toFormat('yyyyMMdd_Hmm');
     
     if (isSlotPast(slot) && isToday(selectedDate!)) {
       return 'past';
     }
-    if (bookedSlots.has(slotId)) {
+    if (bookedSlots.has(slotId) || bookedSlots.has(legacySlotId)) {
       return 'booked';
     }
-    if (blockedSlots.has(slotId)) {
+    if (blockedSlots.has(slotId) || blockedSlots.has(legacySlotId)) {
       return 'blocked';
     }
     return 'available';

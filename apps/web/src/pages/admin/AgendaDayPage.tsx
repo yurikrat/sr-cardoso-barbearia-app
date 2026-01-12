@@ -31,9 +31,12 @@ interface Booking {
 }
 
 function slotIdToTimeKey(slotId: string): string | null {
-  const m = slotId.match(/^(?:\d{8})_(\d{2})(\d{2})$/);
+  // Legacy compatibility: some slotIds may be generated without zero-padding the hour (e.g. 20260112_900).
+  // Accept both HHmm and Hmm formats.
+  const m = slotId.match(/^(?:\d{8})_(\d{1,2})(\d{2})$/);
   if (!m) return null;
-  return `${m[1]}:${m[2]}`;
+  const hour = m[1].padStart(2, '0');
+  return `${hour}:${m[2]}`;
 }
 
 const SLOT_MINUTES = 30;
