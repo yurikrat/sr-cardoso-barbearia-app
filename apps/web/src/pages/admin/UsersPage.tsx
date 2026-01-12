@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 const OWNER_BARBER_ID = 'sr-cardoso';
 
@@ -29,6 +30,7 @@ type Barber = {
 
 export default function UsersPage() {
   const { toast } = useToast();
+  const refreshToken = useAdminAutoRefreshToken();
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<AdminUser[]>([]);
 
@@ -88,7 +90,8 @@ export default function UsersPage() {
 
   useEffect(() => {
     void loadAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   const handleCreateProfessionalAndLogin = async () => {
     setGeneratedCredentials(null);

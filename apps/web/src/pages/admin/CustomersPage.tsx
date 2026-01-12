@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 import { 
   Search, 
   User, 
@@ -125,6 +126,7 @@ function formatBirthdayDisplay(mmdd: string | null): string {
 export default function CustomersPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const refreshToken = useAdminAutoRefreshToken();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -144,7 +146,8 @@ export default function CustomersPage() {
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   const loadCustomers = async () => {
     setLoading(true);

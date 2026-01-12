@@ -22,6 +22,7 @@ import {
   Scissors
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 type FirestoreTimestampLike = { toDate: () => Date };
 
@@ -75,6 +76,7 @@ export default function CustomerDetailPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { customerId } = useParams();
+  const refreshToken = useAdminAutoRefreshToken();
 
   const [loading, setLoading] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -111,7 +113,7 @@ export default function CustomerDetailPage() {
         setLoading(false);
       }
     })();
-  }, [customerId, toast]);
+  }, [customerId, toast, refreshToken]);
 
   const titleName = `${customer?.identity?.firstName ?? ''} ${customer?.identity?.lastName ?? ''}`.trim() || 'Cliente';
   const whatsapp = customer?.identity?.whatsappE164 || '—';

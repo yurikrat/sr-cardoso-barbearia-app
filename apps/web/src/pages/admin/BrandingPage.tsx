@@ -9,10 +9,12 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { Image as ImageIcon, Upload, Trash2, RefreshCw } from 'lucide-react';
 import type { BrandingSettings } from '@sr-cardoso/shared';
 import { useBranding } from '@/hooks/useBranding';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 export default function BrandingPage() {
   const { toast } = useToast();
   const { refreshBranding } = useBranding();
+  const refreshToken = useAdminAutoRefreshToken();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -36,7 +38,7 @@ export default function BrandingPage() {
       }
     }
     load();
-  }, [toast]);
+  }, [toast, refreshToken]);
 
   const handleSave = async () => {
     if (!settings) return;

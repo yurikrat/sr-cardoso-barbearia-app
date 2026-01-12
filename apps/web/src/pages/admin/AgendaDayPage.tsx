@@ -19,6 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 interface Booking {
   id: string;
@@ -96,6 +97,7 @@ type ViewMode = 'day' | 'week' | 'month';
 export default function AgendaPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const refreshToken = useAdminAutoRefreshToken();
   const [searchParams] = useSearchParams();
   const claims = api.admin.getClaims();
   const forcedBarberId = claims?.role === 'barber' ? (claims.barberId ?? null) : null;
@@ -320,13 +322,14 @@ export default function AgendaPage() {
     }
     
     fetchSchedule();
-  }, [selectedBarber]);
+  }, [selectedBarber, refreshToken]);
 
   // Load bookings
   useEffect(() => {
     if (!selectedBarber) return;
     loadBookings();
-  }, [selectedDate, selectedBarber, viewMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedBarber, viewMode, refreshToken]);
 
   const loadBookings = async () => {
     setLoading(true);

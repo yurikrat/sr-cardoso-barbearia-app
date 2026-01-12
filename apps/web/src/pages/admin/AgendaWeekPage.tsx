@@ -9,10 +9,12 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 export default function AgendaWeekPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const refreshToken = useAdminAutoRefreshToken();
   const claims = api.admin.getClaims();
   const forcedBarberId = claims?.role === 'barber' ? (claims.barberId ?? null) : null;
   const isBarberUser = claims?.role === 'barber';
@@ -57,7 +59,7 @@ export default function AgendaWeekPage() {
     if (!selectedBarber) return;
     loadWeekData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBarber]);
+  }, [selectedBarber, refreshToken]);
 
   const loadWeekData = async () => {
     setLoading(true);

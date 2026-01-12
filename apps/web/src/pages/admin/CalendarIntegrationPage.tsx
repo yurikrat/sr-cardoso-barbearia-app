@@ -7,9 +7,11 @@ import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
 import { Copy, Check } from 'lucide-react';
 import { BARBERS } from '@/utils/constants';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 export default function CalendarIntegrationPage() {
   const { toast } = useToast();
+  const refreshToken = useAdminAutoRefreshToken();
   const [selectedBarber, setSelectedBarber] = useState<string>('sr-cardoso');
   const [calendarToken, setCalendarToken] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -25,7 +27,7 @@ export default function CalendarIntegrationPage() {
 
   useEffect(() => {
     loadBarberToken();
-  }, [loadBarberToken]);
+  }, [loadBarberToken, refreshToken]);
 
   const calendarUrl = calendarToken
     ? `${window.location.origin}/ical/barber/${selectedBarber}/${calendarToken}.ics`

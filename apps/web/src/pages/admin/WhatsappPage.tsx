@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
 import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save, Send, Users, Image, Cake, Upload, X } from 'lucide-react';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -23,6 +24,7 @@ function asDataUrl(base64OrDataUrl: string | null): string | null {
 
 export default function WhatsappPage() {
   const { toast } = useToast();
+  const refreshToken = useAdminAutoRefreshToken();
   const claims = api.admin.getClaims();
 
   const getErrorMessage = (e: unknown) => (e instanceof Error ? e.message : null);
@@ -148,7 +150,7 @@ export default function WhatsappPage() {
         setLoading(false);
       }
     })();
-  }, [toast, claims?.role]);
+  }, [toast, claims?.role, refreshToken]);
 
   const onRefresh = async () => {
     setRefreshing(true);

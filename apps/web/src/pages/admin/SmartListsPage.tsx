@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useNavigate } from 'react-router-dom';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 type TimestampLike =
   | { toDate?: () => Date }
@@ -102,6 +103,7 @@ const PERIOD_LABEL: Record<PeriodKey, string> = {
 export default function SmartListsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const refreshToken = useAdminAutoRefreshToken();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -112,7 +114,8 @@ export default function SmartListsPage() {
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   const loadCustomers = async () => {
     setLoading(true);

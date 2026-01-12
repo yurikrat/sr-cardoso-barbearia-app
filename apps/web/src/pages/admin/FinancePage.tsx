@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 function formatMoneyBRLFromCents(cents: number): string {
   const value = (cents || 0) / 100;
@@ -50,6 +51,7 @@ function formatStatusPtBr(status: string): string {
 export default function FinancePage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const refreshToken = useAdminAutoRefreshToken();
   const isMaster = user?.role === 'master';
   const isBarber = user?.role === 'barber';
 
@@ -103,7 +105,7 @@ export default function FinancePage() {
         setBarbers([]);
       }
     })();
-  }, []);
+  }, [refreshToken]);
 
   useEffect(() => {
     if (!isMaster) {
@@ -132,7 +134,7 @@ export default function FinancePage() {
     return () => {
       cancelled = true;
     };
-  }, [isMaster, toast]);
+  }, [isMaster, toast, refreshToken]);
 
   const monthOptions = useMemo(() => {
     const now = DateTime.now().setZone('America/Sao_Paulo').startOf('month');
@@ -264,7 +266,7 @@ export default function FinancePage() {
         setLoading(false);
       }
     })();
-  }, [startDateKey, endDateKey, selectedBarberId, toast]);
+  }, [startDateKey, endDateKey, selectedBarberId, toast, refreshToken]);
 
   return (
     <AdminLayout>

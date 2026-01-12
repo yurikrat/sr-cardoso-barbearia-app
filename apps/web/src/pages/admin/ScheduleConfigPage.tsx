@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { Clock, Plus, Trash2, Save, Loader2 } from 'lucide-react';
+import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
 const DAYS = [
   { key: '0', label: 'Domingo' },
@@ -40,6 +41,7 @@ const DEFAULT_DAY: DaySchedule = {
 export default function ScheduleConfigPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const refreshToken = useAdminAutoRefreshToken();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
@@ -58,7 +60,8 @@ export default function ScheduleConfigPage() {
     if (selectedBarber) {
       loadSchedule(selectedBarber);
     }
-  }, [selectedBarber]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBarber, refreshToken]);
 
   const loadBarbers = async () => {
     try {

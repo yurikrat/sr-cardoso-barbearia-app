@@ -96,6 +96,8 @@ async function apiFetch<T>(
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
 
+  const method = (init?.method || 'GET').toUpperCase();
+
   if (init?.admin) {
     const token = getAdminToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -121,6 +123,20 @@ async function apiFetch<T>(
       (json as ApiError | null)?.error ||
       `Erro HTTP ${res.status}`;
     throw new Error(msg);
+  }
+
+  // Notify in-app listeners that some admin data may have changed.
+  // This enables auto-refresh in the admin UI without requiring manual F5.
+  if (init?.admin && method !== 'GET') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('sr_admin_data_changed', {
+          detail: { path, method, at: Date.now() },
+        })
+      );
+    } catch {
+      // ignore
+    }
   }
   return json as T;
 }
