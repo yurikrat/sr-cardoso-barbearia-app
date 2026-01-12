@@ -358,6 +358,13 @@ export const api = {
         }
       );
     },
+
+    async deleteBarber(barberId: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/barbers/${encodeURIComponent(barberId)}`, {
+        method: 'DELETE',
+        admin: true,
+      });
+    },
     async financeSummary(payload: { startDateKey: string; endDateKey: string; barberId?: string | null }) {
       const params = new URLSearchParams({
         startDateKey: payload.startDateKey,

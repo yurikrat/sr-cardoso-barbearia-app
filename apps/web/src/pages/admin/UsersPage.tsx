@@ -8,6 +8,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 
+const OWNER_BARBER_ID = 'sr-cardoso';
+
 type AdminUser = {
   id: string;
   username: string;
@@ -48,6 +50,12 @@ export default function UsersPage() {
       if (u.barberId) m.set(u.barberId, u);
       else m.set(u.username, u);
     }
+    return m;
+  }, [users]);
+
+  const adminUserByUsername = useMemo(() => {
+    const m = new Map<string, AdminUser>();
+    for (const u of users) m.set(u.username, u);
     return m;
   }, [users]);
 
@@ -158,6 +166,24 @@ export default function UsersPage() {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : null;
       toast({ title: 'Erro', description: message || 'Erro ao arquivar profissional.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteProfessional = async (barberId: string) => {
+    setLoading(true);
+    try {
+      const ok = confirm(
+        `Excluir DEFINITIVAMENTE o profissional "${barberNameById.get(barberId) || barberId}"?\n\nIsso remove o profissional da agenda. Se existir login com o mesmo ID, ele também será removido. (Não apaga histórico de agendamentos.)`
+      );
+      if (!ok) return;
+      await api.admin.deleteBarber(barberId);
+      toast({ title: 'Sucesso', description: 'Profissional excluído.' });
+      await loadAll();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : null;
+      toast({ title: 'Erro', description: message || 'Erro ao excluir profissional.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -310,6 +336,8 @@ export default function UsersPage() {
             ) : (
               barbers.map((b) => {
                 const linkedUser = barberUserByBarberId.get(b.id);
+                const isOwner = b.id === OWNER_BARBER_ID;
+                const ownerMasterUser = isOwner ? adminUserByUsername.get(OWNER_BARBER_ID) : null;
                 const statusLabel = b.active ? 'Ativo' : 'Arquivado';
                 return (
                   <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border p-3">
@@ -318,11 +346,17 @@ export default function UsersPage() {
                       <div className="text-xs text-muted-foreground">
                         ID: {b.id}
                         {' · '}Status: {statusLabel}
-                        {linkedUser ? ` · Login: ${linkedUser.username}` : ' · Sem login'}
+                        {isOwner
+                          ? ownerMasterUser
+                            ? ` · Conta master: ${ownerMasterUser.username}`
+                            : ' · Conta master'
+                          : linkedUser
+                            ? ` · Login: ${linkedUser.username}`
+                            : ' · Sem login'}
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {linkedUser ? (
+                      {isOwner ? null : linkedUser ? (
                         <>
                           <Button variant="outline" size="sm" onClick={() => handleResetPassword(linkedUser.username)}>
                             Resetar senha
@@ -336,11 +370,18 @@ export default function UsersPage() {
                           Gerar login
                         </Button>
                       )}
-                      {b.active ? (
-                        <Button variant="destructive" size="sm" onClick={() => handleArchiveProfessional(b.id)}>
-                          Arquivar
-                        </Button>
-                      ) : null}
+                      {isOwner ? null : (
+                        <>
+                          {b.active ? (
+                            <Button variant="destructive" size="sm" onClick={() => handleArchiveProfessional(b.id)}>
+                              Arquivar
+                            </Button>
+                          ) : null}
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteProfessional(b.id)}>
+                            Excluir
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );

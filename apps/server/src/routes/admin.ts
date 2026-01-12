@@ -478,6 +478,40 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  app.delete('/api/admin/barbers/:barberId', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const barberId = normalizeBarberId(req.params.barberId || '');
+      if (!barberId) return res.status(400).json({ error: 'barberId inválido' });
+      if (barberId === OWNER_BARBER_ID) return res.status(400).json({ error: 'Não é permitido excluir o barbeiro dono' });
+
+      const barberRef = db.collection('barbers').doc(barberId);
+      const barberSnap = await barberRef.get();
+      if (!barberSnap.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
+
+      // Remove barber doc
+      await barberRef.delete();
+
+      // If there is a matching admin user for this barber, delete only if it's a barber-role user.
+      try {
+        const userRef = db.collection('adminUsers').doc(barberId);
+        const userSnap = await userRef.get();
+        if (userSnap.exists) {
+          const data = userSnap.data() as AdminUserDoc;
+          if (data?.role === 'barber') {
+            await userRef.delete();
+          }
+        }
+      } catch (e) {
+        console.warn('[server] Failed to delete matching barber admin user (continuing):', e);
+      }
+
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Error deleting barber:', e);
+      return res.status(500).json({ error: 'Erro ao excluir barbeiro' });
+    }
+  });
+
   app.post('/api/admin/users/:username/active', requireAdminMw, requireMaster(), async (req, res) => {
     try {
       const username = normalizeUsername(req.params.username || '');
