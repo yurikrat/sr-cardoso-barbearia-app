@@ -14,12 +14,24 @@ npx tsx scripts/init-barbers.ts
 ### `deploy-cloudrun.sh`
 Deploy do backend no Cloud Run (build local + push + deploy).
 
-**Uso:**
+**Uso (recomendado):**
+
+O script já vem com valores padrão para este repo:
+- project: `sr-cardoso-barbearia-prd`
+- region: `us-central1`
+- service: `sr-cardoso-barbearia`
+
+```bash
+./scripts/deploy-cloudrun.sh
+```
+
+**Overrides (opcional):**
+
 ```bash
 ./scripts/deploy-cloudrun.sh \
   --project sr-cardoso-barbearia-prd \
   --region us-central1 \
-  --service sr-cardoso-api \
+  --service sr-cardoso-barbearia \
   --admin-password 'seu-password' \
   --admin-jwt-secret 'seu-secret'
 ```

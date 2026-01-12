@@ -21,9 +21,13 @@ set -euo pipefail
 #   --web-origin https://seu-dominio.com
 #
 
+DEFAULT_PROJECT_ID="sr-cardoso-barbearia-prd"
+DEFAULT_REGION="us-central1"
+DEFAULT_SERVICE_NAME="sr-cardoso-barbearia"
+
 PROJECT_ID=""
-REGION="us-central1"
-SERVICE_NAME="sr-cardoso-barbearia"
+REGION="$DEFAULT_REGION"
+SERVICE_NAME="$DEFAULT_SERVICE_NAME"
 AR_REPO="sr-cardoso"
 IMAGE_TAG=""
 USE_REMOTE_CACHE=true
@@ -55,7 +59,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$PROJECT_ID" ]] || die "--project é obrigatório"
+if [[ -z "$PROJECT_ID" ]]; then
+  # Prefer current gcloud config if set; otherwise use the repo default.
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+  PROJECT_ID="${PROJECT_ID:-$DEFAULT_PROJECT_ID}"
+fi
+
+if [[ -z "$REGION" ]]; then
+  REGION="$DEFAULT_REGION"
+fi
+
+if [[ -z "$SERVICE_NAME" ]]; then
+  SERVICE_NAME="$DEFAULT_SERVICE_NAME"
+fi
+
+[[ -n "$PROJECT_ID" ]] || die "Não foi possível determinar o project (use --project)"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
