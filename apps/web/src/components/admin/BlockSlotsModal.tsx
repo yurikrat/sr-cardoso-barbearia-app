@@ -8,20 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { adminBlockSlotsFn } from '@/lib/api-compat';
 import { useToast } from '@/components/ui/use-toast';
 import { DateTime } from 'luxon';
+import { ADMIN_TIME_SLOTS, ADMIN_END_TIME_SLOTS } from '@/utils/constants';
 
-// Slots de 30 minutos para horário inicial: 09:00 até 19:00 (último cliente pode chegar às 19:00)
-const START_TIME_SLOTS = Array.from({ length: 21 }, (_, i) => {
-  const hour = 9 + Math.floor(i / 2);
-  const minute = (i % 2) * 30;
-  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-});
-
-// Slots de 30 minutos para horário final: 09:30 até 19:30 (fechamento real da barbearia)
-const END_TIME_SLOTS = Array.from({ length: 21 }, (_, i) => {
-  const hour = 9 + Math.floor((i + 1) / 2);
-  const minute = ((i + 1) % 2) * 30;
-  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-});
+// Usa slots da janela ampliada do admin (07:30 até 20:30)
+const START_TIME_SLOTS = ADMIN_TIME_SLOTS;
+const END_TIME_SLOTS = ADMIN_END_TIME_SLOTS;
 
 interface BlockSlotsModalProps {
   open: boolean;

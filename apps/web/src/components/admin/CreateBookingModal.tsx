@@ -10,6 +10,7 @@ import type { BarberSchedule } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { DateTime } from 'luxon';
 import { applyPhoneMask } from '@/utils/phone';
+import { ADMIN_TIME_SLOTS } from '@/utils/constants';
 
 interface CreateBookingModalProps {
   open: boolean;
@@ -100,14 +101,11 @@ export function CreateBookingModal({
   }, [barberId, open]);
 
   // Gera slots de horário baseado na agenda do barbeiro
+  // Admin usa janela ampliada (07:30-20:30) para registrar encaixes
   const timeSlots = useMemo(() => {
     if (!barberSchedule || !date) {
-      // Fallback: 08:00-18:30
-      return Array.from({ length: 22 }, (_, i) => {
-        const hour = 8 + Math.floor(i / 2);
-        const minute = (i % 2) * 30;
-        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      });
+      // Fallback: usa janela ampliada do admin
+      return ADMIN_TIME_SLOTS;
     }
 
     const dt = DateTime.fromJSDate(date, { zone: 'America/Sao_Paulo' });
@@ -115,19 +113,14 @@ export function CreateBookingModal({
     const dayConfig = barberSchedule[dayKey];
 
     if (!dayConfig || !dayConfig.active) {
-      return [];
+      // Dia inativo, mas admin ainda pode registrar encaixes
+      return ADMIN_TIME_SLOTS;
     }
 
-    const [startH, startM] = dayConfig.start.split(':').map(Number);
-    const [endH, endM] = dayConfig.end.split(':').map(Number);
-    
+    // Admin usa a janela ampliada, mas respeita as pausas configuradas do barbeiro
     const slots: string[] = [];
-    let h = startH;
-    let m = startM;
     
-    while (h < endH || (h === endH && m < endM)) {
-      const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-      
+    for (const timeStr of ADMIN_TIME_SLOTS) {
       // Verifica se está em período de pausa
       const isInBreak =
         dayConfig.breaks?.some((brk) => {
@@ -136,12 +129,6 @@ export function CreateBookingModal({
       
       if (!isInBreak) {
         slots.push(timeStr);
-      }
-      
-      m += 30;
-      if (m >= 60) {
-        h++;
-        m = 0;
       }
     }
     
