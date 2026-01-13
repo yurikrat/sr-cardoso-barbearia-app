@@ -18,6 +18,7 @@ export type AdminUserDoc = {
   usernameLower: string;
   role: AdminRole;
   barberId?: string | null;
+  phoneE164?: string | null;
   active: boolean;
   passwordHash: string;
   createdAt: FirestoreTimestamp | FirestoreFieldValue;

@@ -63,6 +63,7 @@ import {
   processMessageQueue,
   processBirthdayMessages,
   broadcastWithMedia,
+  sendBarberBirthdayAlerts,
 } from '../services/whatsappNotifications.js';
 
 export type AdminRouteDeps = {
@@ -207,6 +208,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
             username: data.username,
             role: data.role,
             barberId: data.barberId ?? null,
+            phoneE164: data.phoneE164 ?? null,
             active: data.active,
             lastLoginAt: (data as any)?.lastLoginAt?.toDate ? (data as any).lastLoginAt.toDate().toISOString() : null,
           };
@@ -226,12 +228,14 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         password?: unknown;
         role?: unknown;
         barberId?: unknown;
+        phoneE164?: unknown;
         active?: unknown;
       };
       const username = typeof body.username === 'string' ? normalizeUsername(body.username) : null;
       const passwordProvided = typeof body.password === 'string' ? body.password : null;
       const role = body.role === 'master' || body.role === 'barber' ? body.role : null;
       const barberId = typeof body.barberId === 'string' ? body.barberId : null;
+      const phoneE164 = typeof body.phoneE164 === 'string' && body.phoneE164.trim() ? body.phoneE164.trim() : null;
       const active = typeof body.active === 'boolean' ? body.active : true;
       if (!username || !role) return res.status(400).json({ error: 'username e role são obrigatórios' });
       if (role === 'barber' && !barberId) return res.status(400).json({ error: 'barberId é obrigatório para barbeiro' });
@@ -248,6 +252,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         usernameLower: username,
         role,
         barberId: role === 'barber' ? barberId : null,
+        phoneE164,
         active,
         passwordHash: hashPassword(password),
         createdAt: now,
@@ -275,6 +280,33 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     } catch (e) {
       console.error('Error resetting admin user password:', e);
       return res.status(500).json({ error: 'Erro ao resetar senha' });
+    }
+  });
+
+  // Atualizar telefone do usuário (master pode atualizar qualquer um, barbeiro pode atualizar o próprio)
+  app.patch('/api/admin/users/:username/phone', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const username = normalizeUsername(req.params.username || '');
+      if (!username) return res.status(400).json({ error: 'username inválido' });
+      
+      // Barbeiro só pode atualizar o próprio telefone
+      if (admin.role !== 'master' && normalizeUsername(admin.username) !== username) {
+        return res.status(403).json({ error: 'Sem permissão para atualizar este usuário' });
+      }
+
+      const body = req.body as { phoneE164?: unknown };
+      const phoneE164 = typeof body.phoneE164 === 'string' ? body.phoneE164.trim() : null;
+
+      const ref = db.collection('adminUsers').doc(username);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado' });
+      
+      await ref.update({ phoneE164, updatedAt: FieldValue.serverTimestamp() });
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Error updating user phone:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar telefone' });
     }
   });
 
@@ -1578,7 +1610,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       // Pega a baseUrl do header ou do env
       const origin = req.get('origin') || req.get('referer') || '';
-      const baseUrl = origin ? new URL(origin).origin : (env.APP_BASE_URL || 'https://sr-cardoso.app');
+      const baseUrl = origin ? new URL(origin).origin : (env.APP_BASE_URL || 'https://srcardoso.com.br');
 
       const result = await processBirthdayMessages(db, env, baseUrl);
 
@@ -1620,7 +1652,15 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         return res.status(401).json({ error: 'Não autorizado' });
       }
 
-      const baseUrl = env.APP_BASE_URL || 'https://sr-cardoso.app';
+      // 1) Primeiro: alertar barbeiros sobre seus clientes aniversariantes
+      const barberAlerts = await sendBarberBirthdayAlerts(db, env);
+      console.log(`[CRON Birthday] Alertas para barbeiros: ${barberAlerts.barbersNotified} notificado(s), ${barberAlerts.customersIncluded} cliente(s)`);
+      if (barberAlerts.errors.length > 0) {
+        console.log(`[CRON Birthday] Erros em alertas: ${barberAlerts.errors.join(', ')}`);
+      }
+
+      // 2) Depois: enviar mensagens de aniversário para os clientes
+      const baseUrl = env.APP_BASE_URL || 'https://srcardoso.com.br';
       const result = await processBirthdayMessages(db, env, baseUrl);
 
       // Log detalhado para o Cloud Scheduler
@@ -1650,6 +1690,11 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         failed: result.failed,
         skipped: result.skipped,
         noCustomers: result.noCustomers,
+        barberAlerts: {
+          barbersNotified: barberAlerts.barbersNotified,
+          customersIncluded: barberAlerts.customersIncluded,
+          errors: barberAlerts.errors,
+        },
       });
     } catch (e: any) {
       console.error('Error in birthday cron:', e);
@@ -2181,12 +2226,19 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           return {
             id: s.id,
             identity: data?.identity ?? {},
-            profile: { birthday: data?.profile?.birthday ?? undefined },
+            profile: {
+              birthday: data?.profile?.birthday ?? undefined,
+              birthdayMmdd: data?.profile?.birthdayMmdd ?? undefined,
+            },
+            consent: {
+              marketingOptIn: data?.consent?.marketingOptIn ?? true,
+            },
             stats: {
               totalBookings: stats?.totalBookings ?? 0,
               totalCompleted: stats?.totalCompleted ?? 0,
               noShowCount: stats?.noShowCount ?? 0,
               lastBookingAt: stats?.lastBookingAtMs ? new Date(stats.lastBookingAtMs).toISOString() : null,
+              lastCompletedAt: data?.stats?.lastCompletedAt ?? null,
             },
           };
         });
