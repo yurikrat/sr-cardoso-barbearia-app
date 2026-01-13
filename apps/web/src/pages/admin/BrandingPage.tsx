@@ -146,7 +146,7 @@ export default function BrandingPage() {
                   <Button 
                     variant="destructive" 
                     size="icon" 
-                    className="absolute -top-2 -right-2 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-2 -right-2 h-10 w-10 opacity-0 group-hover:opacity-100 sm:transition-opacity touch:opacity-100"
                     onClick={() => setSettings({ ...settings, logoUrl: null })}
                   >
                     <Trash2 className="h-4 w-4" />

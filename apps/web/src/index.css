@@ -203,6 +203,11 @@
     min-height: 24px;
     min-width: 24px;
   }
+  
+  /* Show elements that are hidden by hover on touch devices */
+  .touch\:opacity-100 {
+    opacity: 1 !important;
+  }
 }
 
 /* Hide scrollbar but keep functionality */

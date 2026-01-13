@@ -249,9 +249,9 @@ export default function ScheduleConfigPage() {
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => addBreak(day.key)}
-                                className="h-8 text-xs"
+                                className="h-10 text-sm"
                               >
-                                <Plus className="h-3 w-3 mr-1" /> Adicionar Pausa
+                                <Plus className="h-4 w-4 mr-1" /> Adicionar Pausa
                               </Button>
                             </div>
                             
@@ -262,19 +262,19 @@ export default function ScheduleConfigPage() {
                                     type="time" 
                                     value={brk.start}
                                     onChange={(e) => updateBreak(day.key, idx, 'start', e.target.value)}
-                                    className="h-8 text-sm"
+                                    className="h-10 text-sm"
                                   />
                                   <Input 
                                     type="time" 
                                     value={brk.end}
                                     onChange={(e) => updateBreak(day.key, idx, 'end', e.target.value)}
-                                    className="h-8 text-sm"
+                                    className="h-10 text-sm"
                                   />
                                 </div>
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
-                                  className="h-8 w-8 text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                                  className="h-10 w-10 text-destructive hover:text-destructive/90 hover:bg-destructive/10"
                                   onClick={() => removeBreak(day.key, idx)}
                                 >
                                   <Trash2 className="h-4 w-4" />
