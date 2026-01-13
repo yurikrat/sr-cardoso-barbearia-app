@@ -37,22 +37,23 @@ function Calendar({
       className={cn('p-3', className)}
       classNames={{
         // DayPicker v9 (UI.* keys)
+        // Touch targets otimizados: 44px (Apple HIG) / 48dp (Material Design)
         root: 'p-3',
         months: 'flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0',
         month: 'space-y-4',
         month_caption: 'flex justify-center pt-1 relative items-center',
-        caption_label: 'text-sm font-medium',
+        caption_label: 'text-base font-medium',
         nav: 'space-x-1 flex items-center',
-        button_previous: cn('absolute left-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100'),
-        button_next: cn('absolute right-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100'),
+        button_previous: cn('absolute left-1 h-11 w-11 bg-transparent p-0 opacity-50 hover:opacity-100'),
+        button_next: cn('absolute right-1 h-11 w-11 bg-transparent p-0 opacity-50 hover:opacity-100'),
         month_grid: 'w-full border-collapse space-y-1',
         weekdays: 'flex',
-        weekday: 'text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]',
+        weekday: 'text-muted-foreground rounded-md w-11 font-normal text-sm',
         weeks: 'flex flex-col',
         week: 'flex w-full mt-2',
-        day: 'h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20',
+        day: 'h-11 w-11 text-center text-base p-0 relative focus-within:relative focus-within:z-20',
         day_button:
-          'h-9 w-9 p-0 flex items-center justify-center font-normal rounded-md hover:bg-muted/20',
+          'h-11 w-11 p-0 flex items-center justify-center font-normal rounded-md hover:bg-muted/20',
         selected:
           'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
         today: 'bg-accent text-accent-foreground',

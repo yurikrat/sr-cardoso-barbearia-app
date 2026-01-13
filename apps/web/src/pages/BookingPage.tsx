@@ -642,7 +642,7 @@ export default function BookingPage() {
                 <input
                   id="booking-for-someone"
                   type="checkbox"
-                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                  className="h-6 w-6 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
                   checked={isBookingForSomeoneElse}
                   onChange={(e) => {
                     const checked = e.target.checked;
