@@ -642,7 +642,7 @@ export default function AgendaPage() {
                       setSelectedBooking(b);
                     }}
                     className={cn(
-                      "w-full text-left text-[10px] px-1.5 py-0.5 rounded truncate border hover:opacity-90",
+                      "w-full text-left text-[11px] px-2 py-1 rounded truncate border hover:opacity-90 min-h-[28px]",
                       b.status === 'confirmed' ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200" :
                       b.status === 'completed' ? "bg-green-50 border-green-100 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200" :
                       b.status === 'no_show' ? "bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-blue-800 dark:text-amber-200" :
