@@ -1,10 +1,9 @@
 import { Link } from 'react-router-dom';
-import { useBranding } from '@/hooks/useBranding';
+import { BrandingLogo } from '@/components/BrandingLogo';
 import { Button } from '@/components/ui/button';
 import { useBookingState } from '@/contexts/BookingContext';
 
 export default function SuccessPage() {
-  const { logoSrc } = useBranding();
   const bookingState = useBookingState();
 
   return (
@@ -12,11 +11,7 @@ export default function SuccessPage() {
       <div className="max-w-md w-full space-y-8">
         <div className="text-center space-y-4">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img 
-              src={logoSrc} 
-              alt="Sr. Cardoso Barbearia" 
-              className="mx-auto w-40 h-auto"
-            />
+            <BrandingLogo className="mx-auto w-40 h-auto" />
           </Link>
           <h1 className="text-3xl font-serif font-bold text-foreground">
             Seu Ritual está agendado.

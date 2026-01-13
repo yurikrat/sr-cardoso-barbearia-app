@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useBranding } from '@/hooks/useBranding';
+import { BrandingLogo } from '@/components/BrandingLogo';
 import { Button } from '@/components/ui/button';
 import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette, MessageCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -13,7 +13,6 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
-  const { logoSrc } = useBranding();
   const location = useLocation();
 
   type Role = 'master' | 'barber';
@@ -40,7 +39,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   };
 
   return (
-    <AdminAutoRefreshProvider pollIntervalMs={2000}>
+    <AdminAutoRefreshProvider pollIntervalMs={1000}>
       <div className="min-h-[100dvh] bg-background bg-[url('https://www.transparenttextures.com/patterns/dark-leather.png')] md:bg-fixed safe-top-p4 safe-bottom-p4 overflow-x-hidden">
         <header className="border-b border-primary/10 bg-card/50 backdrop-blur-md sticky top-0 z-40">
           <div className="container mx-auto px-4 py-4">
@@ -48,8 +47,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               {/* Logo Section */}
               <div className="flex items-center gap-3">
                 <Link to="/admin/agenda" className="flex items-center gap-3">
-                  <img 
-                    src={logoSrc} 
+                  <BrandingLogo 
                     alt="Logo" 
                     className="h-10 w-auto drop-shadow-md"
                   />

@@ -62,7 +62,8 @@ export function useBranding() {
 
   const logoSrc = (() => {
     const url = branding?.logoUrl;
-    if (!url) return '/logo.png';
+    // Fallback para logo local se não houver URL ou for string vazia
+    if (!url || url.trim() === '') return '/logo.png';
     const v = branding?.updatedAt ? encodeURIComponent(branding.updatedAt) : '';
     if (!v) return url;
     return url.includes('?') ? `${url}&v=${v}` : `${url}?v=${v}`;

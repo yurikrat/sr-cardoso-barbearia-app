@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useBranding } from '@/hooks/useBranding';
+import { BrandingLogo } from '@/components/BrandingLogo';
 import { useBookingState } from '@/contexts/BookingContext';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,6 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 const REMEMBERED_CUSTOMER_KEY = 'sr_remembered_customer';
 
 export default function BookingPage() {
-  const { logoSrc } = useBranding();
   const navigate = useNavigate();
   const { toast } = useToast();
   const bookingState = useBookingState();
@@ -147,9 +146,9 @@ export default function BookingPage() {
            const startDt = date.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
            const endDt = date.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
            
-           // Generate slots up to 30 mins before closing
-           const lastSlotStart = endDt.minus({ minutes: 30 });
-           slots = generateSlotsBetween(startDt, lastSlotStart);
+           // Generate slots from start until end (exclusive)
+           // e.g., if end=19:00, generates slots 08:00..18:30
+           slots = generateSlotsBetween(startDt, endDt);
 
            const breaks = dayConfig.breaks ?? [];
            if (breaks.length > 0) {
@@ -471,9 +470,7 @@ export default function BookingPage() {
       <div className="max-w-md mx-auto space-y-6">
         <div className="text-center">
           <Link to="/" className="inline-block" aria-label="Ir para a página inicial">
-            <img 
-              src={logoSrc} 
-              alt="Sr. Cardoso Barbearia" 
+            <BrandingLogo 
               className="mx-auto h-auto" 
               style={{ 
                 width: '160px'
