@@ -54,6 +54,8 @@ export default function ScheduleConfigPage() {
     } else if (user?.barberId) {
       setSelectedBarber(user.barberId);
     }
+    // loadBarbers é estável (não muda entre renders)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {

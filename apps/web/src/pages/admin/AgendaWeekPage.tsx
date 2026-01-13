@@ -48,6 +48,9 @@ export default function AgendaWeekPage() {
         setSelectedBarber(forcedBarberId ?? 'sr-cardoso');
       }
     })();
+    // Efeito de inicialização: roda apenas uma vez no mount.
+    // forcedBarberId é lido mas não deve re-disparar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

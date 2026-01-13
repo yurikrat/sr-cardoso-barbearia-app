@@ -299,6 +299,9 @@ export default function AgendaPage() {
         }
       }
     })();
+    // Efeito de inicialização: roda apenas uma vez no mount.
+    // forcedBarberId/selectedBarber/searchParams são lidos mas não devem re-disparar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Hard safety-net: if a barber user somehow changes selectedBarber, snap back.

@@ -80,6 +80,8 @@ export function CreateBookingModal({
         console.error('Error loading data:', err);
       }
     })();
+    // barberId é verificado mas não deve disparar re-fetch (só seta default se vazio)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Carrega horário do barbeiro selecionado

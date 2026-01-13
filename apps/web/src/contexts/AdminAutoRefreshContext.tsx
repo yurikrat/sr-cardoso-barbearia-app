@@ -11,7 +11,7 @@ const AdminAutoRefreshContext = createContext<AdminAutoRefreshContextValue | nul
 
 export function AdminAutoRefreshProvider({
   children,
-  pollIntervalMs = 2_000,
+  pollIntervalMs = 1_000,
 }: {
   children: React.ReactNode;
   pollIntervalMs?: number;
