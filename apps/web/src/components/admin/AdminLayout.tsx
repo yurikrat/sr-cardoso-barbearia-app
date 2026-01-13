@@ -74,7 +74,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
         <nav className="border-b border-primary/10 bg-card/30 backdrop-blur-sm">
           <div className="container mx-auto px-4">
-            <div className="flex gap-1 overflow-x-auto py-2">
+            <div className="flex gap-1.5 overflow-x-auto py-2.5 -mx-4 px-4 scrollbar-hide">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -82,15 +82,16 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                   <Link key={item.path} to={item.path}>
                     <Button
                       variant="ghost"
+                      size="sm"
                       className={
-                        `flex items-center gap-2 transition-colors ` +
+                        `flex items-center gap-2 transition-colors min-h-[44px] px-3 sm:px-4 ` +
                         (isActive
                           ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
                           : 'text-muted-foreground hover:bg-primary/10 hover:text-primary')
                       }
                     >
-                      <Icon className="h-4 w-4" />
-                      <span className="hidden sm:inline font-serif">{item.label}</span>
+                      <Icon className="h-5 w-5 sm:h-4 sm:w-4 shrink-0" />
+                      <span className="hidden sm:inline font-serif text-sm">{item.label}</span>
                     </Button>
                   </Link>
                 );

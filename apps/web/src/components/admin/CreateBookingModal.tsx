@@ -218,23 +218,23 @@ export function CreateBookingModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Novo Agendamento</DialogTitle>
           <DialogDescription>
             Crie um agendamento manualmente para um cliente
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <Label htmlFor="barber">Barbeiro</Label>
+            <Label htmlFor="barber" className="text-sm font-medium">Barbeiro</Label>
             <Select value={barberId} onValueChange={setBarberId}>
-              <SelectTrigger id="barber" className="mt-1">
+              <SelectTrigger id="barber" className="mt-1.5 h-12 text-base">
                 <SelectValue placeholder="Selecione o barbeiro" />
               </SelectTrigger>
               <SelectContent>
                 {barbers.map((barber) => (
-                  <SelectItem key={barber.id} value={barber.id}>
+                  <SelectItem key={barber.id} value={barber.id} className="py-3 text-base">
                     {barber.name}
                   </SelectItem>
                 ))}
@@ -242,9 +242,9 @@ export function CreateBookingModal({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="date">Data</Label>
+              <Label htmlFor="date" className="text-sm font-medium">Data</Label>
               <Input
                 id="date"
                 type="date"
@@ -253,20 +253,20 @@ export function CreateBookingModal({
                   const newDate = DateTime.fromISO(e.target.value, { zone: 'America/Sao_Paulo' }).toJSDate();
                   setDate(newDate);
                 }}
-                className="mt-1"
+                className="mt-1.5 h-12 text-base"
                 required
               />
             </div>
 
             <div>
-              <Label htmlFor="time">Horário</Label>
+              <Label htmlFor="time" className="text-sm font-medium">Horário</Label>
               <Select value={time} onValueChange={setTime} disabled={isDayOff}>
-                <SelectTrigger id="time" className="mt-1">
+                <SelectTrigger id="time" className="mt-1.5 h-12 text-base">
                   <SelectValue placeholder={isDayOff ? 'Dia fechado' : 'Selecione'} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60">
                   {timeSlots.map((t) => (
-                    <SelectItem key={t} value={t}>
+                    <SelectItem key={t} value={t} className="py-3 text-base">
                       {t}
                     </SelectItem>
                   ))}
@@ -279,14 +279,14 @@ export function CreateBookingModal({
           </div>
 
           <div>
-            <Label htmlFor="service">Serviço</Label>
+            <Label htmlFor="service" className="text-sm font-medium">Serviço</Label>
             <Select value={serviceType} onValueChange={setServiceType}>
-              <SelectTrigger id="service" className="mt-1">
+              <SelectTrigger id="service" className="mt-1.5 h-12 text-base">
                 <SelectValue placeholder="Selecione o serviço" />
               </SelectTrigger>
               <SelectContent>
                 {services.map((service) => (
-                  <SelectItem key={service.id} value={service.id}>
+                  <SelectItem key={service.id} value={service.id} className="py-3 text-base">
                     {service.label} - R$ {(service.priceCents / 100).toFixed(2)}
                   </SelectItem>
                 ))}
@@ -294,53 +294,63 @@ export function CreateBookingModal({
             </Select>
           </div>
 
-          <div className="space-y-3 pt-2 border-t">
+          <div className="space-y-4 pt-3 border-t">
             <h4 className="text-sm font-medium text-muted-foreground">Dados do Cliente</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="firstName">Nome</Label>
+                <Label htmlFor="firstName" className="text-sm font-medium">Nome</Label>
                 <Input
                   id="firstName"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="João"
-                  className="mt-1"
+                  className="mt-1.5 h-12 text-base"
                   required
                 />
               </div>
 
               <div>
-                <Label htmlFor="lastName">Sobrenome</Label>
+                <Label htmlFor="lastName" className="text-sm font-medium">Sobrenome</Label>
                 <Input
                   id="lastName"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Silva"
-                  className="mt-1"
+                  className="mt-1.5 h-12 text-base"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <Label htmlFor="whatsapp">WhatsApp</Label>
+              <Label htmlFor="whatsapp" className="text-sm font-medium">WhatsApp</Label>
               <Input
                 id="whatsapp"
                 value={whatsapp}
                 onChange={handleWhatsappChange}
                 placeholder="(11) 99999-9999"
-                className="mt-1"
+                className="mt-1.5 h-12 text-base"
+                inputMode="tel"
                 required
               />
             </div>
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2 pt-2">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              className="h-12 flex-1 text-base sm:flex-none"
+            >
               Cancelar
             </Button>
-            <Button type="submit" disabled={createBookingMutation.isPending || isDayOff}>
+            <Button 
+              type="submit" 
+              disabled={createBookingMutation.isPending || isDayOff}
+              className="h-12 flex-1 text-base sm:flex-none"
+            >
               {createBookingMutation.isPending ? 'Criando...' : 'Criar Agendamento'}
             </Button>
           </DialogFooter>
