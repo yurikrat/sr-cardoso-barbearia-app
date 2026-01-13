@@ -9,13 +9,18 @@ import { adminBlockSlotsFn } from '@/lib/api-compat';
 import { useToast } from '@/components/ui/use-toast';
 import { DateTime } from 'luxon';
 
-const TIME_SLOTS = Array.from({ length: 22 }, (_, i) => {
-  const hour = 8 + Math.floor(i / 2);
+// Slots de 30 minutos para horário inicial: 09:00 até 19:00 (último cliente pode chegar às 19:00)
+const START_TIME_SLOTS = Array.from({ length: 21 }, (_, i) => {
+  const hour = 9 + Math.floor(i / 2);
   const minute = (i % 2) * 30;
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-}).filter((time) => {
-  const [h, m] = time.split(':').map(Number);
-  return h < 19 || (h === 18 && m <= 30);
+});
+
+// Slots de 30 minutos para horário final: 09:30 até 19:30 (fechamento real da barbearia)
+const END_TIME_SLOTS = Array.from({ length: 21 }, (_, i) => {
+  const hour = 9 + Math.floor((i + 1) / 2);
+  const minute = ((i + 1) % 2) * 30;
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 });
 
 interface BlockSlotsModalProps {
@@ -41,10 +46,25 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
 
   const [barberId, setBarberId] = useState<string>(selectedBarberId || '');
   const [date, setDate] = useState<Date>(selectedDate || new Date());
-  const [startTime, setStartTime] = useState<string>('08:00');
-  const [endTime, setEndTime] = useState<string>('09:00');
+  const [startTime, setStartTime] = useState<string>('09:00');
+  const [endTime, setEndTime] = useState<string>('10:00');
   const [reason, setReason] = useState<string>('');
 
+  // Filtra END_TIME_SLOTS para mostrar apenas horários maiores que startTime
+  const availableEndTimes = useMemo(() => {
+    return END_TIME_SLOTS.filter((time) => time > startTime);
+  }, [startTime]);
+
+  // Ajusta endTime quando startTime mudar e endTime ficar inválido
+  useEffect(() => {
+    if (endTime <= startTime) {
+      // Seleciona o próximo horário disponível (startTime + 30min)
+      const nextSlot = availableEndTimes[0];
+      if (nextSlot) {
+        setEndTime(nextSlot);
+      }
+    }
+  }, [startTime, endTime, availableEndTimes]);
   useEffect(() => {
     if (!open) return;
     if (selectedDate) setDate(selectedDate);
@@ -159,7 +179,7 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TIME_SLOTS.map((time) => (
+                  {START_TIME_SLOTS.map((time) => (
                     <SelectItem key={time} value={time}>
                       {time}
                     </SelectItem>
@@ -175,7 +195,7 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TIME_SLOTS.map((time) => (
+                  {availableEndTimes.map((time) => (
                     <SelectItem key={time} value={time}>
                       {time}
                     </SelectItem>

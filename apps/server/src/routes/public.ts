@@ -369,7 +369,7 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       });
 
       // Envia confirmação de cancelamento via WhatsApp (em background)
-      const baseUrl = env.WEB_ORIGIN || `${req.protocol}://${req.get('host')}`;
+      const baseUrl = env.APP_BASE_URL || 'https://srcardoso.com.br';
       sendCancellationConfirmation(db, env, customerData, baseUrl).catch((err) => {
         console.error('Error sending WhatsApp cancellation confirmation:', err);
       });
@@ -553,7 +553,7 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       });
 
       // Envia confirmação automática via WhatsApp (em background, não bloqueia resposta)
-      const baseUrl = env.WEB_ORIGIN || `${req.protocol}://${req.get('host')}`;
+      const baseUrl = env.APP_BASE_URL || 'https://srcardoso.com.br';
       sendBookingConfirmation(
         db,
         env,
@@ -652,7 +652,7 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
     
     try {
       const { processInactiveCustomerRemarketing } = await import('../services/whatsappNotifications.js');
-      const baseUrl = 'https://sr-cardoso-barbearia-200966434576.us-central1.run.app';
+      const baseUrl = env.APP_BASE_URL || 'https://srcardoso.com.br';
       const result = await processInactiveCustomerRemarketing(db, env, baseUrl);
       console.log(`Cron send-remarketing: processed=${result.processed}, sent=${result.sent}, errors=${result.errors.length}`);
       return res.json({

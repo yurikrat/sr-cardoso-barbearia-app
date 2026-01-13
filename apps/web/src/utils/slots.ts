@@ -4,13 +4,14 @@ import { generateSlotsBetween } from './dates';
 const TIMEZONE = 'America/Sao_Paulo';
 
 /**
- * Gera todos os slots disponíveis de um dia (08:00 até 18:30, intervalos de 30min)
+ * Gera todos os slots disponíveis de um dia (09:00 até 19:00, intervalos de 30min)
+ * O horário final é 19:30 (exclusive), gerando slots até 19:00 (último cliente)
  */
 export function generateDaySlots(date: Date | DateTime): DateTime[] {
   const dt = date instanceof DateTime ? date : DateTime.fromJSDate(date, { zone: TIMEZONE });
   
-  const start = dt.set({ hour: 8, minute: 0, second: 0, millisecond: 0 });
-  const end = dt.set({ hour: 18, minute: 30, second: 0, millisecond: 0 });
+  const start = dt.set({ hour: 9, minute: 0, second: 0, millisecond: 0 });
+  const end = dt.set({ hour: 19, minute: 30, second: 0, millisecond: 0 }); // 19:30 exclusive = last slot 19:00
   
   return generateSlotsBetween(start, end);
 }

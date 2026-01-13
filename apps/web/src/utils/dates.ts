@@ -76,7 +76,7 @@ export function isSunday(date: Date | DateTime): boolean {
 }
 
 /**
- * Valida se o horário está dentro da faixa permitida (08:00 - 18:30)
+ * Valida se o horário está dentro da faixa permitida (09:00 - 19:00)
  */
 export function isValidTimeSlot(slotStart: Date | DateTime): boolean {
   const dt = slotStart instanceof DateTime ? slotStart : toSaoPauloTime(slotStart);
@@ -92,6 +92,8 @@ export function isValidTimeSlot(slotStart: Date | DateTime): boolean {
 
 /**
  * Gera todos os slots de 30min entre startTime e endTime
+ * @param startTime - Início (inclusive)
+ * @param endTime - Fim (exclusive) - não inclui o slot que começa em endTime
  */
 export function generateSlotsBetween(
   startTime: Date | DateTime,
@@ -103,7 +105,7 @@ export function generateSlotsBetween(
   const slots: DateTime[] = [];
   let current = start;
 
-  while (current <= end) {
+  while (current < end) {
     slots.push(current);
     current = current.plus({ minutes: 30 });
   }
