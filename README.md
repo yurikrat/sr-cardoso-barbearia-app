@@ -109,13 +109,64 @@ gcloud firestore indexes create \
 
 ### 6. Deploy do Cloud Run
 
+⚠️ **IMPORTANTE**: Todas as variáveis de ambiente abaixo são **obrigatórias** para o funcionamento completo do sistema. Não remova nenhuma ao fazer updates!
+
+#### Variáveis de Ambiente Obrigatórias (Cloud Run)
+
+| Variável | Tipo | Descrição |
+|----------|------|-----------|
+| `ADMIN_JWT_SECRET` | Secret | Segredo para assinar tokens JWT do admin |
+| `ADMIN_PASSWORD` | Secret | Senha legada (mantida por compatibilidade) |
+| `CRON_SECRET` | Secret | Segredo para autenticar chamadas do Cloud Scheduler |
+| `EVOLUTION_API_KEY` | Secret | API Key do Evolution para WhatsApp |
+| `EVOLUTION_BASE_URL` | Env | URL interna do Evolution (ex: `http://10.128.0.2:8080`) |
+| `EVOLUTION_INSTANCE_NAME` | Env | Nome da instância no Evolution (`sr-cardoso`) |
+| `GCP_PROJECT_ID` | Env | ID do projeto GCP (`sr-cardoso-barbearia-prd`) |
+| `GCP_STORAGE_BUCKET` | Env | Bucket do Cloud Storage para branding (`sr-cardoso-assets`) |
+| `APP_BASE_URL` | Env | URL pública do app (`https://srcardoso.com.br`) |
+
+#### Configuração via gcloud CLI
+
 ```bash
-# Build e deploy do backend
+# Secrets (configurar uma vez via Secret Manager)
+gcloud secrets create ADMIN_JWT_SECRET --data-file=- <<< "seu-segredo-jwt"
+gcloud secrets create ADMIN_PASSWORD --data-file=- <<< "sua-senha-admin"
+gcloud secrets create CRON_SECRET --data-file=- <<< "seu-segredo-cron"
+gcloud secrets create EVOLUTION_API_KEY --data-file=- <<< "sua-api-key-evolution"
+
+# Variáveis de ambiente (atualizar/verificar sempre no deploy)
+gcloud run services update sr-cardoso-barbearia \
+  --project=sr-cardoso-barbearia-prd \
+  --region=us-central1 \
+  --update-env-vars="\
+APP_BASE_URL=https://srcardoso.com.br,\
+EVOLUTION_BASE_URL=http://10.128.0.2:8080,\
+EVOLUTION_INSTANCE_NAME=sr-cardoso,\
+GCP_PROJECT_ID=sr-cardoso-barbearia-prd,\
+GCP_STORAGE_BUCKET=sr-cardoso-assets"
+```
+
+#### Verificar configuração atual
+
+```bash
+gcloud run services describe sr-cardoso-barbearia \
+  --project=sr-cardoso-barbearia-prd \
+  --region=us-central1 \
+  --format="yaml(spec.template.spec.containers[0].env)"
+```
+
+#### Build e Deploy completo
+
+```bash
+# Build e deploy do backend (usando script)
+./scripts/deploy-cloudrun.sh
+
+# Ou manualmente:
 gcloud run deploy sr-cardoso-barbearia \
   --source apps/server \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=sr-cardoso-barbearia-prd,GCP_STORAGE_BUCKET=sr-cardoso-assets" \
+  --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=sr-cardoso-barbearia-prd,GCP_STORAGE_BUCKET=sr-cardoso-assets,EVOLUTION_BASE_URL=http://10.128.0.2:8080,EVOLUTION_INSTANCE_NAME=sr-cardoso,APP_BASE_URL=https://srcardoso.com.br" \
   --project=sr-cardoso-barbearia-prd
 ```
 
@@ -256,7 +307,104 @@ npm run serve
 - `bookings/{bookingId}` - Reservas
 - `barbers/{barberId}/slots/{slotId}` - Slots (bookings/blocks)
 
-## 🔐 Segurança
+## � WhatsApp (Evolution API)
+
+### Arquitetura
+
+O sistema usa **Evolution API** (self-hosted) para envio de mensagens WhatsApp. O Evolution roda em uma VM dentro da VPC do GCP e o Cloud Run conecta via **Direct VPC Egress** usando IP interno.
+
+```
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│  Cloud Run      │─────▶│   VPC (interno)  │─────▶│  VM Evolution   │
+│  (Express API)  │      │  10.128.0.2:8080 │      │  (WhatsApp)     │
+└─────────────────┘      └──────────────────┘      └─────────────────┘
+```
+
+### Variáveis de ambiente necessárias
+
+| Variável | Valor | Descrição |
+|----------|-------|-----------|
+| `EVOLUTION_BASE_URL` | `http://10.128.0.2:8080` | IP interno da VM Evolution |
+| `EVOLUTION_INSTANCE_NAME` | `sr-cardoso` | Nome da instância no Evolution |
+| `EVOLUTION_API_KEY` | (secret) | API Key configurada no Evolution |
+
+### Infraestrutura atual
+
+- **VM**: `sr-cardoso-evolution` (us-central1-a, e2-micro)
+- **IP interno**: `10.128.0.2`
+- **Instância Evolution**: `sr-cardoso`
+- **Evolution API versão**: 2.3.7
+
+### Verificar status da VM
+
+```bash
+# Listar VMs
+gcloud compute instances list --project=sr-cardoso-barbearia-prd
+
+# SSH na VM
+gcloud compute ssh sr-cardoso-evolution --project=sr-cardoso-barbearia-prd --zone=us-central1-a
+
+# Verificar containers (dentro da VM)
+sudo docker ps
+
+# Ver instâncias do Evolution (dentro da VM)
+curl -s http://localhost:8080/instance/fetchInstances -H 'apikey: <API_KEY>'
+```
+
+### Criar nova instância (se necessário)
+
+⚠️ A instância `sr-cardoso` já existe. Use isso apenas se precisar recriar:
+
+```bash
+# Na VM Evolution (via SSH)
+curl -X POST "http://localhost:8080/instance/create" \
+  -H "apikey: <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instanceName": "sr-cardoso",
+    "qrcode": true,
+    "integration": "WHATSAPP-BAILEYS"
+  }'
+```
+
+2. Após criar, acesse o painel admin (`/admin/whatsapp`) para:
+   - Gerar QR Code e conectar o WhatsApp
+   - Ou usar modo "Código de pareamento" (sem QR)
+
+3. Teste enviando uma mensagem de teste pelo painel
+
+### Troubleshooting
+
+**"Instância não encontrada":**
+- A instância `srcardoso` não existe no Evolution
+- Crie a instância via Evolution Manager ou curl (veja acima)
+
+**"Não configurado":**
+- Faltam variáveis de ambiente no Cloud Run
+- Verifique: `EVOLUTION_BASE_URL`, `EVOLUTION_INSTANCE_NAME`, `EVOLUTION_API_KEY`
+
+**"Evolution indisponível":**
+- VM pode estar desligada ou Evolution não está rodando
+- Verifique se a VM está ativa: `gcloud compute instances list`
+- Verifique se o serviço está rodando na VM: `docker ps`
+
+**"Timeout":**
+- Problema de rede entre Cloud Run e VM
+- Verifique VPC connector e firewall rules
+
+### Crons (Cloud Scheduler)
+
+```bash
+# Enviar lembretes (executar a cada 5 min)
+POST /api/cron/send-reminders
+Header: x-cron-secret: <CRON_SECRET>
+
+# Processar fila de retry (executar a cada 10 min)
+POST /api/cron/process-queue
+Header: x-cron-secret: <CRON_SECRET>
+```
+
+## �🔐 Segurança
 
 - ✅ JWT-based authentication (admin)
 - ✅ Firestore Rules configuradas (deploy via gcloud)
@@ -300,9 +448,51 @@ Configuração:
 - Firestore: `settings/whatsapp-notifications`
 
 Operação (cron):
-- `POST /api/cron/send-reminders` (Cloud Scheduler)
-- `POST /api/cron/process-queue` (Cloud Scheduler)
+- `POST /api/cron/send-reminders` (Cloud Scheduler, a cada 15 min)
+- `POST /api/cron/process-queue` (Cloud Scheduler, a cada 5 min)
+- `POST /api/cron/send-birthdays` (Cloud Scheduler, diário às 9h)
 - Autenticação: header `x-cron-secret: <CRON_SECRET>` (compat: `x-cron-key`)
+
+### Alerta de aniversariantes para barbeiros
+
+O sistema envia **alertas automáticos** para os barbeiros sobre clientes que fazem aniversário no dia:
+
+1. **Às 9h** o cron `send-birthdays` é executado
+2. Busca clientes aniversariantes do dia
+3. Agrupa por barbeiro (baseado no último atendimento completado)
+4. Envia mensagem WhatsApp para cada barbeiro com a lista de seus clientes
+
+**Exemplo de mensagem para o barbeiro:**
+```
+🎂 Bom dia, Sr. Cardoso!
+
+Seus clientes aniversariando hoje:
+
+• *João Silva*
+  📞 (79) 99123-4567
+
+• *Maria Santos*
+  📞 (79) 99876-5432
+
+💡 Dica: Liga ou manda uma mensagem parabenizando. Cliente bem tratado sempre volta! 🤝
+```
+
+**Requisitos:**
+- Cada usuário admin (barbeiro) precisa ter o campo `phoneE164` preenchido
+- O cliente precisa ter agendamentos completados para ser associado a um barbeiro
+- Clientes sem histórico são associados ao Sr. Cardoso (owner)
+
+**Atualizar telefone do barbeiro:**
+```bash
+# Via API (requer token de master)
+curl -X PATCH https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/admin/users/<username>/phone \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"phoneE164": "+5579998765432"}'
+
+# Ou via script local (requer ADC)
+npx tsx scripts/update-barber-phones.ts
+```
 
 Falhas:
 - Mensagens que falham entram na fila `whatsappMessageQueue` (até 3 tentativas).
