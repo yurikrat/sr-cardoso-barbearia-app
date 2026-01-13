@@ -455,7 +455,7 @@ export default function CustomersPage() {
                       value={String(itemsPerPage)}
                       onValueChange={(v) => setItemsPerPage(Number(v))}
                     >
-                      <SelectTrigger className="w-20 h-9">
+                      <SelectTrigger className="w-20 h-12">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -587,7 +587,7 @@ export default function CustomersPage() {
                                 <td className="p-4 align-middle">
                                   <button
                                     onClick={(e) => openEditBirthdayModal(customer, e)}
-                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted transition-colors min-h-[36px]"
+                                    className="flex items-center gap-2 px-2 py-2 rounded hover:bg-muted transition-colors min-h-[44px]"
                                   >
                                     {mmdd ? (
                                       <>

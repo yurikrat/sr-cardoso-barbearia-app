@@ -563,10 +563,10 @@ export default function BookingPage() {
               className="rounded-xl border border-primary/10 bg-card/50 backdrop-blur-sm"
               classNames={{
                 caption_label: 'text-base font-serif tracking-wide',
-                button_previous: 'absolute left-1 h-9 w-9 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
-                button_next: 'absolute right-1 h-9 w-9 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
+                button_previous: 'absolute left-1 h-11 w-11 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
+                button_next: 'absolute right-1 h-11 w-11 bg-transparent p-0 opacity-70 hover:opacity-100 text-primary',
                 weekday:
-                  'text-muted-foreground/80 rounded-md w-11 h-9 flex items-center justify-center font-normal text-[0.75rem] uppercase tracking-wider',
+                  'text-muted-foreground/80 rounded-md w-11 h-11 flex items-center justify-center font-normal text-[0.75rem] uppercase tracking-wider',
                 day: 'h-11 w-11 p-0 text-center text-sm focus-within:relative focus-within:z-20',
                 day_button:
                   'h-11 w-11 p-0 flex items-center justify-center font-normal rounded-md transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation',
