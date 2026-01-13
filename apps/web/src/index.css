@@ -158,10 +158,16 @@
 
 /* Touch-friendly interactive elements */
 @layer components {
-  /* Ensure minimum touch target size (44x44px recommended by Apple) */
+  /* Ensure minimum touch target size (44x44px Apple HIG, 48px Material) */
   .touch-target {
     min-height: 44px;
     min-width: 44px;
+  }
+  
+  /* Larger touch target for Material Design compliance */
+  .touch-target-lg {
+    min-height: 48px;
+    min-width: 48px;
   }
   
   /* Active state for touch feedback */
@@ -175,6 +181,30 @@
   }
 }
 
+/* Enhanced touch targets for coarse pointer devices (touchscreens) */
+@media (any-pointer: coarse) {
+  /* Increase spacing between interactive elements on touch devices */
+  button + button,
+  .gap-2 > button,
+  .gap-3 > button {
+    margin-top: 0; /* Ensure proper gap utility takes precedence */
+  }
+  
+  /* Ensure all form elements have adequate touch targets */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 48px;
+  }
+  
+  /* Checkbox and radio - ensure clickable area is large enough */
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 24px;
+    min-width: 24px;
+  }
+}
+
 /* Hide scrollbar but keep functionality */
 @layer utilities {
   .scrollbar-hide {
@@ -184,5 +214,15 @@
   
   .scrollbar-hide::-webkit-scrollbar {
     display: none;  /* Chrome, Safari and Opera */
+  }
+  
+  /* Recommended spacing between touch targets (8px - web.dev/Material) */
+  .touch-gap {
+    gap: 8px;
+  }
+  
+  /* Larger touch gap for better accessibility */
+  .touch-gap-lg {
+    gap: 12px;
   }
 }
