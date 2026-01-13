@@ -680,7 +680,7 @@ export async function broadcastWithMedia(
 export async function processInactiveCustomerRemarketing(
   db: Firestore,
   env: Env,
-  baseUrl: string = 'https://sr-cardoso-barbearia-200966434576.us-central1.run.app'
+  baseUrl: string
 ): Promise<{ processed: number; sent: number; skipped: number; errors: Array<{ customerId: string; error: string }> }> {
   const settings = await getNotificationSettings(db);
   
@@ -813,4 +813,174 @@ export async function processInactiveCustomerRemarketing(
     skipped,
     errors,
   };
+}
+
+/**
+ * Busca clientes aniversariantes hoje com informações de barbeiro
+ * Agrupa por barbeiro baseado no último agendamento completado
+ */
+export async function getBirthdayCustomersGroupedByBarber(
+  db: Firestore
+): Promise<Map<string, Array<{ id: string; firstName: string; lastName: string; whatsappE164: string }>>> {
+  const now = DateTime.now().setZone('America/Sao_Paulo');
+  const todayMmdd = now.toFormat('MMdd');
+  
+  // Busca clientes aniversariantes hoje
+  const customersSnap = await db
+    .collection('customers')
+    .where('profile.birthdayMmdd', '==', todayMmdd)
+    .get();
+  
+  if (customersSnap.empty) {
+    return new Map();
+  }
+  
+  // Map de barberId → lista de clientes
+  const barberCustomers = new Map<string, Array<{ id: string; firstName: string; lastName: string; whatsappE164: string }>>();
+  
+  for (const customerDoc of customersSnap.docs) {
+    const data = customerDoc.data();
+    const whatsappE164 = data.identity?.whatsappE164;
+    const firstName = data.identity?.firstName || 'Cliente';
+    const lastName = data.identity?.lastName || '';
+    
+    if (!whatsappE164 || typeof whatsappE164 !== 'string' || whatsappE164.length < 10) {
+      continue;
+    }
+    
+    // Busca o último agendamento completado deste cliente para determinar o barbeiro
+    const lastBookingSnap = await db
+      .collection('bookings')
+      .where('customerId', '==', customerDoc.id)
+      .where('status', '==', 'completed')
+      .orderBy('completedAt', 'desc')
+      .limit(1)
+      .get();
+    
+    let barberId = 'sr-cardoso'; // Default: Sr. Cardoso recebe todos sem histórico
+    
+    if (!lastBookingSnap.empty) {
+      barberId = lastBookingSnap.docs[0].data().barberId || 'sr-cardoso';
+    }
+    
+    const existing = barberCustomers.get(barberId) || [];
+    existing.push({ id: customerDoc.id, firstName, lastName, whatsappE164 });
+    barberCustomers.set(barberId, existing);
+  }
+  
+  return barberCustomers;
+}
+
+/**
+ * Busca telefone do barbeiro pelo seu barberId
+ */
+export async function getBarberPhoneE164(db: Firestore, barberId: string): Promise<string | null> {
+  // Primeiro tenta buscar pelo adminUser vinculado ao barberId
+  const adminSnap = await db
+    .collection('adminUsers')
+    .where('barberId', '==', barberId)
+    .limit(1)
+    .get();
+  
+  if (!adminSnap.empty) {
+    const phone = adminSnap.docs[0].data().phoneE164;
+    if (phone && typeof phone === 'string' && phone.length > 10) {
+      return phone;
+    }
+  }
+  
+  // Fallback: tenta buscar direto pelo doc (para o caso do sr-cardoso)
+  const directDoc = await db.doc(`adminUsers/${barberId}`).get();
+  if (directDoc.exists) {
+    const phone = directDoc.data()?.phoneE164;
+    if (phone && typeof phone === 'string' && phone.length > 10) {
+      return phone;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Constrói mensagem de alerta de aniversariantes para o barbeiro
+ */
+function buildBarberBirthdayAlertMessage(
+  barberName: string,
+  customers: Array<{ firstName: string; lastName: string; whatsappE164: string }>
+): string {
+  const lines = [
+    `🎂 Bom dia, ${barberName}!`,
+    '',
+    `Seus clientes aniversariando hoje:`,
+    '',
+  ];
+  
+  for (const customer of customers) {
+    const fullName = `${customer.firstName} ${customer.lastName}`.trim();
+    // Formata o telefone para exibição legível
+    const phoneDisplay = customer.whatsappE164.replace(/^(\+55)(\d{2})(\d{5})(\d{4})$/, '($2) $3-$4');
+    lines.push(`• *${fullName}*`);
+    lines.push(`  📞 ${phoneDisplay}`);
+    lines.push('');
+  }
+  
+  lines.push('💡 Dica: Liga ou manda uma mensagem parabenizando. Cliente bem tratado sempre volta! 🤝');
+  
+  return lines.join('\n');
+}
+
+/**
+ * Envia alertas de aniversariantes para os barbeiros
+ * Cada barbeiro recebe a lista dos SEUS clientes aniversariantes
+ */
+export async function sendBarberBirthdayAlerts(
+  db: Firestore,
+  env: Env
+): Promise<{ barbersNotified: number; customersIncluded: number; errors: string[] }> {
+  const now = DateTime.now().setZone('America/Sao_Paulo');
+  const todayMmdd = now.toFormat('MMdd');
+  
+  console.log(`[BirthdayAlert] Iniciando alertas de aniversariantes para barbeiros (${todayMmdd})`);
+  
+  const barberCustomers = await getBirthdayCustomersGroupedByBarber(db);
+  
+  if (barberCustomers.size === 0) {
+    console.log(`[BirthdayAlert] Nenhum cliente aniversariando hoje`);
+    return { barbersNotified: 0, customersIncluded: 0, errors: [] };
+  }
+  
+  let barbersNotified = 0;
+  let customersIncluded = 0;
+  const errors: string[] = [];
+  
+  for (const [barberId, customers] of barberCustomers) {
+    const barberPhone = await getBarberPhoneE164(db, barberId);
+    
+    if (!barberPhone) {
+      errors.push(`Barbeiro ${barberId} sem telefone cadastrado`);
+      console.log(`[BirthdayAlert] ⚠️ Barbeiro ${barberId} sem telefone - ${customers.length} cliente(s) não alertado(s)`);
+      continue;
+    }
+    
+    const barberName = await getBarberName(db, barberId);
+    const message = buildBarberBirthdayAlertMessage(barberName, customers);
+    
+    const result = await sendWhatsAppMessage(env, barberPhone, message);
+    
+    if (result.success) {
+      barbersNotified++;
+      customersIncluded += customers.length;
+      console.log(`[BirthdayAlert] ✓ ${barberName} notificado sobre ${customers.length} aniversariante(s)`);
+    } else {
+      errors.push(`Falha ao notificar ${barberName}: ${result.error}`);
+      console.log(`[BirthdayAlert] ✗ Falha ao notificar ${barberName}: ${result.error}`);
+    }
+    
+    // Pausa entre mensagens
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  
+  console.log(`[BirthdayAlert] Resumo: ${barbersNotified} barbeiro(s) notificado(s), ${customersIncluded} cliente(s) incluído(s)`);
+  
+  return { barbersNotified, customersIncluded, errors };
 }
