@@ -1,6 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import type { BarberSchedule } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,7 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useSearchParams } from 'react-router-dom';
-import { SERVICE_LABELS } from '@/utils/constants';
+import { SERVICE_LABELS, ADMIN_TIME_SLOTS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 
@@ -119,7 +118,6 @@ export default function AgendaPage() {
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
-  const [barberSchedule, setBarberSchedule] = useState<BarberSchedule | null>(null);
 
   const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -133,49 +131,8 @@ export default function AgendaPage() {
   // Derived state
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
   
-  // Generate TIME_SLOTS dynamically based on barber's schedule
-  const TIME_SLOTS = useMemo(() => {
-    if (!barberSchedule || !selectedDate) {
-      // Fallback: 08:00-22:00
-      return Array.from({ length: 29 }, (_, i) => {
-        const hour = 8 + Math.floor(i / 2);
-        const minute = (i % 2) * 30;
-        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      });
-    }
-
-    const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' });
-    const dayKey = dt.weekday === 7 ? '0' : dt.weekday.toString();
-    const dayConfig = barberSchedule[dayKey];
-
-    if (!dayConfig || !dayConfig.active) {
-      // Day closed, return default slots anyway for display
-      return Array.from({ length: 29 }, (_, i) => {
-        const hour = 8 + Math.floor(i / 2);
-        const minute = (i % 2) * 30;
-        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      });
-    }
-
-    const [startH, startM] = dayConfig.start.split(':').map(Number);
-    const [endH, endM] = dayConfig.end.split(':').map(Number);
-    
-    const slots: string[] = [];
-    let h = startH;
-    let m = startM;
-    
-    // Generate slots including the last possible slot
-    while (h < endH || (h === endH && m <= endM)) {
-      slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
-      m += 30;
-      if (m >= 60) {
-        h++;
-        m = 0;
-      }
-    }
-    
-    return slots;
-  }, [barberSchedule, selectedDate]);
+  // TIME_SLOTS fixos para admin (07:30-20:00) - janela ampliada
+  const TIME_SLOTS = ADMIN_TIME_SLOTS;
   
   const selectedDateLabel = useMemo(() => {
     const dt = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).setLocale('pt-BR');
@@ -309,23 +266,6 @@ export default function AgendaPage() {
     if (!forcedBarberId) return;
     if (selectedBarber !== forcedBarberId) setSelectedBarber(forcedBarberId);
   }, [forcedBarberId, selectedBarber]);
-
-  // Fetch barber schedule
-  useEffect(() => {
-    if (!selectedBarber) return;
-    
-    async function fetchSchedule() {
-      try {
-        const barberData = await api.admin.getBarber(selectedBarber);
-        setBarberSchedule(barberData.schedule || null);
-      } catch (err: unknown) {
-        console.error('Error loading barber schedule:', err);
-        setBarberSchedule(null);
-      }
-    }
-    
-    fetchSchedule();
-  }, [selectedBarber, refreshToken]);
 
   // Load bookings
   useEffect(() => {
