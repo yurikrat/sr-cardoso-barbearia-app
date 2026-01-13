@@ -123,23 +123,23 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Bloquear Horários</DialogTitle>
           <DialogDescription>
             Selecione o intervalo de horários que deseja bloquear
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <Label htmlFor="barber">Barbeiro</Label>
+            <Label htmlFor="barber" className="text-sm font-medium">Barbeiro</Label>
             <Select value={barberId} onValueChange={setBarberId} disabled={!!disableBarberSelect}>
-              <SelectTrigger id="barber" className="mt-1">
+              <SelectTrigger id="barber" className="mt-1.5 h-12 text-base">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {resolvedBarbers.map((barber) => (
-                  <SelectItem key={barber.id} value={barber.id}>
+                  <SelectItem key={barber.id} value={barber.id} className="py-3 text-base">
                     {barber.name}
                   </SelectItem>
                 ))}
@@ -148,7 +148,7 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
           </div>
 
           <div>
-            <Label htmlFor="date">Data</Label>
+            <Label htmlFor="date" className="text-sm font-medium">Data</Label>
             <Input
               id="date"
               type="date"
@@ -157,21 +157,21 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
                 const newDate = DateTime.fromISO(e.target.value, { zone: 'America/Sao_Paulo' }).toJSDate();
                 setDate(newDate);
               }}
-              className="mt-1"
+              className="mt-1.5 h-12 text-base"
               required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="startTime">Horário Inicial</Label>
+              <Label htmlFor="startTime" className="text-sm font-medium">Horário Inicial</Label>
               <Select value={startTime} onValueChange={setStartTime}>
-                <SelectTrigger id="startTime" className="mt-1">
+                <SelectTrigger id="startTime" className="mt-1.5 h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60">
                   {START_TIME_SLOTS.map((time) => (
-                    <SelectItem key={time} value={time}>
+                    <SelectItem key={time} value={time} className="py-3 text-base">
                       {time}
                     </SelectItem>
                   ))}
@@ -180,14 +180,14 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
             </div>
 
             <div>
-              <Label htmlFor="endTime">Horário Final</Label>
+              <Label htmlFor="endTime" className="text-sm font-medium">Horário Final</Label>
               <Select value={endTime} onValueChange={setEndTime}>
-                <SelectTrigger id="endTime" className="mt-1">
+                <SelectTrigger id="endTime" className="mt-1.5 h-12 text-base">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60">
                   {availableEndTimes.map((time) => (
-                    <SelectItem key={time} value={time}>
+                    <SelectItem key={time} value={time} className="py-3 text-base">
                       {time}
                     </SelectItem>
                   ))}
@@ -197,21 +197,30 @@ export function BlockSlotsModal({ open, onOpenChange, selectedDate, selectedBarb
           </div>
 
           <div>
-            <Label htmlFor="reason">Motivo (opcional)</Label>
+            <Label htmlFor="reason" className="text-sm font-medium">Motivo (opcional)</Label>
             <Input
               id="reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Ex: Almoço, Folga, etc."
-              className="mt-1"
+              className="mt-1.5 h-12 text-base"
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2 pt-2">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              className="h-12 flex-1 text-base sm:flex-none"
+            >
               Cancelar
             </Button>
-            <Button type="submit" disabled={blockMutation.isPending}>
+            <Button 
+              type="submit" 
+              disabled={blockMutation.isPending}
+              className="h-12 flex-1 text-base sm:flex-none"
+            >
               {blockMutation.isPending ? 'Bloqueando...' : 'Bloquear'}
             </Button>
           </DialogFooter>
