@@ -12,6 +12,15 @@ export type BookingStatus =
 
 export type WhatsAppStatus = 'pending' | 'sent';
 
+// Forma de pagamento (obrigatória ao concluir atendimento)
+export type PaymentMethod = 'card' | 'cash' | 'pix';
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  card: 'Cartão (Crédito/Débito)',
+  cash: 'Dinheiro',
+  pix: 'Pix',
+};
+
 export interface BookingCustomer {
   firstName: string;
   lastName: string;
@@ -28,6 +37,7 @@ export interface Booking {
   customer: BookingCustomer;
   status: BookingStatus;
   whatsappStatus: WhatsAppStatus;
+  paymentMethod?: PaymentMethod | null; // Forma de pagamento (preenchido ao concluir)
   createdAt: Date;
   updatedAt: Date;
   confirmedAt?: Date;

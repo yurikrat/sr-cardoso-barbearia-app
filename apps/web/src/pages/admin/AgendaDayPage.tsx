@@ -4,7 +4,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { CreateBookingModal } from '@/components/admin/CreateBookingModal';
@@ -19,6 +19,16 @@ import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS, ADMIN_TIME_SLOTS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import type { PaymentMethod } from '@sr-cardoso/shared';
+
+// Labels para formas de pagamento (mantido em sincronia com packages/shared)
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  card: 'Cartão (Crédito/Débito)',
+  cash: 'Dinheiro',
+  pix: 'Pix',
+};
 
 interface Booking {
   id: string;
@@ -28,6 +38,7 @@ interface Booking {
   slotStart: Date;
   status: string;
   whatsappStatus: string;
+  paymentMethod?: PaymentMethod | null;
 }
 
 function slotIdToTimeKey(slotId: string): string | null {
@@ -118,6 +129,10 @@ export default function AgendaPage() {
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
+  // Estado para modal de forma de pagamento
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [bookingToComplete, setBookingToComplete] = useState<Booking | null>(null);
 
   const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -356,12 +371,14 @@ export default function AgendaPage() {
   });
 
   const setStatusMutation = useMutation({
-    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show' }) => {
-      return api.admin.setBookingStatus(payload.bookingId, payload.status);
+    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod }) => {
+      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod);
     },
     onSuccess: (_data, variables) => {
       loadBookings();
-      setSelectedBooking((prev) => (prev ? { ...prev, status: variables.status } : prev));
+      setSelectedBooking((prev) => (prev ? { ...prev, status: variables.status, paymentMethod: variables.paymentMethod } : prev));
+      // Auto-fechar modal após ação de status
+      setSelectedBooking(null);
       toast({ title: 'Sucesso', description: 'Status atualizado.' });
     },
     onError: (e: unknown) => {
@@ -370,11 +387,33 @@ export default function AgendaPage() {
     },
   });
 
+  // Handler para abrir modal de pagamento ao clicar em Concluir
+  const handleConcluirClick = (booking: Booking) => {
+    setBookingToComplete(booking);
+    setSelectedPaymentMethod('');
+    setPaymentModalOpen(true);
+  };
+
+  // Handler para confirmar conclusão com forma de pagamento
+  const handleConfirmComplete = () => {
+    if (!bookingToComplete || !selectedPaymentMethod) return;
+    setStatusMutation.mutate({ 
+      bookingId: bookingToComplete.id, 
+      status: 'completed', 
+      paymentMethod: selectedPaymentMethod 
+    });
+    setPaymentModalOpen(false);
+    setBookingToComplete(null);
+    setSelectedPaymentMethod('');
+  };
+
   const handleOpenWhatsApp = (booking: Booking) => {
     // Extrai apenas os dígitos do número E.164 (remove o +)
     const phoneNumber = booking.customer.whatsappE164.replace(/\D/g, '');
     // Abre a conversa direta no WhatsApp Web/App
     window.open(`https://wa.me/${phoneNumber}`, '_blank');
+    // Auto-fechar modal após ação de WhatsApp
+    setSelectedBooking(null);
   };
 
   // Função para desbloquear slot
@@ -750,6 +789,9 @@ export default function AgendaPage() {
                 <p><span className="font-medium">Horário:</span> {formatTime(selectedBooking.slotStart)}</p>
                 <p><span className="font-medium">WhatsApp:</span> {selectedBooking.customer.whatsappE164}</p>
                 <p><span className="font-medium">Status:</span> <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge></p>
+                {selectedBooking.paymentMethod && (
+                  <p><span className="font-medium">Forma de pagamento:</span> {PAYMENT_METHOD_LABELS[selectedBooking.paymentMethod]}</p>
+                )}
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
@@ -757,7 +799,7 @@ export default function AgendaPage() {
                   variant="secondary"
                   size="sm"
                   disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status) || setStatusMutation.isPending}
-                  onClick={() => setStatusMutation.mutate({ bookingId: selectedBooking.id, status: 'completed' })}
+                  onClick={() => handleConcluirClick(selectedBooking)}
                 >
                   Concluir
                 </Button>
@@ -782,6 +824,69 @@ export default function AgendaPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Method Dialog */}
+      <Dialog open={paymentModalOpen} onOpenChange={(open) => {
+        if (!open) {
+          setPaymentModalOpen(false);
+          setBookingToComplete(null);
+          setSelectedPaymentMethod('');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Concluir Atendimento</DialogTitle>
+            <DialogDescription>
+              Selecione a forma de pagamento para finalizar o atendimento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label className="text-base font-medium mb-3 block">Forma de Pagamento</Label>
+            <RadioGroup 
+              value={selectedPaymentMethod} 
+              onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
+              className="space-y-3"
+            >
+              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                <RadioGroupItem value="card" id="payment-card" />
+                <Label htmlFor="payment-card" className="flex-1 cursor-pointer text-base">
+                  💳 Cartão (Crédito/Débito)
+                </Label>
+              </div>
+              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                <RadioGroupItem value="cash" id="payment-cash" />
+                <Label htmlFor="payment-cash" className="flex-1 cursor-pointer text-base">
+                  💵 Dinheiro
+                </Label>
+              </div>
+              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                <RadioGroupItem value="pix" id="payment-pix" />
+                <Label htmlFor="payment-pix" className="flex-1 cursor-pointer text-base">
+                  📱 Pix
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setPaymentModalOpen(false);
+                setBookingToComplete(null);
+                setSelectedPaymentMethod('');
+              }}
+            >
+              Voltar
+            </Button>
+            <Button 
+              onClick={handleConfirmComplete}
+              disabled={!selectedPaymentMethod || setStatusMutation.isPending}
+            >
+              {setStatusMutation.isPending ? 'Processando...' : 'Confirmar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

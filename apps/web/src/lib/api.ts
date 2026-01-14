@@ -476,11 +476,11 @@ export const api = {
         { admin: true }
       );
     },
-    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show') {
+    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show', paymentMethod?: 'card' | 'cash' | 'pix') {
       return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
         method: 'POST',
         admin: true,
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(paymentMethod && { paymentMethod }) }),
       });
     },
     async listAdminUsers() {

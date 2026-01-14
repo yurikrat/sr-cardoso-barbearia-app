@@ -1895,11 +1895,25 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       const admin = getAdminFromReq(req);
       const bookingId = req.params.bookingId;
-      const nextStatus = (req.body as { status?: unknown })?.status;
+      const body = req.body as { status?: unknown; paymentMethod?: unknown };
+      const nextStatus = body?.status;
+      const paymentMethod = body?.paymentMethod;
+      
       if (typeof nextStatus !== 'string') return res.status(400).json({ error: 'status é obrigatório' });
 
       const allowed = ['confirmed', 'completed', 'no_show'] as const;
       if (!allowed.includes(nextStatus as any)) return res.status(400).json({ error: 'status inválido' });
+
+      // Validação de forma de pagamento (obrigatória ao concluir)
+      const allowedPaymentMethods = ['card', 'cash', 'pix'] as const;
+      if (nextStatus === 'completed') {
+        if (!paymentMethod || typeof paymentMethod !== 'string') {
+          return res.status(400).json({ error: 'Forma de pagamento é obrigatória ao concluir' });
+        }
+        if (!allowedPaymentMethods.includes(paymentMethod as any)) {
+          return res.status(400).json({ error: 'Forma de pagamento inválida' });
+        }
+      }
 
       const bookingRef = db.collection('bookings').doc(bookingId);
       const bookingDoc = await bookingRef.get();
@@ -1935,7 +1949,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           updatedAt: FieldValue.serverTimestamp(),
         };
 
-        if (nextStatus === 'completed') updates.completedAt = FieldValue.serverTimestamp();
+        if (nextStatus === 'completed') {
+          updates.completedAt = FieldValue.serverTimestamp();
+          updates.paymentMethod = paymentMethod; // Salva forma de pagamento
+        }
         if (nextStatus === 'no_show') updates.noShowAt = FieldValue.serverTimestamp();
 
         tx.update(bookingRef, updates);
