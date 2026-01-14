@@ -41,6 +41,7 @@ export default function BookingPage() {
   const [availableSlots, setAvailableSlots] = useState<DateTime[]>([]);
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
+  const [blockReasons, setBlockReasons] = useState<Record<string, string>>({});
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [services, setServices] = useState<
     Array<{
@@ -82,6 +83,7 @@ export default function BookingPage() {
     setAvailableSlots([]);
     setBookedSlots(new Set());
     setBlockedSlots(new Set());
+    setBlockReasons({});
     
     if (rememberedCustomer) {
       setCustomerForm({
@@ -197,6 +199,7 @@ export default function BookingPage() {
 
       setBookedSlots(booked);
       setBlockedSlots(blocked);
+      setBlockReasons(availability.blockReasons ?? {});
     } catch (error: unknown) {
       console.error('Error loading slots:', error);
       const err = error as { name?: unknown; code?: unknown; message?: unknown };
@@ -319,6 +322,7 @@ export default function BookingPage() {
     setAvailableSlots([]);
     setBookedSlots(new Set());
     setBlockedSlots(new Set());
+    setBlockReasons({});
     bookingState.setServiceType(service);
     setStep(2);
   };
@@ -330,6 +334,7 @@ export default function BookingPage() {
     setAvailableSlots([]);
     setBookedSlots(new Set());
     setBlockedSlots(new Set());
+    setBlockReasons({});
     bookingState.setBarberId(barberId);
     setStep(3);
   };
@@ -587,6 +592,54 @@ export default function BookingPage() {
         {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Escolha o horário</h2>
+            
+            {/* Mensagem informativa sobre horários bloqueados */}
+            {(() => {
+              const blockedSlotIds = Object.keys(blockReasons);
+              if (blockedSlotIds.length === 0) return null;
+              
+              // Calcular range de horários bloqueados
+              const blockedTimes = blockedSlotIds
+                .map(id => {
+                  // ID format: YYYYMMDD_HHmm or YYYYMMDD_Hmm
+                  const timePart = id.split('_')[1];
+                  if (!timePart) return null;
+                  const hours = timePart.length === 4 ? timePart.slice(0, 2) : timePart.slice(0, 1);
+                  const minutes = timePart.length === 4 ? timePart.slice(2) : timePart.slice(1);
+                  return `${hours.padStart(2, '0')}:${minutes}`;
+                })
+                .filter(Boolean)
+                .sort();
+              
+              const timeRange = blockedTimes.length > 0 
+                ? blockedTimes.length === 1
+                  ? `às ${blockedTimes[0]}`
+                  : `das ${blockedTimes[0]} às ${blockedTimes[blockedTimes.length - 1]}`
+                : '';
+              
+              const uniqueReasons = [...new Set(Object.values(blockReasons))];
+              
+              return (
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-primary text-lg mt-0.5">ℹ️</span>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium text-primary">
+                        {blockedTimes.length === 1 
+                          ? `Horário indisponível ${timeRange}` 
+                          : `Horários indisponíveis ${timeRange}`}
+                      </p>
+                      {uniqueReasons.map((reason, idx) => (
+                        <p key={idx} className="text-sm text-foreground/80">
+                          {reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            
             {loadingSlots ? (
               <div className="flex justify-center py-8">
                 <LoadingSpinner />

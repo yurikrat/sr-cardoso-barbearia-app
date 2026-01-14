@@ -242,8 +242,8 @@ export function CreateBookingModal({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="grid grid-cols-[1fr_1fr] gap-3">
+            <div className="min-w-0">
               <Label htmlFor="date" className="text-sm font-medium">Data</Label>
               <Input
                 id="date"
@@ -253,15 +253,15 @@ export function CreateBookingModal({
                   const newDate = DateTime.fromISO(e.target.value, { zone: 'America/Sao_Paulo' }).toJSDate();
                   setDate(newDate);
                 }}
-                className="mt-1.5 h-12 text-base"
+                className="mt-1.5 h-12 text-base w-full"
                 required
               />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <Label htmlFor="time" className="text-sm font-medium">Horário</Label>
               <Select value={time} onValueChange={setTime} disabled={isDayOff}>
-                <SelectTrigger id="time" className="mt-1.5 h-12 text-base">
+                <SelectTrigger id="time" className="mt-1.5 h-12 text-base w-full">
                   <SelectValue placeholder={isDayOff ? 'Dia fechado' : 'Selecione'} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">

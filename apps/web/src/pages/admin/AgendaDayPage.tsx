@@ -25,7 +25,8 @@ import type { PaymentMethod } from '@sr-cardoso/shared';
 
 // Labels para formas de pagamento (mantido em sincronia com packages/shared)
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  card: 'Cartão (Crédito/Débito)',
+  credit: 'Cartão de Crédito',
+  debit: 'Cartão de Débito',
   cash: 'Dinheiro',
   pix: 'Pix',
 };
@@ -835,43 +836,78 @@ export default function AgendaPage() {
           setSelectedPaymentMethod('');
         }
       }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Concluir Atendimento</DialogTitle>
             <DialogDescription>
-              Selecione a forma de pagamento para finalizar o atendimento.
+              Selecione a forma de pagamento para finalizar.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-2">
             <Label className="text-base font-medium mb-3 block">Forma de Pagamento</Label>
             <RadioGroup 
               value={selectedPaymentMethod} 
               onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
-              className="space-y-3"
+              className="grid grid-cols-2 gap-2"
             >
-              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
-                <RadioGroupItem value="card" id="payment-card" />
-                <Label htmlFor="payment-card" className="flex-1 cursor-pointer text-base">
-                  💳 Cartão (Crédito/Débito)
+              <div 
+                className={cn(
+                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
+                  selectedPaymentMethod === 'credit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                )}
+                onClick={() => setSelectedPaymentMethod('credit')}
+              >
+                <RadioGroupItem value="credit" id="payment-credit" className="sr-only" />
+                <span className="text-2xl mb-1">💳</span>
+                <Label htmlFor="payment-credit" className="cursor-pointer text-sm font-medium text-center">
+                  Crédito
                 </Label>
               </div>
-              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
-                <RadioGroupItem value="cash" id="payment-cash" />
-                <Label htmlFor="payment-cash" className="flex-1 cursor-pointer text-base">
-                  💵 Dinheiro
+              <div 
+                className={cn(
+                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
+                  selectedPaymentMethod === 'debit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                )}
+                onClick={() => setSelectedPaymentMethod('debit')}
+              >
+                <RadioGroupItem value="debit" id="payment-debit" className="sr-only" />
+                <span className="text-2xl mb-1">💳</span>
+                <Label htmlFor="payment-debit" className="cursor-pointer text-sm font-medium text-center">
+                  Débito
                 </Label>
               </div>
-              <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
-                <RadioGroupItem value="pix" id="payment-pix" />
-                <Label htmlFor="payment-pix" className="flex-1 cursor-pointer text-base">
-                  📱 Pix
+              <div 
+                className={cn(
+                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
+                  selectedPaymentMethod === 'cash' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                )}
+                onClick={() => setSelectedPaymentMethod('cash')}
+              >
+                <RadioGroupItem value="cash" id="payment-cash" className="sr-only" />
+                <span className="text-2xl mb-1">💵</span>
+                <Label htmlFor="payment-cash" className="cursor-pointer text-sm font-medium text-center">
+                  Dinheiro
+                </Label>
+              </div>
+              <div 
+                className={cn(
+                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
+                  selectedPaymentMethod === 'pix' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                )}
+                onClick={() => setSelectedPaymentMethod('pix')}
+              >
+                <RadioGroupItem value="pix" id="payment-pix" className="sr-only" />
+                <span className="text-2xl mb-1">📱</span>
+                <Label htmlFor="payment-pix" className="cursor-pointer text-sm font-medium text-center">
+                  Pix
                 </Label>
               </div>
             </RadioGroup>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-row gap-2 sm:gap-0">
             <Button 
               variant="outline" 
+              className="flex-1 sm:flex-none h-12"
               onClick={() => {
                 setPaymentModalOpen(false);
                 setBookingToComplete(null);
@@ -881,6 +917,7 @@ export default function AgendaPage() {
               Voltar
             </Button>
             <Button 
+              className="flex-1 sm:flex-none h-12"
               onClick={handleConfirmComplete}
               disabled={!selectedPaymentMethod || setStatusMutation.isPending}
             >

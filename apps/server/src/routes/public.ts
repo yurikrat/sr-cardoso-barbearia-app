@@ -80,17 +80,24 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
 
       const bookedSlotIds: string[] = [];
       const blockedSlotIds: string[] = [];
+      const blockReasons: Record<string, string> = {};
 
       slotsSnap.forEach((doc) => {
-        const data = doc.data() as { kind?: unknown };
+        const data = doc.data() as { kind?: unknown; reason?: unknown };
         if (data.kind === 'booking') bookedSlotIds.push(doc.id);
-        if (data.kind === 'block') blockedSlotIds.push(doc.id);
+        if (data.kind === 'block') {
+          blockedSlotIds.push(doc.id);
+          // Armazena o motivo se existir
+          if (typeof data.reason === 'string' && data.reason.trim()) {
+            blockReasons[doc.id] = data.reason.trim();
+          }
+        }
       });
 
       const barberData = barberDoc.data() as any;
       const schedule = barberData?.schedule ?? null;
 
-      return res.json({ bookedSlotIds, blockedSlotIds, schedule });
+      return res.json({ bookedSlotIds, blockedSlotIds, blockReasons, schedule });
     } catch {
       return res.status(500).json({ error: 'Erro ao carregar disponibilidade' });
     }

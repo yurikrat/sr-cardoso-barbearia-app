@@ -420,6 +420,8 @@ export const api = {
         projectionRevenueCents?: number | null;
         countsByServiceType: Record<string, number>;
         countsByStatus: Record<string, number>;
+        countsByPaymentMethod?: Record<string, number>;
+        revenueByPaymentMethod?: Record<string, number>;
         serviceCatalog?: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>;
       }>(`/api/admin/finance/summary?${params.toString()}`, { admin: true });
     },
@@ -476,7 +478,7 @@ export const api = {
         { admin: true }
       );
     },
-    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show', paymentMethod?: 'card' | 'cash' | 'pix') {
+    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show', paymentMethod?: 'credit' | 'debit' | 'cash' | 'pix') {
       return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
         method: 'POST',
         admin: true,
@@ -620,7 +622,7 @@ export const api = {
   },
 
   async availability(barberId: string, dateKey: string) {
-    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[]; schedule: BarberSchedule | null }>(
+    return apiFetch<{ bookedSlotIds: string[]; blockedSlotIds: string[]; blockReasons?: Record<string, string>; schedule: BarberSchedule | null }>(
       `/api/availability?barberId=${encodeURIComponent(barberId)}&dateKey=${encodeURIComponent(
         dateKey
       )}`

@@ -694,6 +694,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
       const countsByServiceType: Record<string, number> = {};
       const countsByStatus: Record<string, number> = {};
+      const countsByPaymentMethod: Record<string, number> = {};
+      const revenueByPaymentMethod: Record<string, number> = {};
       let totalBookings = 0;
       let estimatedRevenueCents = 0;
       let realizedRevenueCents = 0;
@@ -709,10 +711,11 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const currentMonthKey = nowSP.toFormat('yyyy-MM');
 
       snap.forEach((doc) => {
-        const data = doc.data() as { serviceType?: unknown; status?: unknown; barberId?: unknown };
+        const data = doc.data() as { serviceType?: unknown; status?: unknown; barberId?: unknown; paymentMethod?: unknown };
         const serviceType = typeof data.serviceType === 'string' ? data.serviceType : 'unknown';
         const status = typeof data.status === 'string' ? data.status : 'unknown';
         const bId = typeof data.barberId === 'string' ? data.barberId : '';
+        const paymentMethod = typeof data.paymentMethod === 'string' ? data.paymentMethod : null;
 
         totalBookings += 1;
         countsByServiceType[serviceType] = (countsByServiceType[serviceType] ?? 0) + 1;
@@ -732,6 +735,12 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           const barberShare = Math.round(price * pct);
           realizedBarberCents += barberShare;
           realizedShopCents += price - barberShare;
+          
+          // Contabilizar por forma de pagamento (apenas concluídos)
+          if (paymentMethod) {
+            countsByPaymentMethod[paymentMethod] = (countsByPaymentMethod[paymentMethod] ?? 0) + 1;
+            revenueByPaymentMethod[paymentMethod] = (revenueByPaymentMethod[paymentMethod] ?? 0) + price;
+          }
         }
       });
 
@@ -891,6 +900,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         projectionRevenueCents,
         countsByServiceType,
         countsByStatus,
+        countsByPaymentMethod,
+        revenueByPaymentMethod,
         serviceCatalog: financeConfig.services.map((s) => ({
           id: s.id,
           label: s.label,
@@ -1905,7 +1916,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       if (!allowed.includes(nextStatus as any)) return res.status(400).json({ error: 'status inválido' });
 
       // Validação de forma de pagamento (obrigatória ao concluir)
-      const allowedPaymentMethods = ['card', 'cash', 'pix'] as const;
+      const allowedPaymentMethods = ['credit', 'debit', 'cash', 'pix'] as const;
       if (nextStatus === 'completed') {
         if (!paymentMethod || typeof paymentMethod !== 'string') {
           return res.status(400).json({ error: 'Forma de pagamento é obrigatória ao concluir' });

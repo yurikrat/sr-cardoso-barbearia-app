@@ -13,10 +13,11 @@ export type BookingStatus =
 export type WhatsAppStatus = 'pending' | 'sent';
 
 // Forma de pagamento (obrigatória ao concluir atendimento)
-export type PaymentMethod = 'card' | 'cash' | 'pix';
+export type PaymentMethod = 'credit' | 'debit' | 'cash' | 'pix';
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  card: 'Cartão (Crédito/Débito)',
+  credit: 'Cartão de Crédito',
+  debit: 'Cartão de Débito',
   cash: 'Dinheiro',
   pix: 'Pix',
 };

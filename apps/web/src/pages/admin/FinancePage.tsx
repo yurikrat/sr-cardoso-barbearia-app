@@ -65,9 +65,23 @@ export default function FinancePage() {
     }
   }, [user]);
 
+  // Tipo de período: dia, semana, mês, ano
+  const [periodType, setPeriodType] = useState<'day' | 'week' | 'month' | 'year'>('month');
+  
+  // Valores selecionados para cada tipo de período
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    return DateTime.now().setZone('America/Sao_Paulo').toFormat('yyyy-MM-dd');
+  });
+  const [selectedWeek, setSelectedWeek] = useState<string>(() => {
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    return now.startOf('week').toFormat('yyyy-MM-dd');
+  });
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = DateTime.now().setZone('America/Sao_Paulo');
     return now.toFormat('yyyy-MM');
+  });
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    return DateTime.now().setZone('America/Sao_Paulo').toFormat('yyyy');
   });
   const [loading, setLoading] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
@@ -84,6 +98,8 @@ export default function FinancePage() {
     projectionRevenueCents?: number | null;
     countsByServiceType: Record<string, number>;
     countsByStatus: Record<string, number>;
+    countsByPaymentMethod?: Record<string, number>;
+    revenueByPaymentMethod?: Record<string, number>;
     serviceCatalog?: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>;
     commissions?: { defaultBarberPct: number; ownerBarberPct: number };
   }>(null);
@@ -144,11 +160,76 @@ export default function FinancePage() {
     }));
   }, []);
 
-  const { startDateKey, endDateKey } = useMemo(() => {
-    const start = DateTime.fromFormat(selectedMonth, 'yyyy-MM', { zone: 'America/Sao_Paulo' }).startOf('month');
-    const end = start.endOf('month');
-    return { startDateKey: start.toFormat('yyyy-MM-dd'), endDateKey: end.toFormat('yyyy-MM-dd') };
-  }, [selectedMonth]);
+  // Opções para seletor de dias (últimos 30 dias)
+  const dayOptions = useMemo(() => {
+    const now = DateTime.now().setZone('America/Sao_Paulo').startOf('day');
+    return Array.from({ length: 30 }, (_, i) => now.minus({ days: i })).map((dt) => ({
+      value: dt.toFormat('yyyy-MM-dd'),
+      label: dt.toFormat("dd 'de' MMMM", { locale: 'pt-BR' }),
+    }));
+  }, []);
+
+  // Opções para seletor de semanas (últimas 12 semanas)
+  const weekOptions = useMemo(() => {
+    const now = DateTime.now().setZone('America/Sao_Paulo').startOf('week');
+    return Array.from({ length: 12 }, (_, i) => now.minus({ weeks: i })).map((dt) => {
+      const weekEnd = dt.endOf('week');
+      return {
+        value: dt.toFormat('yyyy-MM-dd'),
+        label: `${dt.toFormat("dd/MM", { locale: 'pt-BR' })} - ${weekEnd.toFormat("dd/MM", { locale: 'pt-BR' })}`,
+      };
+    });
+  }, []);
+
+  // Opções para seletor de anos (últimos 3 anos)
+  const yearOptions = useMemo(() => {
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    return Array.from({ length: 3 }, (_, i) => now.minus({ years: i })).map((dt) => ({
+      value: dt.toFormat('yyyy'),
+      label: dt.toFormat('yyyy'),
+    }));
+  }, []);
+
+  // Calcula startDateKey e endDateKey baseado no tipo de período
+  const { startDateKey, endDateKey, periodLabel } = useMemo(() => {
+    switch (periodType) {
+      case 'day': {
+        const day = DateTime.fromFormat(selectedDay, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' });
+        return {
+          startDateKey: day.toFormat('yyyy-MM-dd'),
+          endDateKey: day.toFormat('yyyy-MM-dd'),
+          periodLabel: day.toFormat("dd 'de' MMMM 'de' yyyy", { locale: 'pt-BR' }),
+        };
+      }
+      case 'week': {
+        const weekStart = DateTime.fromFormat(selectedWeek, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' });
+        const weekEnd = weekStart.endOf('week');
+        return {
+          startDateKey: weekStart.toFormat('yyyy-MM-dd'),
+          endDateKey: weekEnd.toFormat('yyyy-MM-dd'),
+          periodLabel: `${weekStart.toFormat("dd/MM", { locale: 'pt-BR' })} a ${weekEnd.toFormat("dd/MM/yyyy", { locale: 'pt-BR' })}`,
+        };
+      }
+      case 'month': {
+        const start = DateTime.fromFormat(selectedMonth, 'yyyy-MM', { zone: 'America/Sao_Paulo' }).startOf('month');
+        const end = start.endOf('month');
+        return {
+          startDateKey: start.toFormat('yyyy-MM-dd'),
+          endDateKey: end.toFormat('yyyy-MM-dd'),
+          periodLabel: start.toFormat('LLLL yyyy', { locale: 'pt-BR' }),
+        };
+      }
+      case 'year': {
+        const yearStart = DateTime.fromFormat(selectedYear, 'yyyy', { zone: 'America/Sao_Paulo' }).startOf('year');
+        const yearEnd = yearStart.endOf('year');
+        return {
+          startDateKey: yearStart.toFormat('yyyy-MM-dd'),
+          endDateKey: yearEnd.toFormat('yyyy-MM-dd'),
+          periodLabel: selectedYear,
+        };
+      }
+    }
+  }, [periodType, selectedDay, selectedWeek, selectedMonth, selectedYear]);
 
   const handleExport = async () => {
     if (!summary) return;
@@ -177,7 +258,7 @@ export default function FinancePage() {
       { header: 'Valor', key: 'value', width: 20 },
     ];
     wsSummary.addRows([
-      ['Mês', selectedMonth],
+      ['Período', periodLabel],
       ['Agendamentos', summary.totalBookings],
       ['Previsto', displayedEstimatedCents / 100],
       ['Realizado', displayedRealizedCents / 100],
@@ -223,12 +304,37 @@ export default function FinancePage() {
       wsStatus.addRow([formatStatusPtBr(status), count]);
     });
 
+    // Sheet 4: Formas de Pagamento
+    const wsPayment = workbook.addWorksheet('Formas de Pagamento');
+    wsPayment.columns = [
+      { header: 'Forma de Pagamento', key: 'method', width: 25 },
+      { header: 'Quantidade', key: 'count', width: 15 },
+      { header: 'Receita', key: 'revenue', width: 15 },
+    ];
+    const paymentMethodLabels: Record<string, string> = {
+      credit: 'Cartão de Crédito',
+      debit: 'Cartão de Débito',
+      cash: 'Dinheiro',
+      pix: 'Pix',
+    };
+    if (summary.countsByPaymentMethod) {
+      Object.entries(summary.countsByPaymentMethod).forEach(([method, count]) => {
+        const revenueCents = summary.revenueByPaymentMethod?.[method] ?? 0;
+        wsPayment.addRow([paymentMethodLabels[method] ?? method, count, revenueCents / 100]);
+      });
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `financeiro_${selectedMonth}.xlsx`;
+    // Nome do arquivo baseado no período selecionado
+    const filenameSuffix = periodType === 'day' ? selectedDay 
+      : periodType === 'week' ? `semana_${selectedWeek}` 
+      : periodType === 'month' ? selectedMonth 
+      : selectedYear;
+    a.download = `financeiro_${filenameSuffix}.xlsx`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -251,6 +357,8 @@ export default function FinancePage() {
           projectionRevenueCents: data.projectionRevenueCents,
           countsByServiceType: data.countsByServiceType,
           countsByStatus: data.countsByStatus,
+          countsByPaymentMethod: data.countsByPaymentMethod,
+          revenueByPaymentMethod: data.revenueByPaymentMethod,
           serviceCatalog: data.serviceCatalog,
           commissions: data.commissions,
         });
@@ -296,18 +404,79 @@ export default function FinancePage() {
               </SelectContent>
             </Select>
 
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Qual mês?" />
+            {/* Seletor de tipo de período */}
+            <Select value={periodType} onValueChange={(v) => setPeriodType(v as 'day' | 'week' | 'month' | 'year')}>
+              <SelectTrigger className="w-full sm:w-[120px]">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {monthOptions.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
+                <SelectItem value="day">Dia</SelectItem>
+                <SelectItem value="week">Semana</SelectItem>
+                <SelectItem value="month">Mês</SelectItem>
+                <SelectItem value="year">Ano</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Seletor específico baseado no tipo de período */}
+            {periodType === 'day' && (
+              <Select value={selectedDay} onValueChange={setSelectedDay}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {dayOptions.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {periodType === 'week' && (
+              <Select value={selectedWeek} onValueChange={setSelectedWeek}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {weekOptions.map((w) => (
+                    <SelectItem key={w.value} value={w.value}>
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {periodType === 'month' && (
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {periodType === 'year' && (
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-full sm:w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map((y) => (
+                    <SelectItem key={y.value} value={y.value}>
+                      {y.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             <Button variant="outline" size="icon" onClick={handleExport} disabled={!summary} title="Exportar Excel">
               <Download className="h-4 w-4" />
@@ -354,7 +523,10 @@ export default function FinancePage() {
                 <CardContent>
                   <div className="text-2xl font-bold">{summary.totalBookings}</div>
                   <p className="text-xs text-muted-foreground">
-                    Total no mês
+                    {periodType === 'day' && 'Total no dia'}
+                    {periodType === 'week' && 'Total na semana'}
+                    {periodType === 'month' && 'Total no mês'}
+                    {periodType === 'year' && 'Total no ano'}
                   </p>
                 </CardContent>
               </Card>
@@ -535,6 +707,60 @@ export default function FinancePage() {
                       {Object.keys(summary.countsByStatus).length === 0 && (
                         <div className="text-sm text-muted-foreground">Nenhum status registrado.</div>
                       )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Formas de Pagamento */}
+              <Card className="lg:col-span-3">
+                <CardHeader>
+                  <CardTitle className="font-serif flex items-center gap-2">
+                    <Wallet className="h-5 w-5" />
+                    Formas de Pagamento
+                  </CardTitle>
+                  <CardDescription>Distribuição por forma de pagamento (apenas concluídos).</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {summary.countsByPaymentMethod && Object.entries(summary.countsByPaymentMethod)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([method, count]) => {
+                        const revenueCents = summary.revenueByPaymentMethod?.[method] ?? 0;
+                        const totalCompleted = Object.values(summary.countsByPaymentMethod || {}).reduce((a, b) => a + b, 0);
+                        const percentage = totalCompleted > 0 ? Math.round((count / totalCompleted) * 100) : 0;
+                        const methodLabels: Record<string, string> = {
+                          credit: 'Cartão de Crédito',
+                          debit: 'Cartão de Débito',
+                          cash: 'Dinheiro',
+                          pix: 'Pix',
+                        };
+                        const methodIcons: Record<string, string> = {
+                          credit: '💳',
+                          debit: '💳',
+                          cash: '💵',
+                          pix: '📱',
+                        };
+                        return (
+                          <div key={method} className="flex items-center justify-between p-3 rounded-lg border bg-card/50">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">{methodIcons[method] ?? '💰'}</span>
+                              <div>
+                                <div className="font-medium">{methodLabels[method] ?? method}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatMoneyBRLFromCents(revenueCents)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold">{count}</div>
+                              <div className="text-xs text-muted-foreground">{percentage}%</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {(!summary.countsByPaymentMethod || Object.keys(summary.countsByPaymentMethod).length === 0) && (
+                      <div className="text-sm text-muted-foreground">Nenhum pagamento registrado.</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
