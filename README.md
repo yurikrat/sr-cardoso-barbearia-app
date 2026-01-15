@@ -529,40 +529,106 @@ curl -X POST "http://localhost:8080/instance/create" \
 
 ### Crons (Cloud Scheduler)
 
-Os cron jobs são executados via Cloud Scheduler chamando endpoints do Cloud Run:
+Os cron jobs são executados via Cloud Scheduler chamando endpoints do Cloud Run. **Para economizar custos**, alguns endpoints executam múltiplas tarefas.
 
-| Job | Endpoint | Frequência | Função |
-|-----|----------|------------|--------|
+#### Jobs Ativos
+
+| Job | Endpoint | Frequência | Funções executadas |
+|-----|----------|------------|-------------------|
 | `send-reminders` | `POST /api/cron/send-reminders` | A cada 15 min | Envia lembretes WhatsApp antes do horário |
-| `process-queue` | `POST /api/cron/process-queue` | A cada 5 min | Reprocessa mensagens que falharam |
-| `send-birthdays` | `POST /api/cron/send-birthdays` | Diário às 9h | Alerta barbeiros sobre aniversariantes |
+| `process-queue` | `POST /api/cron/process-queue` | A cada 5 min | Reprocessa mensagens WhatsApp que falharam |
+| `send-birthdays` | `POST /api/cron/send-birthdays` | Diário às 9h | **Múltiplas tarefas** (ver abaixo) |
 
-**Autenticação**: Header `x-cron-secret` com valor de `CRON_SECRET` (compat: `x-cron-key`).
+#### Detalhamento do Job `send-birthdays` (Cron Diário)
+
+> ⚠️ **IMPORTANTE**: Este cron executa **3 tarefas distintas** para evitar custos adicionais de Cloud Scheduler.
+
+Quando o Cloud Scheduler chama `/api/cron/send-birthdays`, o endpoint executa **sequencialmente**:
+
+1. **Alertas de aniversário para barbeiros**
+   - Busca clientes que fazem aniversário hoje
+   - Agrupa por barbeiro preferencial
+   - Envia WhatsApp consolidado para cada barbeiro com a lista de aniversariantes
+
+2. **Mensagens de parabéns para clientes**
+   - Envia mensagem personalizada de aniversário para cada cliente
+   - Respeita opt-out e evita duplicidade (verifica `lastBirthdayWishSent`)
+
+3. **🆕 Alertas de estoque baixo**
+   - Verifica produtos com `stockQuantity <= minStock`
+   - Envia WhatsApp para o admin master com lista de produtos em falta ou baixo estoque
+   - Evita spam: só notifica novamente após 24h (registra em `stockAlertHistory`)
+
+**Resposta do endpoint:**
+```json
+{
+  "success": true,
+  "message": "2 mensagem(ns) de aniversário enviada(s)!",
+  "processed": 5,
+  "sent": 2,
+  "failed": 0,
+  "skipped": 3,
+  "barberAlerts": {
+    "barbersNotified": 1,
+    "customersIncluded": 2,
+    "errors": []
+  },
+  "stockAlerts": {
+    "alertsSent": 1,
+    "errors": []
+  }
+}
+```
+
+#### Endpoint Standalone de Estoque (Opcional)
+
+Existe também o endpoint `/api/cron/check-stock-alerts` que pode ser chamado **manualmente** ou via scheduler dedicado se preferir frequência diferente:
 
 ```bash
-# Criar job de lembretes
+# Testar manualmente
+curl -X POST https://sr-cardoso-barbearia-xxx.run.app/api/cron/check-stock-alerts \
+  -H "x-cron-secret: SEU_CRON_SECRET"
+```
+
+**Quando usar o endpoint standalone:**
+- Se quiser verificar estoque mais de 1x por dia
+- Para testes manuais
+- Se preferir separar as responsabilidades (mas terá custo adicional)
+
+#### Autenticação dos Crons
+
+Todos os endpoints de cron requerem o header `x-cron-secret` com o valor da variável de ambiente `CRON_SECRET`. Também aceita `Authorization: Bearer <SECRET>` por compatibilidade.
+
+#### Comandos para Criar os Jobs
+
+```bash
+# Job de lembretes (a cada 15 minutos)
 gcloud scheduler jobs create http send-reminders \
   --location=us-central1 \
   --schedule="*/15 * * * *" \
-  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/send-reminders" \
+  --uri="https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/send-reminders" \
   --http-method=POST \
   --headers="x-cron-secret=SEU_CRON_SECRET" \
   --project=sr-cardoso-barbearia-prd
 
-# Criar job de fila de retry
+# Job de fila de retry (a cada 5 minutos)
 gcloud scheduler jobs create http process-queue \
   --location=us-central1 \
   --schedule="*/5 * * * *" \
-  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/process-queue" \
+  --uri="https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/process-queue" \
   --http-method=POST \
   --headers="x-cron-secret=SEU_CRON_SECRET" \
   --project=sr-cardoso-barbearia-prd
 
-# Criar job de aniversários (9h horário de Brasília = 12:00 UTC)
+# Job diário: aniversários + estoque (9h Brasília = 12:00 UTC)
+# ⚠️ Este único job cuida de:
+#    - Alertas de aniversário para barbeiros
+#    - Mensagens de parabéns para clientes  
+#    - Alertas de estoque baixo
 gcloud scheduler jobs create http send-birthdays \
   --location=us-central1 \
   --schedule="0 12 * * *" \
-  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/send-birthdays" \
+  --uri="https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app/api/cron/send-birthdays" \
   --http-method=POST \
   --headers="x-cron-secret=SEU_CRON_SECRET" \
   --project=sr-cardoso-barbearia-prd
@@ -614,7 +680,7 @@ Configuração:
 Operação (cron):
 - `POST /api/cron/send-reminders` (Cloud Scheduler, a cada 15 min)
 - `POST /api/cron/process-queue` (Cloud Scheduler, a cada 5 min)
-- `POST /api/cron/send-birthdays` (Cloud Scheduler, diário às 9h)
+- `POST /api/cron/send-birthdays` (Cloud Scheduler, diário às 9h) — **também verifica estoque baixo**
 - Autenticação: header `x-cron-secret: <CRON_SECRET>` (compat: `x-cron-key`)
 
 ### Alerta de aniversariantes para barbeiros
