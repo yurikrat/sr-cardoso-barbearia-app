@@ -172,6 +172,55 @@ gcloud run deploy sr-cardoso-barbearia \
 
 ## 🧪 Desenvolvimento
 
+### Comandos principais
+
+```bash
+# Instalar dependências (raiz do monorepo)
+npm install
+
+# Desenvolvimento frontend (porta 5173)
+npm run dev
+
+# Desenvolvimento backend (porta 8080)
+npm run dev:server
+
+# Build de todos os workspaces
+npm run build
+
+# Build apenas shared (necessário antes de outros builds)
+npm run build:shared
+
+# Type checking
+npm run type-check
+```
+
+### Frontend
+
+```bash
+cd apps/web
+npm run dev
+```
+
+Acesse: `http://localhost:5173`
+
+### Backend (Cloud Run - Express)
+
+```bash
+cd apps/server
+npm run dev
+```
+
+Acesse: `http://localhost:8080`
+
+### Backend (Functions - Legacy)
+
+> ⚠️ `apps/functions/` contém operações legadas de admin. O backend principal é `apps/server/`.
+
+```bash
+cd apps/functions
+npm run serve
+```
+
 ### Arquivos de Configuração Firestore
 
 Todos os arquivos de configuração do Firestore estão organizados em `firebase/`:
@@ -201,24 +250,6 @@ gcloud run deploy sr-cardoso-barbearia \
 # Deploy incremental (apenas regras/índices do Firestore)
 gcloud firestore rules create --file=firebase/firestore.rules --project=sr-cardoso-barbearia-prd
 gcloud firestore indexes create --file=firebase/firestore.indexes.json --project=sr-cardoso-barbearia-prd
-```
-
-## 🧪 Desenvolvimento
-
-### Frontend
-
-```bash
-cd apps/web
-npm run dev
-```
-
-Acesse: `http://localhost:5173`
-
-### Backend (Functions)
-
-```bash
-cd apps/functions
-npm run serve
 ```
 
 ## 📱 Funcionalidades
@@ -306,6 +337,39 @@ O projeto usa uma arquitetura híbrida:
 - **`apps/functions/`** (Firebase Functions): Operações legadas de admin (em migração)
 
 Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Firebase SDK.
+
+### Endpoints da API
+
+**Públicos (sem autenticação):**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/availability?barberId=X&dateKey=YYYY-MM-DD` | Slots disponíveis |
+| `POST` | `/api/bookings` | Criar agendamento |
+| `GET` | `/api/public/cancel/:code` | Página de cancelamento pelo cliente |
+| `POST` | `/api/public/cancel/:code` | Confirmar cancelamento |
+| `GET` | `/ical/barber/:barberId/:token.ics` | Feed iCal do barbeiro |
+
+**Admin (requer JWT):**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/admin/login` | Login admin |
+| `GET` | `/api/admin/bookings` | Listar agendamentos |
+| `POST` | `/api/admin/bookings/:id/cancel` | Cancelar agendamento |
+| `POST` | `/api/admin/bookings/:id/reschedule` | Reagendar |
+| `POST` | `/api/admin/bookings/:id/status` | Atualizar status (completed/no_show) |
+| `POST` | `/api/admin/slots/block` | Bloquear horários |
+| `GET` | `/api/admin/customers` | Listar clientes |
+| `PATCH` | `/api/admin/users/:username/phone` | Atualizar telefone do barbeiro |
+
+**Cron (requer `x-cron-secret`):**
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/cron/send-reminders` | Enviar lembretes WhatsApp |
+| `POST` | `/api/cron/process-queue` | Processar fila de retry |
+| `POST` | `/api/cron/send-birthdays` | Alertar barbeiros sobre aniversariantes |
 
 ### Fluxo de Dados
 
