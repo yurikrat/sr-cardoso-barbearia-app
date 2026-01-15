@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DateTime } from 'luxon';
 import {
   Calendar,
@@ -13,7 +14,10 @@ import {
   Trash2,
   Info,
   Package,
-  ShoppingBag
+  ShoppingBag,
+  User,
+  CreditCard,
+  X,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,6 +31,8 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 function formatMoneyBRLFromCents(cents: number): string {
   const value = (cents || 0) / 100;
@@ -49,6 +55,43 @@ function formatStatusPtBr(status: string): string {
       return status;
   }
 }
+
+function formatPaymentMethod(method: string): string {
+  switch (method) {
+    case 'credit':
+      return 'Crédito';
+    case 'debit':
+      return 'Débito';
+    case 'cash':
+      return 'Dinheiro';
+    case 'pix':
+      return 'Pix';
+    default:
+      return method;
+  }
+}
+
+// Tipo de venda
+type Sale = {
+  id: string;
+  customerId?: string;
+  customerName?: string;
+  barberId: string;
+  barberName?: string;
+  items: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    unitPriceCents: number;
+    commissionPct: number;
+  }>;
+  totalCents: number;
+  commissionCents: number;
+  paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+  origin: 'standalone' | 'booking';
+  dateKey: string;
+  createdAt: string;
+};
 
 export default function FinancePage() {
   const { toast } = useToast();
@@ -140,6 +183,25 @@ export default function FinancePage() {
     }>;
   };
   const [productsSummary, setProductsSummary] = useState<ProductsSummary | null>(null);
+
+  // Aba ativa e lista de vendas
+  const [activeTab, setActiveTab] = useState<'resumo' | 'vendas'>('resumo');
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Filtro por produto (vindo da URL)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const productIdFilter = searchParams.get('productId') || undefined;
+  const productNameFilter = searchParams.get('productName') || undefined;
+
+  // Se tiver filtro de produto, mudar para aba de vendas
+  useEffect(() => {
+    if (productIdFilter) {
+      setActiveTab('vendas');
+    }
+  }, [productIdFilter]);
 
   useEffect(() => {
     void (async () => {
@@ -278,6 +340,21 @@ export default function FinancePage() {
       ? (summary.estimatedBarberCents ?? 0) + (summary.realizedBarberCents ?? 0)
       : (summary.revenueCents ?? 0);
 
+    // Buscar vendas para o export (caso não estejam carregadas)
+    let salesForExport = sales;
+    if (salesForExport.length === 0) {
+      try {
+        const barberId = selectedBarberId === 'all' ? undefined : selectedBarberId;
+        salesForExport = await api.admin.listSales({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          barberId,
+        });
+      } catch {
+        salesForExport = [];
+      }
+    }
+
     const { Workbook } = await import('exceljs');
     const workbook = new Workbook();
 
@@ -287,8 +364,16 @@ export default function FinancePage() {
       { header: 'Métrica', key: 'metric', width: 30 },
       { header: 'Valor', key: 'value', width: 20 },
     ];
+
+    // Calcular totais de produtos para o resumo
+    const productsTotalCents = productsSummary?.totalRevenueCents ?? 0;
+    const productsCommissionCents = productsSummary?.totalCommissionCents ?? 0;
+    const productsDisplayedCents = isBarber ? productsCommissionCents : productsTotalCents;
+
     wsSummary.addRows([
       ['Período', periodLabel],
+      [],
+      ['--- SERVIÇOS ---', ''],
       ['Agendamentos', summary.totalBookings],
       ['Previsto', displayedEstimatedCents / 100],
       ['Realizado', displayedRealizedCents / 100],
@@ -299,6 +384,15 @@ export default function FinancePage() {
       ...(isBarber ? [] : [['Previsto (Barbearia)', (summary.estimatedShopCents ?? 0) / 100]]),
       ['Realizado (Profissional)', (summary.realizedBarberCents ?? 0) / 100],
       ...(isBarber ? [] : [['Realizado (Barbearia)', (summary.realizedShopCents ?? 0) / 100]]),
+      [],
+      ['--- PRODUTOS ---', ''],
+      ['Vendas de Produtos', salesForExport.length],
+      ['Receita Produtos', productsTotalCents / 100],
+      ['Comissão Produtos', productsCommissionCents / 100],
+      ...(isBarber ? [] : [['Lucro Barbearia (Produtos)', (productsTotalCents - productsCommissionCents) / 100]]),
+      [],
+      ['--- TOTAL GERAL ---', ''],
+      [isBarber ? 'Total (Serviços + Produtos)' : 'Receita Total', (displayedTotalCents + productsDisplayedCents) / 100],
     ]);
 
     // Sheet 2: Serviços
@@ -354,6 +448,38 @@ export default function FinancePage() {
       });
     }
 
+    // Sheet 5: Vendas de Produtos
+    const wsSales = workbook.addWorksheet('Vendas de Produtos');
+    wsSales.columns = [
+      { header: 'Data', key: 'date', width: 12 },
+      { header: 'Cliente', key: 'customer', width: 25 },
+      { header: 'Produtos', key: 'products', width: 40 },
+      { header: 'Pagamento', key: 'payment', width: 18 },
+      { header: 'Profissional', key: 'barber', width: 20 },
+      { header: 'Total', key: 'total', width: 12 },
+      { header: 'Comissão', key: 'commission', width: 12 },
+    ];
+    salesForExport.forEach(sale => {
+      const productsStr = sale.items.map(i => `${i.quantity}x ${i.productName}`).join(', ');
+      const dateFormatted = DateTime.fromISO(sale.dateKey).toFormat('dd/MM/yyyy');
+      wsSales.addRow([
+        dateFormatted,
+        sale.customerName || 'Não informado',
+        productsStr,
+        paymentMethodLabels[sale.paymentMethod] ?? sale.paymentMethod,
+        sale.barberName || '-',
+        sale.totalCents / 100,
+        sale.commissionCents / 100,
+      ]);
+    });
+    // Linha de total
+    if (salesForExport.length > 0) {
+      const totalSales = salesForExport.reduce((acc, s) => acc + s.totalCents, 0);
+      const totalCommission = salesForExport.reduce((acc, s) => acc + s.commissionCents, 0);
+      wsSales.addRow([]);
+      wsSales.addRow(['', '', '', '', 'TOTAL:', totalSales / 100, totalCommission / 100]);
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
@@ -395,13 +521,19 @@ export default function FinancePage() {
           commissions: data.commissions,
         });
         
-        // Buscar dados de produtos
-        const productsData = await api.admin.getProductsSummary({
-          startDate: startDateKey,
-          endDate: endDateKey,
-          barberId: barberId ?? undefined,
-        });
-        setProductsSummary(productsData);
+        // Buscar dados de produtos (em try/catch separado para não bloquear serviços)
+        try {
+          const productsData = await api.admin.getProductsSummary({
+            startDate: startDateKey,
+            endDate: endDateKey,
+            barberId: barberId ?? undefined,
+          });
+          setProductsSummary(productsData);
+        } catch (prodError: unknown) {
+          console.error('Erro ao buscar resumo de produtos:', prodError);
+          // Silently fail - produtos são opcionais, não bloqueia a página
+          setProductsSummary(null);
+        }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : null;
         toast({
@@ -416,6 +548,85 @@ export default function FinancePage() {
       }
     })();
   }, [startDateKey, endDateKey, selectedBarberId, toast, refreshToken]);
+
+  // Carregar vendas quando a aba de vendas estiver ativa
+  useEffect(() => {
+    if (activeTab !== 'vendas') return;
+    
+    void (async () => {
+      setLoadingSales(true);
+      try {
+        const barberId = selectedBarberId === 'all' ? undefined : selectedBarberId;
+        const salesData = await api.admin.listSales({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          barberId,
+          productId: productIdFilter,
+        });
+        setSales(salesData);
+      } catch (error) {
+        console.error('Erro ao carregar vendas:', error);
+        setSales([]);
+      } finally {
+        setLoadingSales(false);
+      }
+    })();
+  }, [activeTab, startDateKey, endDateKey, selectedBarberId, refreshToken, productIdFilter]);
+
+  // Limpar filtro de produto
+  const clearProductFilter = () => {
+    searchParams.delete('productId');
+    searchParams.delete('productName');
+    setSearchParams(searchParams);
+  };
+
+  // Cancelar venda
+  const handleDeleteSale = async () => {
+    if (!saleToDelete) return;
+    setDeleting(true);
+    try {
+      await api.admin.deleteSale(saleToDelete.id);
+      toast({ title: 'Sucesso', description: 'Venda cancelada e estoque revertido.' });
+      // Recarregar vendas
+      const barberId = selectedBarberId === 'all' ? undefined : selectedBarberId;
+      const salesData = await api.admin.listSales({
+        startDate: startDateKey,
+        endDate: endDateKey,
+        barberId,
+        productId: productIdFilter,
+      });
+      setSales(salesData);
+      // Recarregar resumo de produtos
+      try {
+        const productsData = await api.admin.getProductsSummary({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          barberId: barberId ?? undefined,
+        });
+        setProductsSummary(productsData);
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao cancelar venda';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+      setSaleToDelete(null);
+    }
+  };
+
+  // Totais de vendas
+  const salesTotals = useMemo(() => {
+    return sales.reduce(
+      (acc, sale) => ({
+        revenue: acc.revenue + sale.totalCents,
+        commission: acc.commission + sale.commissionCents,
+        count: acc.count + 1,
+      }),
+      { revenue: 0, commission: 0, count: 0 }
+    );
+  }, [sales]);
 
   return (
     <AdminLayout>
@@ -537,6 +748,13 @@ export default function FinancePage() {
           </div>
         </div>
 
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'resumo' | 'vendas')} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="resumo">Resumo</TabsTrigger>
+            <TabsTrigger value="vendas">Vendas de Produtos</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="resumo" className="space-y-0">
         {loading ? (
           <div className="flex justify-center py-12">
             <LoadingSpinner />
@@ -1277,6 +1495,152 @@ export default function FinancePage() {
             )}
           </div>
         )}
+          </TabsContent>
+
+          <TabsContent value="vendas" className="space-y-4">
+            {/* Filtro de produto ativo */}
+            {productIdFilter && (
+              <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <Package className="h-4 w-4 text-blue-600" />
+                <span className="text-sm text-blue-700 dark:text-blue-300">
+                  Filtrando por: <strong>{productNameFilter || 'Produto'}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 px-2"
+                  onClick={clearProductFilter}
+                >
+                  <X className="h-4 w-4" />
+                  Limpar filtro
+                </Button>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center">
+              <p className="text-muted-foreground">
+                {sales.length} venda{sales.length !== 1 ? 's' : ''} no período
+              </p>
+            </div>
+
+            {loadingSales ? (
+              <div className="flex justify-center py-12">
+                <LoadingSpinner />
+              </div>
+            ) : sales.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="p-12 text-center text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <ShoppingBag className="h-10 w-10 opacity-20" />
+                    <p>Nenhuma venda no período selecionado.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {sales.map((sale) => (
+                  <Card key={sale.id}>
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{sale.customerName || 'Cliente não informado'}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {sale.items.map((item, idx) => (
+                              <span key={idx}>
+                                {item.quantity}x {item.productName}
+                                {idx < sale.items.length - 1 ? ', ' : ''}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CreditCard className="h-3 w-3" />
+                            {formatPaymentMethod(sale.paymentMethod)}
+                            {sale.barberName && (
+                              <>
+                                <span className="mx-1">•</span>
+                                {sale.barberName}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right flex items-start gap-2">
+                          <div>
+                            <div className="font-semibold">{formatMoneyBRLFromCents(sale.totalCents)}</div>
+                            {isBarber && (
+                              <div className="text-sm text-green-600">
+                                Comissão: {formatMoneyBRLFromCents(sale.commissionCents)}
+                              </div>
+                            )}
+                          </div>
+                          {isMaster && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => setSaleToDelete(sale)}
+                              title="Cancelar venda"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+
+                {/* Totals Card */}
+                <Card className="bg-muted/50">
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Total ({salesTotals.count} vendas)</span>
+                      <div className="text-right">
+                        <div className="font-bold">{formatMoneyBRLFromCents(salesTotals.revenue)}</div>
+                        {isBarber && (
+                          <div className="text-sm text-green-600">
+                            Comissão: {formatMoneyBRLFromCents(salesTotals.commission)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Dialog de confirmação para cancelar venda */}
+        <AlertDialog open={!!saleToDelete} onOpenChange={(open) => !open && setSaleToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-destructive" />
+                Cancelar Venda
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Deseja cancelar esta venda de <strong>{formatMoneyBRLFromCents(saleToDelete?.totalCents ?? 0)}</strong>?
+                <br /><br />
+                <span className="text-amber-600 dark:text-amber-400">
+                  ⚠️ O estoque dos produtos será revertido automaticamente.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Manter venda</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteSale}
+                disabled={deleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleting ? 'Cancelando...' : 'Sim, cancelar venda'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       </TooltipProvider>
     </AdminLayout>

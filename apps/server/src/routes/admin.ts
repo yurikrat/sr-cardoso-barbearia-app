@@ -87,6 +87,7 @@ import {
   createSale,
   listSales,
   getSale,
+  deleteSale,
   createStockMovement,
   listStockMovements,
   getStockAlerts,
@@ -2916,8 +2917,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
       const origin = req.query.origin === 'standalone' || req.query.origin === 'booking' ? req.query.origin : undefined;
+      const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
 
-      const sales = await listSales(db, { barberId, dateKey, startDate, endDate, origin });
+      const sales = await listSales(db, { barberId, dateKey, startDate, endDate, origin, productId });
       return res.json(sales);
     } catch (e: any) {
       console.error('Error listing sales:', e);
@@ -2982,6 +2984,23 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         return res.status(400).json({ error: e.message });
       }
       return res.status(500).json({ error: 'Erro ao criar venda' });
+    }
+  });
+
+  app.delete('/api/admin/sales/:id', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const admin = getAdminFromReq(req);
+
+      await deleteSale(db, id, admin.username);
+
+      return res.json({ success: true });
+    } catch (e: any) {
+      console.error('Error deleting sale:', e);
+      if (e.message?.includes('não encontrada')) {
+        return res.status(404).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao cancelar venda' });
     }
   });
 

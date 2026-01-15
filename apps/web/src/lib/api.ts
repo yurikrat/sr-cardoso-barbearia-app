@@ -783,6 +783,7 @@ export const api = {
       startDate?: string;
       endDate?: string;
       origin?: 'standalone' | 'booking';
+      productId?: string;
     }) {
       const params = new URLSearchParams();
       if (options?.barberId) params.set('barberId', options.barberId);
@@ -790,6 +791,7 @@ export const api = {
       if (options?.startDate) params.set('startDate', options.startDate);
       if (options?.endDate) params.set('endDate', options.endDate);
       if (options?.origin) params.set('origin', options.origin);
+      if (options?.productId) params.set('productId', options.productId);
       const qs = params.toString();
       return apiFetch<Array<{
         id: string;
@@ -813,6 +815,13 @@ export const api = {
         createdAt: string;
         completedAt?: string;
       }>>(`/api/admin/sales${qs ? `?${qs}` : ''}`, { admin: true });
+    },
+
+    async deleteSale(id: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/sales/${id}`, {
+        admin: true,
+        method: 'DELETE',
+      });
     },
 
     async getSale(id: string) {

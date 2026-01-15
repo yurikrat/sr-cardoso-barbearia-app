@@ -84,13 +84,6 @@ npx tsx scripts/init-barbers.ts
 **Service Account**: GCP Console > IAM & Admin > Service accounts > Create key (JSON)
 
 ### 5. Deploy Firestore Rules e Indexes
-GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json
-npx tsx scripts/init-barbers.ts
-```
-
-**Service Account**: GCP Console > IAM & Admin > Service accounts > Create key (JSON)
-
-### 5. Deploy Firestore Rules e Indexes
 
 ```bash
 # Deploy das regras de segurança
@@ -293,11 +286,16 @@ gcloud firestore indexes create --file=firebase/firestore.indexes.json --project
   - Alertas de estoque baixo (badge no menu + WhatsApp via cron)
   - Configuração de estoque mínimo por produto
   - Comissão por produto (% configurável, como serviços)
-- ✅ **Vendas de Produtos** (`/admin/vendas`):
-  - Venda standalone (sem agendamento)
-  - Venda durante checkout do atendimento
+  - **Botão "Nova Venda"** para criar vendas diretamente no módulo de produtos
+  - **Link "Vendas"** em cada produto → filtra histórico de vendas por produto no Financeiro
+- ✅ **Vendas de Produtos** (integrado ao Financeiro e Agenda):
+  - **Consolidado no Financeiro** (`/admin/financeiro`): aba "Vendas de Produtos" com histórico e filtros
+  - **FAB na Agenda** (`/admin/agenda`): botão flutuante para venda rápida durante o dia
+  - Venda standalone (sem agendamento) ou durante checkout do atendimento
+  - **Cancelar venda** (master): reverte estoque automaticamente com movimentação registrada
+  - **Filtro por produto**: link do módulo Produtos abre Financeiro filtrado por productId
+  - **Export Excel** inclui sheet "Vendas de Produtos" com todos os detalhes
   - Integração com financeiro (filtro por origem: serviços/produtos/todos)
-  - Histórico de vendas com filtros por data e barbeiro
 
 ## 🔐 Autenticação Admin (RBAC)
 
@@ -382,7 +380,7 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 | `POST` | `/api/admin/products/categories` | Criar categoria |
 | `PUT` | `/api/admin/products/categories/:id` | Atualizar categoria |
 | `DELETE` | `/api/admin/products/categories/:id` | Excluir categoria |
-| `GET` | `/api/admin/sales` | Listar vendas |
+| `GET` | `/api/admin/sales` | Listar vendas (query: `startDate`, `endDate`, `barberId`, `origin`, `productId`) |
 | `POST` | `/api/admin/sales` | Registrar venda |
 | `DELETE` | `/api/admin/sales/:id` | Excluir venda |
 | `GET` | `/api/admin/stock-alerts` | Alertas de estoque baixo |
@@ -435,7 +433,7 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 - `settings/finance` - Catálogo de serviços e preços
 - `settings/products` - Configurações do módulo de produtos
 
-## � WhatsApp (Evolution API)
+## 💬 WhatsApp (Evolution API)
 
 ### Arquitetura
 

@@ -333,6 +333,7 @@ export async function listSales(
     startDate?: string;
     endDate?: string;
     origin?: Sale['origin'];
+    productId?: string;
   }
 ): Promise<Sale[]> {
   let query = db.collection(SALES_COLLECTION).orderBy('createdAt', 'desc');
@@ -354,13 +355,76 @@ export async function listSales(
   }
 
   const snapshot = await query.limit(500).get();
-  return snapshot.docs.map((doc) => docToSale(doc.id, doc.data()));
+  let sales = snapshot.docs.map((doc) => docToSale(doc.id, doc.data()));
+
+  // Filtrar por productId no cliente (Firestore não suporta array-contains em campo aninhado)
+  if (options?.productId) {
+    sales = sales.filter((sale) =>
+      sale.items.some((item) => item.productId === options.productId)
+    );
+  }
+
+  return sales;
 }
 
 export async function getSale(db: Firestore, id: string): Promise<Sale | null> {
   const doc = await db.collection(SALES_COLLECTION).doc(id).get();
   if (!doc.exists) return null;
   return docToSale(doc.id, doc.data()!);
+}
+
+export async function deleteSale(
+  db: Firestore,
+  saleId: string,
+  deletedBy: string
+): Promise<void> {
+  const sale = await getSale(db, saleId);
+  if (!sale) {
+    throw new Error('Venda não encontrada');
+  }
+
+  const now = getNow();
+
+  // Transação para deletar venda e reverter estoque
+  await db.runTransaction(async (transaction) => {
+    // Remove a venda
+    const saleRef = db.collection(SALES_COLLECTION).doc(saleId);
+    transaction.delete(saleRef);
+
+    // Reverte estoque de cada produto
+    for (const item of sale.items) {
+      const productRef = db.collection(PRODUCTS_COLLECTION).doc(item.productId);
+      const productDoc = await transaction.get(productRef);
+
+      if (productDoc.exists) {
+        const productData = productDoc.data()!;
+        const previousQuantity = productData.stockQuantity ?? 0;
+        const newQuantity = previousQuantity + item.quantity;
+
+        transaction.update(productRef, {
+          stockQuantity: newQuantity,
+          updatedAt: now.toJSDate(),
+        });
+
+        // Registra movimentação de estorno
+        const movementRef = db.collection(STOCK_MOVEMENTS_COLLECTION).doc();
+        const movement: StockMovement = {
+          id: movementRef.id,
+          productId: item.productId,
+          productName: item.productName,
+          type: 'adjustment',
+          quantity: item.quantity,
+          previousQuantity,
+          newQuantity,
+          reason: `Estorno de venda cancelada #${sale.id.slice(-6)}`,
+          saleId: sale.id,
+          createdBy: deletedBy,
+          createdAt: now.toJSDate(),
+        };
+        transaction.set(movementRef, movement);
+      }
+    }
+  });
 }
 
 function docToSale(id: string, data: FirebaseFirestore.DocumentData): Sale {

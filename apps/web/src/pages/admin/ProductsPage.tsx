@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Package,
   Plus,
@@ -11,6 +12,7 @@ import {
   ChevronRight,
   Archive,
   ArrowUpDown,
+  ShoppingBag,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -55,6 +57,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
+import { SaleModal } from '@/components/admin/SaleModal';
 import type { ProductsConfig } from '@sr-cardoso/shared';
 
 // Tipos locais que refletem o que a API retorna (datas como string ISO)
@@ -75,6 +78,7 @@ export default function ProductsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const refreshToken = useAdminAutoRefreshToken();
+  const navigate = useNavigate();
   const isMaster = user?.role === 'master';
 
   const [activeTab, setActiveTab] = useState('products');
@@ -93,21 +97,22 @@ export default function ProductsPage() {
   const [showStockModal, setShowStockModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showSaleModal, setShowSaleModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ApiProduct | null>(null);
   const [editingCategory, setEditingCategory] = useState<ApiProductCategory | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<ApiProduct | null>(null);
   const [stockProduct, setStockProduct] = useState<ApiProduct | null>(null);
 
-  // Form states
+  // Form states - usando strings para inputs numéricos para melhor UX
   const [productForm, setProductForm] = useState({
     name: '',
     description: '',
     categoryId: '',
-    priceCents: 0,
-    costCents: 0,
-    stockQuantity: 0,
-    minStockAlert: 0,
-    commissionPct: 0.1,
+    priceStr: '',
+    costStr: '',
+    stockStr: '',
+    minStockStr: '',
+    commissionStr: '',
     active: true,
   });
   const [categoryForm, setCategoryForm] = useState({
@@ -132,25 +137,66 @@ export default function ProductsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [productsRes, categoriesRes, alertsRes, movementsRes, configRes] = await Promise.all([
+      // Carregar dados com tratamento de erro individual usando Promise.allSettled
+      const results = await Promise.allSettled([
         api.admin.listProducts(),
         api.admin.listProductCategories(),
         api.admin.getStockAlerts(),
         api.admin.listStockMovements({ limit: 50 }),
         api.admin.getProductsConfig(),
       ]);
-      setProducts(productsRes);
-      setCategories(categoriesRes);
-      setStockAlerts(alertsRes);
-      setStockMovements(movementsRes);
-      setConfig(configRes);
-      setConfigForm({
-        defaultCommissionPct: configRes.defaultCommissionPct,
-        lowStockAlertEnabled: configRes.lowStockAlertEnabled,
-        lowStockWhatsappEnabled: configRes.lowStockWhatsappEnabled,
-        blockSaleOnZeroStock: configRes.blockSaleOnZeroStock,
-      });
-    } catch {
+
+      const [productsResult, categoriesResult, alertsResult, movementsResult, configResult] = results;
+
+      // Processar resultados individualmente
+      if (productsResult.status === 'fulfilled') {
+        setProducts(productsResult.value);
+      } else {
+        console.error('Erro ao carregar produtos:', productsResult.reason);
+      }
+
+      if (categoriesResult.status === 'fulfilled') {
+        setCategories(categoriesResult.value);
+      } else {
+        console.error('Erro ao carregar categorias:', categoriesResult.reason);
+      }
+
+      if (alertsResult.status === 'fulfilled') {
+        setStockAlerts(alertsResult.value);
+      } else {
+        console.error('Erro ao carregar alertas:', alertsResult.reason);
+      }
+
+      if (movementsResult.status === 'fulfilled') {
+        setStockMovements(movementsResult.value);
+      } else {
+        console.error('Erro ao carregar movimentações:', movementsResult.reason);
+      }
+
+      if (configResult.status === 'fulfilled') {
+        const configRes = configResult.value;
+        setConfig(configRes);
+        setConfigForm({
+          defaultCommissionPct: configRes.defaultCommissionPct,
+          lowStockAlertEnabled: configRes.lowStockAlertEnabled,
+          lowStockWhatsappEnabled: configRes.lowStockWhatsappEnabled,
+          blockSaleOnZeroStock: configRes.blockSaleOnZeroStock,
+        });
+      } else {
+        console.error('Erro ao carregar config:', configResult.reason);
+      }
+
+      // Mostrar erro apenas se TODAS as chamadas falharam
+      const allFailed = results.every((r) => r.status === 'rejected');
+      if (allFailed) {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar os dados de produtos. Verifique sua conexão.',
+          variant: 'destructive',
+        });
+      }
+    } catch (e) {
+      console.error('Erro inesperado ao carregar dados:', e);
       toast({
         title: 'Erro',
         description: 'Não foi possível carregar os dados de produtos.',
@@ -192,24 +238,25 @@ export default function ProductsPage() {
         name: product.name,
         description: product.description || '',
         categoryId: product.categoryId,
-        priceCents: product.priceCents,
-        costCents: product.costCents || 0,
-        stockQuantity: product.stockQuantity,
-        minStockAlert: product.minStockAlert,
-        commissionPct: product.commissionPct,
+        priceStr: (product.priceCents / 100).toFixed(2).replace('.', ','),
+        costStr: product.costCents ? (product.costCents / 100).toFixed(2).replace('.', ',') : '',
+        stockStr: String(product.stockQuantity),
+        minStockStr: String(product.minStockAlert),
+        commissionStr: String(Math.round(product.commissionPct * 100)),
         active: product.active,
       });
     } else {
       setEditingProduct(null);
+      const defaultCommission = config?.defaultCommissionPct ?? 0.1;
       setProductForm({
         name: '',
         description: '',
         categoryId: categories[0]?.id || '',
-        priceCents: 0,
-        costCents: 0,
-        stockQuantity: 0,
-        minStockAlert: 0,
-        commissionPct: config?.defaultCommissionPct || 0.1,
+        priceStr: '',
+        costStr: '',
+        stockStr: '',
+        minStockStr: '',
+        commissionStr: String(Math.round(defaultCommission * 100)),
         active: true,
       });
     }
@@ -222,19 +269,47 @@ export default function ProductsPage() {
       toast({ title: 'Erro', description: 'Nome e categoria são obrigatórios.', variant: 'destructive' });
       return;
     }
+    if (!isMaster) {
+      toast({ title: 'Acesso negado', description: 'Apenas administradores podem gerenciar produtos.', variant: 'destructive' });
+      return;
+    }
+    // Converter strings para números (aceita vírgula como decimal)
+    const priceCents = Math.round(parseFloat(productForm.priceStr.replace(',', '.') || '0') * 100);
+    const costCents = Math.round(parseFloat(productForm.costStr.replace(',', '.') || '0') * 100);
+    const stockQuantity = parseInt(productForm.stockStr || '0', 10);
+    const minStockAlert = parseInt(productForm.minStockStr || '0', 10);
+    const commissionPct = parseInt(productForm.commissionStr || '0', 10) / 100;
+    
+    if (priceCents <= 0) {
+      toast({ title: 'Erro', description: 'Preço de venda deve ser maior que zero.', variant: 'destructive' });
+      return;
+    }
+    
     setSaving(true);
     try {
+      const payload = {
+        name: productForm.name,
+        description: productForm.description || undefined,
+        categoryId: productForm.categoryId,
+        priceCents,
+        costCents: costCents || undefined,
+        stockQuantity,
+        minStockAlert,
+        commissionPct,
+        active: productForm.active,
+      };
       if (editingProduct) {
-        await api.admin.updateProduct(editingProduct.id, productForm);
+        await api.admin.updateProduct(editingProduct.id, payload);
         toast({ title: 'Sucesso', description: 'Produto atualizado.' });
       } else {
-        await api.admin.createProduct(productForm);
+        await api.admin.createProduct(payload);
         toast({ title: 'Sucesso', description: 'Produto criado.' });
       }
       setShowProductModal(false);
       await loadData();
-    } catch {
-      toast({ title: 'Erro', description: 'Não foi possível salvar o produto.', variant: 'destructive' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Não foi possível salvar o produto.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -423,12 +498,18 @@ export default function ProductsPage() {
                     {filteredProducts.length} produto(s) cadastrado(s)
                   </CardDescription>
                 </div>
-                {isMaster && (
-                  <Button onClick={() => openProductModal()}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Novo Produto
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setShowSaleModal(true)}>
+                    <ShoppingBag className="h-4 w-4 mr-2" />
+                    Nova Venda
                   </Button>
-                )}
+                  {isMaster && (
+                    <Button onClick={() => openProductModal()}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Novo Produto
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -492,6 +573,17 @@ export default function ProductsPage() {
                         </div>
                       </div>
                       <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/admin/financeiro?productId=${product.id}&productName=${encodeURIComponent(product.name)}`);
+                          }}
+                          title="Ver vendas deste produto"
+                        >
+                          <ShoppingBag className="h-4 w-4 mr-1" />
+                          Vendas
+                        </Button>
                         {isMaster && (
                           <Button
                             variant="outline"
@@ -776,14 +868,14 @@ export default function ProductsPage() {
                 <Label htmlFor="price">Preço de venda (R$) *</Label>
                 <Input
                   id="price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={(productForm.priceCents / 100).toFixed(2)}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={productForm.priceStr}
                   onChange={(e) =>
                     setProductForm({
                       ...productForm,
-                      priceCents: Math.round(parseFloat(e.target.value || '0') * 100),
+                      priceStr: e.target.value.replace(/[^0-9,.]/g, ''),
                     })
                   }
                 />
@@ -792,14 +884,14 @@ export default function ProductsPage() {
                 <Label htmlFor="cost">Custo (R$)</Label>
                 <Input
                   id="cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={(productForm.costCents / 100).toFixed(2)}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={productForm.costStr}
                   onChange={(e) =>
                     setProductForm({
                       ...productForm,
-                      costCents: Math.round(parseFloat(e.target.value || '0') * 100),
+                      costStr: e.target.value.replace(/[^0-9,.]/g, ''),
                     })
                   }
                 />
@@ -810,13 +902,14 @@ export default function ProductsPage() {
                 <Label htmlFor="stock">Estoque inicial</Label>
                 <Input
                   id="stock"
-                  type="number"
-                  min="0"
-                  value={productForm.stockQuantity}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={productForm.stockStr}
                   onChange={(e) =>
                     setProductForm({
                       ...productForm,
-                      stockQuantity: parseInt(e.target.value || '0', 10),
+                      stockStr: e.target.value.replace(/[^0-9]/g, ''),
                     })
                   }
                 />
@@ -825,13 +918,14 @@ export default function ProductsPage() {
                 <Label htmlFor="minStock">Alerta de estoque mínimo</Label>
                 <Input
                   id="minStock"
-                  type="number"
-                  min="0"
-                  value={productForm.minStockAlert}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={productForm.minStockStr}
                   onChange={(e) =>
                     setProductForm({
                       ...productForm,
-                      minStockAlert: parseInt(e.target.value || '0', 10),
+                      minStockStr: e.target.value.replace(/[^0-9]/g, ''),
                     })
                   }
                 />
@@ -841,15 +935,14 @@ export default function ProductsPage() {
               <Label htmlFor="commission">Comissão do barbeiro (%)</Label>
               <Input
                 id="commission"
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                value={Math.round(productForm.commissionPct * 100)}
+                type="text"
+                inputMode="numeric"
+                placeholder="10"
+                value={productForm.commissionStr}
                 onChange={(e) =>
                   setProductForm({
                     ...productForm,
-                    commissionPct: parseInt(e.target.value || '0', 10) / 100,
+                    commissionStr: e.target.value.replace(/[^0-9]/g, ''),
                   })
                 }
               />
@@ -1075,6 +1168,16 @@ export default function ProductsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sale Modal */}
+      <SaleModal
+        open={showSaleModal}
+        onOpenChange={setShowSaleModal}
+        onSuccess={() => {
+          setShowSaleModal(false);
+          loadData(); // Reload products to update stock
+        }}
+      />
     </AdminLayout>
   );
 }

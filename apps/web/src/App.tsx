@@ -27,7 +27,6 @@ import ScheduleConfigPage from './pages/admin/ScheduleConfigPage';
 import BrandingPage from './pages/admin/BrandingPage';
 import WhatsappPage from './pages/admin/WhatsappPage';
 import ProductsPage from './pages/admin/ProductsPage';
-import SalesPage from './pages/admin/SalesPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -197,14 +196,6 @@ function App() {
                   <MasterOnlyRoute>
                     <ProductsPage />
                   </MasterOnlyRoute>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/vendas"
-              element={
-                <ProtectedRoute>
-                  <SalesPage />
                 </ProtectedRoute>
               }
             />

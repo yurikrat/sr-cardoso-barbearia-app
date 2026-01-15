@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { CreateBookingModal } from '@/components/admin/CreateBookingModal';
+import { SaleModal } from '@/components/admin/SaleModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
@@ -132,6 +133,7 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
+  const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
   // Estado para modal de forma de pagamento
@@ -1148,9 +1150,26 @@ export default function AgendaPage() {
         onSuccess={() => loadBookings()}
       />
       
+      {/* Sale Modal */}
+      <SaleModal
+        open={saleModalOpen}
+        onOpenChange={setSaleModalOpen}
+        onSuccess={() => setSaleModalOpen(false)}
+        defaultBarberId={selectedBarber}
+        barbers={barbers}
+      />
+
       {/* Floating Action Buttons (only visible in Day view) */}
       {viewMode === 'day' && (
         <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
+          <Button
+            className="rounded-full h-14 w-14 shadow-lg"
+            variant="secondary"
+            onClick={() => setSaleModalOpen(true)}
+            title="Nova venda de produtos"
+          >
+            <ShoppingCart className="h-6 w-6" />
+          </Button>
           <Button
             className="rounded-full h-14 w-14 shadow-lg"
             variant="secondary"
