@@ -22,6 +22,12 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   pix: 'Pix',
 };
 
+// Pagamento dividido (split) - para quando cliente paga com múltiplas formas
+export interface PaymentSplit {
+  method: PaymentMethod;
+  amountCents: number;
+}
+
 export interface BookingCustomer {
   firstName: string;
   lastName: string;
@@ -39,6 +45,7 @@ export interface Booking {
   status: BookingStatus;
   whatsappStatus: WhatsAppStatus;
   paymentMethod?: PaymentMethod | null; // Forma de pagamento (preenchido ao concluir)
+  paymentMethods?: PaymentSplit[] | null; // Split payment (novo) - sobrescreve paymentMethod se presente
   createdAt: Date;
   updatedAt: Date;
   confirmedAt?: Date;

@@ -1977,9 +1977,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       const admin = getAdminFromReq(req);
       const bookingId = req.params.bookingId;
-      const body = req.body as { status?: unknown; paymentMethod?: unknown };
+      const body = req.body as { status?: unknown; paymentMethod?: unknown; paymentMethods?: unknown };
       const nextStatus = body?.status;
       const paymentMethod = body?.paymentMethod;
+      const paymentMethods = body?.paymentMethods;
       
       if (typeof nextStatus !== 'string') return res.status(400).json({ error: 'status é obrigatório' });
 
@@ -1989,11 +1990,28 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       // Validação de forma de pagamento (obrigatória ao concluir)
       const allowedPaymentMethods = ['credit', 'debit', 'cash', 'pix'] as const;
       if (nextStatus === 'completed') {
-        if (!paymentMethod || typeof paymentMethod !== 'string') {
-          return res.status(400).json({ error: 'Forma de pagamento é obrigatória ao concluir' });
-        }
-        if (!allowedPaymentMethods.includes(paymentMethod as any)) {
-          return res.status(400).json({ error: 'Forma de pagamento inválida' });
+        const hasSplit = Array.isArray(paymentMethods) && paymentMethods.length > 0;
+        if (hasSplit) {
+          for (const entry of paymentMethods) {
+            if (!entry || typeof entry !== 'object') {
+              return res.status(400).json({ error: 'Forma de pagamento inválida no split' });
+            }
+            const method = (entry as any).method;
+            const amountCents = (entry as any).amountCents;
+            if (!method || typeof method !== 'string' || !allowedPaymentMethods.includes(method as any)) {
+              return res.status(400).json({ error: 'Forma de pagamento inválida no split' });
+            }
+            if (typeof amountCents !== 'number' || Number.isNaN(amountCents) || amountCents <= 0) {
+              return res.status(400).json({ error: 'Valor inválido no split de pagamento' });
+            }
+          }
+        } else {
+          if (!paymentMethod || typeof paymentMethod !== 'string') {
+            return res.status(400).json({ error: 'Forma de pagamento é obrigatória ao concluir' });
+          }
+          if (!allowedPaymentMethods.includes(paymentMethod as any)) {
+            return res.status(400).json({ error: 'Forma de pagamento inválida' });
+          }
         }
       }
 
@@ -2033,7 +2051,12 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
         if (nextStatus === 'completed') {
           updates.completedAt = FieldValue.serverTimestamp();
-          updates.paymentMethod = paymentMethod; // Salva forma de pagamento
+          if (Array.isArray(paymentMethods) && paymentMethods.length > 0) {
+            updates.paymentMethods = paymentMethods;
+            updates.paymentMethod = (paymentMethods[0] as any).method ?? paymentMethod;
+          } else {
+            updates.paymentMethod = paymentMethod; // Salva forma de pagamento
+          }
         }
         if (nextStatus === 'no_show') updates.noShowAt = FieldValue.serverTimestamp();
 

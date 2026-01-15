@@ -478,13 +478,26 @@ export const api = {
         { admin: true }
       );
     },
-    async setBookingStatus(bookingId: string, status: 'confirmed' | 'completed' | 'no_show', paymentMethod?: 'credit' | 'debit' | 'cash' | 'pix') {
-      return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
-        method: 'POST',
-        admin: true,
-        body: JSON.stringify({ status, ...(paymentMethod && { paymentMethod }) }),
-      });
-    },
+      async setBookingStatus(
+        bookingId: string,
+        status: 'confirmed' | 'completed' | 'no_show',
+        paymentMethod?: 'credit' | 'debit' | 'cash' | 'pix',
+        paymentMethods?: Array<{ method: 'credit' | 'debit' | 'cash' | 'pix'; amountCents: number }>
+      ) {
+        const payload = {
+          status,
+          ...(paymentMethods && paymentMethods.length > 0
+            ? { paymentMethods }
+            : paymentMethod
+              ? { paymentMethod }
+              : {}),
+        };
+        return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
+          method: 'POST',
+          admin: true,
+          body: JSON.stringify(payload),
+        });
+      },
     async listAdminUsers() {
       return apiFetch<{ items: Array<{ id: string; username: string; role: 'master' | 'barber'; barberId: string | null; active: boolean; lastLoginAt: string | null }> }>(
         `/api/admin/users`,

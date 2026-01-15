@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { api } from '@/lib/api';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,10 @@ import { SERVICE_LABELS, ADMIN_TIME_SLOTS } from '@/utils/constants';
 import { cn } from '@/lib/utils';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import type { PaymentMethod } from '@sr-cardoso/shared';
 
 // Tipo local para produtos do checkout (baseado no retorno da API)
@@ -45,6 +47,7 @@ interface Booking {
   status: string;
   whatsappStatus: string;
   paymentMethod?: PaymentMethod | null;
+  paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }> | null;
 }
 
 function slotIdToTimeKey(slotId: string): string | null {
@@ -139,6 +142,8 @@ export default function AgendaPage() {
   // Estado para modal de forma de pagamento
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [splitMode, setSplitMode] = useState(false);
+  const [paymentSplits, setPaymentSplits] = useState<Array<{ method: PaymentMethod; amountCents: number }>>([]);
   const [bookingToComplete, setBookingToComplete] = useState<Booking | null>(null);
   // Estados para produtos no checkout
   const [checkoutCart, setCheckoutCart] = useState<Array<{ productId: string; quantity: number }>>([]);
@@ -394,12 +399,19 @@ export default function AgendaPage() {
   });
 
   const setStatusMutation = useMutation({
-    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod }) => {
-      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod);
+    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod; paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }> }) => {
+      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod, payload.paymentMethods);
     },
     onSuccess: (_data, variables) => {
       loadBookings();
-      setSelectedBooking((prev) => (prev ? { ...prev, status: variables.status, paymentMethod: variables.paymentMethod } : prev));
+      setSelectedBooking((prev) => (prev
+        ? {
+            ...prev,
+            status: variables.status,
+            paymentMethod: variables.paymentMethod ?? variables.paymentMethods?.[0]?.method ?? prev.paymentMethod,
+            paymentMethods: variables.paymentMethods ?? prev.paymentMethods,
+          }
+        : prev));
       // Auto-fechar modal após ação de status
       setSelectedBooking(null);
       toast({ title: 'Sucesso', description: 'Status atualizado.' });
@@ -414,6 +426,8 @@ export default function AgendaPage() {
   const handleConcluirClick = (booking: Booking) => {
     setBookingToComplete(booking);
     setSelectedPaymentMethod('');
+    setSplitMode(false);
+    setPaymentSplits([]);
     setCheckoutCart([]);
     setShowProductsSection(false);
     setPaymentModalOpen(true);
@@ -461,20 +475,54 @@ export default function AgendaPage() {
     }, 0);
   };
 
+  const updateSplitAmount = (method: PaymentMethod, amountCents: number) => {
+    setPaymentSplits((prev) => {
+      const existing = prev.find((entry) => entry.method === method);
+      if (amountCents <= 0) {
+        return prev.filter((entry) => entry.method !== method);
+      }
+      if (existing) {
+        return prev.map((entry) =>
+          entry.method === method ? { ...entry, amountCents } : entry
+        );
+      }
+      return [...prev, { method, amountCents }];
+    });
+  };
+
+  const getSplitTotal = () => {
+    return paymentSplits.reduce((sum, entry) => sum + entry.amountCents, 0);
+  };
+
   // Handler para confirmar conclusão com forma de pagamento
   const handleConfirmComplete = async () => {
-    if (!bookingToComplete || !selectedPaymentMethod) return;
+    if (!bookingToComplete) return;
+
+    if (splitMode) {
+      if (paymentSplits.length === 0) {
+        toast({ title: 'Erro', description: 'Informe pelo menos uma forma de pagamento.', variant: 'destructive' });
+        return;
+      }
+    } else if (!selectedPaymentMethod) {
+      toast({ title: 'Erro', description: 'Selecione a forma de pagamento.', variant: 'destructive' });
+      return;
+    }
+
+    const primaryMethod = splitMode
+      ? paymentSplits[0]?.method
+      : (selectedPaymentMethod || undefined);
     
     try {
       // 1. Atualizar status do booking
       setStatusMutation.mutate({ 
         bookingId: bookingToComplete.id, 
         status: 'completed', 
-        paymentMethod: selectedPaymentMethod 
+        paymentMethod: splitMode ? undefined : (selectedPaymentMethod || undefined),
+        paymentMethods: splitMode ? paymentSplits : undefined,
       });
       
       // 2. Se há produtos no carrinho, criar a venda
-      if (checkoutCart.length > 0 && bookingToComplete.barberId) {
+      if (checkoutCart.length > 0 && bookingToComplete.barberId && primaryMethod) {
         const items = checkoutCart.map(item => {
           const product = availableProducts.find(p => p.id === item.productId);
           return {
@@ -487,7 +535,7 @@ export default function AgendaPage() {
         await api.admin.createSale({
           barberId: bookingToComplete.barberId,
           customerId: undefined, // Poderia vincular ao cliente do booking se tivéssemos o ID
-          paymentMethod: selectedPaymentMethod,
+          paymentMethod: primaryMethod,
           items,
           bookingId: bookingToComplete.id,
         });
@@ -938,6 +986,8 @@ export default function AgendaPage() {
           setPaymentModalOpen(false);
           setBookingToComplete(null);
           setSelectedPaymentMethod('');
+          setSplitMode(false);
+          setPaymentSplits([]);
           setCheckoutCart([]);
           setShowProductsSection(false);
         }
@@ -953,65 +1003,101 @@ export default function AgendaPage() {
           <div className="flex-1 overflow-y-auto py-2 space-y-4">
             {/* Forma de Pagamento */}
             <div>
-              <Label className="text-base font-medium mb-3 block">Forma de Pagamento</Label>
-              <RadioGroup 
-                value={selectedPaymentMethod} 
-                onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
-                className="grid grid-cols-2 gap-2"
-              >
-                <div 
-                  className={cn(
-                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
-                    selectedPaymentMethod === 'credit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                  )}
-                  onClick={() => setSelectedPaymentMethod('credit')}
-                >
-                  <RadioGroupItem value="credit" id="payment-credit" className="sr-only" />
-                  <span className="text-xl mb-0.5">💳</span>
-                  <Label htmlFor="payment-credit" className="cursor-pointer text-sm font-medium text-center">
-                    Crédito
-                  </Label>
+              <div className="flex items-center justify-between mb-3">
+                <Label className="text-base font-medium">Forma de Pagamento</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Dividir</span>
+                  <Switch checked={splitMode} onCheckedChange={setSplitMode} />
                 </div>
-                <div 
-                  className={cn(
-                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
-                    selectedPaymentMethod === 'debit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                  )}
-                  onClick={() => setSelectedPaymentMethod('debit')}
-                >
-                  <RadioGroupItem value="debit" id="payment-debit" className="sr-only" />
-                  <span className="text-xl mb-0.5">💳</span>
-                  <Label htmlFor="payment-debit" className="cursor-pointer text-sm font-medium text-center">
-                    Débito
-                  </Label>
+              </div>
+
+              {splitMode ? (
+                <div className="space-y-3">
+                  {(['pix', 'cash', 'credit', 'debit'] as PaymentMethod[]).map((method) => {
+                    const current = paymentSplits.find((entry) => entry.method === method);
+                    const value = current ? (current.amountCents / 100).toFixed(2).replace('.', ',') : '';
+                    return (
+                      <div key={method} className="flex items-center gap-3">
+                        <span className="w-24 text-sm font-medium">{PAYMENT_METHOD_LABELS[method]}</span>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0,00"
+                          value={value}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            const raw = e.target.value.replace(/[^0-9,]/g, '').replace(',', '.');
+                            const amount = raw ? Math.round(parseFloat(raw) * 100) : 0;
+                            updateSplitAmount(method, amount);
+                          }}
+                          className="flex-1"
+                        />
+                      </div>
+                    );
+                  })}
+                  <div className="text-right text-sm font-medium">
+                    Total split: {(getSplitTotal() / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </div>
                 </div>
-                <div 
-                  className={cn(
-                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
-                    selectedPaymentMethod === 'cash' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                  )}
-                  onClick={() => setSelectedPaymentMethod('cash')}
+              ) : (
+                <RadioGroup 
+                  value={selectedPaymentMethod} 
+                  onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
+                  className="grid grid-cols-2 gap-2"
                 >
-                  <RadioGroupItem value="cash" id="payment-cash" className="sr-only" />
-                  <span className="text-xl mb-0.5">💵</span>
-                  <Label htmlFor="payment-cash" className="cursor-pointer text-sm font-medium text-center">
-                    Dinheiro
-                  </Label>
-                </div>
-                <div 
-                  className={cn(
-                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
-                    selectedPaymentMethod === 'pix' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                  )}
-                  onClick={() => setSelectedPaymentMethod('pix')}
-                >
-                  <RadioGroupItem value="pix" id="payment-pix" className="sr-only" />
-                  <span className="text-xl mb-0.5">📱</span>
-                  <Label htmlFor="payment-pix" className="cursor-pointer text-sm font-medium text-center">
-                    Pix
-                  </Label>
-                </div>
-              </RadioGroup>
+                  <div 
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                      selectedPaymentMethod === 'credit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                    )}
+                    onClick={() => setSelectedPaymentMethod('credit')}
+                  >
+                    <RadioGroupItem value="credit" id="payment-credit" className="sr-only" />
+                    <span className="text-xl mb-0.5">💳</span>
+                    <Label htmlFor="payment-credit" className="cursor-pointer text-sm font-medium text-center">
+                      Crédito
+                    </Label>
+                  </div>
+                  <div 
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                      selectedPaymentMethod === 'debit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                    )}
+                    onClick={() => setSelectedPaymentMethod('debit')}
+                  >
+                    <RadioGroupItem value="debit" id="payment-debit" className="sr-only" />
+                    <span className="text-xl mb-0.5">💳</span>
+                    <Label htmlFor="payment-debit" className="cursor-pointer text-sm font-medium text-center">
+                      Débito
+                    </Label>
+                  </div>
+                  <div 
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                      selectedPaymentMethod === 'cash' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                    )}
+                    onClick={() => setSelectedPaymentMethod('cash')}
+                  >
+                    <RadioGroupItem value="cash" id="payment-cash" className="sr-only" />
+                    <span className="text-xl mb-0.5">💵</span>
+                    <Label htmlFor="payment-cash" className="cursor-pointer text-sm font-medium text-center">
+                      Dinheiro
+                    </Label>
+                  </div>
+                  <div 
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                      selectedPaymentMethod === 'pix' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                    )}
+                    onClick={() => setSelectedPaymentMethod('pix')}
+                  >
+                    <RadioGroupItem value="pix" id="payment-pix" className="sr-only" />
+                    <span className="text-xl mb-0.5">📱</span>
+                    <Label htmlFor="payment-pix" className="cursor-pointer text-sm font-medium text-center">
+                      Pix
+                    </Label>
+                  </div>
+                </RadioGroup>
+              )}
             </div>
 
             {/* Seção de Produtos */}
@@ -1113,6 +1199,8 @@ export default function AgendaPage() {
                 setPaymentModalOpen(false);
                 setBookingToComplete(null);
                 setSelectedPaymentMethod('');
+                setSplitMode(false);
+                setPaymentSplits([]);
                 setCheckoutCart([]);
                 setShowProductsSection(false);
               }}
@@ -1122,7 +1210,7 @@ export default function AgendaPage() {
             <Button 
               className="flex-1 sm:flex-none h-12"
               onClick={handleConfirmComplete}
-              disabled={!selectedPaymentMethod || setStatusMutation.isPending}
+              disabled={(splitMode ? paymentSplits.length === 0 : !selectedPaymentMethod) || setStatusMutation.isPending}
             >
               {setStatusMutation.isPending ? 'Processando...' : 'Confirmar'}
             </Button>
