@@ -3,9 +3,11 @@ import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { BrandingLogo } from '@/components/BrandingLogo';
 import { Button } from '@/components/ui/button';
-import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette, MessageCircle } from 'lucide-react';
+import { LogOut, Calendar, Users, List, Wallet, UserCog, KeyRound, Clock, Palette, MessageCircle, Package, ShoppingCart } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AdminAutoRefreshProvider } from '@/contexts/AdminAutoRefreshContext';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -15,6 +17,16 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
 
+  // Buscar alertas de estoque para mostrar badge (apenas para master)
+  const { data: stockAlerts } = useQuery({
+    queryKey: ['stock-alerts-badge'],
+    queryFn: () => api.admin.getStockAlerts(),
+    enabled: user?.role === 'master',
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    refetchInterval: 5 * 60 * 1000, // Atualiza a cada 5 minutos
+  });
+  const stockAlertCount = stockAlerts?.length ?? 0;
+
   type Role = 'master' | 'barber';
 
   const navItems: Array<{ path: string; label: string; icon: LucideIcon; roles: Role[] }> = [
@@ -22,6 +34,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { path: '/admin/horarios', label: 'Horários', icon: Clock, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/financeiro', label: 'Financeiro', icon: Wallet, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/clientes', label: 'Clientes', icon: Users, roles: ['master', 'barber'] as Role[] },
+    { path: '/admin/produtos', label: 'Produtos', icon: Package, roles: ['master'] as Role[] },
+    { path: '/admin/vendas', label: 'Vendas', icon: ShoppingCart, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/senha', label: 'Senha', icon: KeyRound, roles: ['master', 'barber'] as Role[] },
     { path: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, roles: ['master'] as Role[] },
     { path: '/admin/listas', label: 'Listas', icon: List, roles: ['master'] as Role[] },
@@ -78,13 +92,15 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
+                // Mostrar badge de alerta em Produtos quando há estoque baixo
+                const showAlertBadge = item.path === '/admin/produtos' && stockAlertCount > 0;
                 return (
                   <Link key={item.path} to={item.path}>
                     <Button
                       variant="ghost"
                       size="sm"
                       className={
-                        `flex items-center gap-2 transition-colors min-h-[44px] px-3 sm:px-4 ` +
+                        `flex items-center gap-2 transition-colors min-h-[44px] px-3 sm:px-4 relative ` +
                         (isActive
                           ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
                           : 'text-muted-foreground hover:bg-primary/10 hover:text-primary')
@@ -92,6 +108,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                     >
                       <Icon className="h-5 w-5 sm:h-4 sm:w-4 shrink-0" />
                       <span className="hidden sm:inline font-serif text-sm">{item.label}</span>
+                      {showAlertBadge && (
+                        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg">
+                          {stockAlertCount > 9 ? '9+' : stockAlertCount}
+                        </span>
+                      )}
                     </Button>
                   </Link>
                 );

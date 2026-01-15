@@ -600,6 +600,351 @@ export const api = {
         body: JSON.stringify({ currentPassword, newPassword }),
       });
     },
+
+    // ============================================================
+    // PRODUTOS
+    // ============================================================
+
+    async getProductsConfig() {
+      return apiFetch<{
+        defaultCommissionPct: number;
+        lowStockAlertEnabled: boolean;
+        lowStockWhatsappEnabled: boolean;
+        blockSaleOnZeroStock: boolean;
+      }>(`/api/admin/products/config`, { admin: true });
+    },
+
+    async updateProductsConfig(payload: {
+      defaultCommissionPct?: number;
+      lowStockAlertEnabled?: boolean;
+      lowStockWhatsappEnabled?: boolean;
+      blockSaleOnZeroStock?: boolean;
+    }) {
+      return apiFetch<{
+        defaultCommissionPct: number;
+        lowStockAlertEnabled: boolean;
+        lowStockWhatsappEnabled: boolean;
+        blockSaleOnZeroStock: boolean;
+      }>(`/api/admin/products/config`, {
+        method: 'PUT',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async listProductCategories() {
+      return apiFetch<Array<{
+        id: string;
+        name: string;
+        sortOrder: number;
+        active: boolean;
+        createdAt: string;
+        updatedAt: string;
+      }>>(`/api/admin/products/categories`, { admin: true });
+    },
+
+    async createProductCategory(payload: { name: string; sortOrder?: number; active?: boolean }) {
+      return apiFetch<{
+        id: string;
+        name: string;
+        sortOrder: number;
+        active: boolean;
+      }>(`/api/admin/products/categories`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async updateProductCategory(id: string, payload: { name?: string; sortOrder?: number; active?: boolean }) {
+      return apiFetch<{
+        id: string;
+        name: string;
+        sortOrder: number;
+        active: boolean;
+      }>(`/api/admin/products/categories/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async deleteProductCategory(id: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/products/categories/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        admin: true,
+      });
+    },
+
+    async listProducts(options?: { categoryId?: string; activeOnly?: boolean }) {
+      const params = new URLSearchParams();
+      if (options?.categoryId) params.set('categoryId', options.categoryId);
+      if (options?.activeOnly) params.set('activeOnly', 'true');
+      const qs = params.toString();
+      return apiFetch<Array<{
+        id: string;
+        name: string;
+        description?: string;
+        categoryId: string;
+        priceCents: number;
+        costCents?: number;
+        sku?: string;
+        stockQuantity: number;
+        minStockAlert: number;
+        commissionPct: number;
+        active: boolean;
+        imageUrl?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>>(`/api/admin/products${qs ? `?${qs}` : ''}`, { admin: true });
+    },
+
+    async getProduct(id: string) {
+      return apiFetch<{
+        id: string;
+        name: string;
+        description?: string;
+        categoryId: string;
+        priceCents: number;
+        costCents?: number;
+        stockQuantity: number;
+        minStockAlert: number;
+        commissionPct: number;
+        active: boolean;
+      }>(`/api/admin/products/${encodeURIComponent(id)}`, { admin: true });
+    },
+
+    async createProduct(payload: {
+      name: string;
+      description?: string;
+      categoryId: string;
+      priceCents: number;
+      costCents?: number;
+      stockQuantity?: number;
+      minStockAlert?: number;
+      commissionPct?: number;
+      active?: boolean;
+    }) {
+      return apiFetch<{
+        id: string;
+        name: string;
+        categoryId: string;
+        priceCents: number;
+        stockQuantity: number;
+        commissionPct: number;
+        active: boolean;
+      }>(`/api/admin/products`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async updateProduct(id: string, payload: {
+      name?: string;
+      description?: string;
+      categoryId?: string;
+      priceCents?: number;
+      costCents?: number;
+      stockQuantity?: number;
+      minStockAlert?: number;
+      commissionPct?: number;
+      active?: boolean;
+    }) {
+      return apiFetch<{
+        id: string;
+        name: string;
+        categoryId: string;
+        priceCents: number;
+        stockQuantity: number;
+        commissionPct: number;
+        active: boolean;
+      }>(`/api/admin/products/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async deleteProduct(id: string) {
+      return apiFetch<{ success: boolean }>(`/api/admin/products/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        admin: true,
+      });
+    },
+
+    // ============================================================
+    // VENDAS DE PRODUTOS
+    // ============================================================
+
+    async listSales(options?: {
+      barberId?: string;
+      dateKey?: string;
+      startDate?: string;
+      endDate?: string;
+      origin?: 'standalone' | 'booking';
+    }) {
+      const params = new URLSearchParams();
+      if (options?.barberId) params.set('barberId', options.barberId);
+      if (options?.dateKey) params.set('dateKey', options.dateKey);
+      if (options?.startDate) params.set('startDate', options.startDate);
+      if (options?.endDate) params.set('endDate', options.endDate);
+      if (options?.origin) params.set('origin', options.origin);
+      const qs = params.toString();
+      return apiFetch<Array<{
+        id: string;
+        customerId?: string;
+        customerName?: string;
+        barberId: string;
+        barberName?: string;
+        items: Array<{
+          productId: string;
+          productName: string;
+          quantity: number;
+          unitPriceCents: number;
+          commissionPct: number;
+        }>;
+        totalCents: number;
+        commissionCents: number;
+        paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+        origin: 'standalone' | 'booking';
+        bookingId?: string;
+        dateKey: string;
+        createdAt: string;
+        completedAt?: string;
+      }>>(`/api/admin/sales${qs ? `?${qs}` : ''}`, { admin: true });
+    },
+
+    async getSale(id: string) {
+      return apiFetch<{
+        id: string;
+        customerId?: string;
+        customerName?: string;
+        barberId: string;
+        barberName?: string;
+        items: Array<{
+          productId: string;
+          productName: string;
+          quantity: number;
+          unitPriceCents: number;
+        }>;
+        totalCents: number;
+        commissionCents: number;
+        paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+        origin: 'standalone' | 'booking';
+        bookingId?: string;
+        dateKey: string;
+        createdAt: string;
+      }>(`/api/admin/sales/${encodeURIComponent(id)}`, { admin: true });
+    },
+
+    async createSale(payload: {
+      customerId?: string;
+      customerName?: string;
+      barberId: string;
+      items: Array<{ productId: string; quantity: number }>;
+      paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+      origin?: 'standalone' | 'booking';
+      bookingId?: string;
+    }) {
+      return apiFetch<{
+        id: string;
+        totalCents: number;
+        commissionCents: number;
+      }>(`/api/admin/sales`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    // ============================================================
+    // ESTOQUE
+    // ============================================================
+
+    async listStockMovements(options?: { productId?: string; limit?: number }) {
+      const params = new URLSearchParams();
+      if (options?.productId) params.set('productId', options.productId);
+      if (options?.limit) params.set('limit', String(options.limit));
+      const qs = params.toString();
+      return apiFetch<Array<{
+        id: string;
+        productId: string;
+        productName: string;
+        type: 'in' | 'out' | 'adjustment' | 'sale';
+        quantity: number;
+        previousQuantity: number;
+        newQuantity: number;
+        reason: string;
+        saleId?: string;
+        createdBy: string;
+        createdAt: string;
+      }>>(`/api/admin/stock/movements${qs ? `?${qs}` : ''}`, { admin: true });
+    },
+
+    async createStockMovement(payload: {
+      productId: string;
+      type: 'in' | 'out' | 'adjustment';
+      quantity: number;
+      reason: string;
+    }) {
+      return apiFetch<{
+        id: string;
+        productId: string;
+        type: string;
+        quantity: number;
+        previousQuantity: number;
+        newQuantity: number;
+      }>(`/api/admin/stock/movements`, {
+        method: 'POST',
+        admin: true,
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async getStockAlerts() {
+      return apiFetch<Array<{
+        productId: string;
+        productName: string;
+        categoryName: string;
+        currentStock: number;
+        minStock: number;
+        status: 'low' | 'out';
+        notifiedAt?: string;
+      }>>(`/api/admin/stock/alerts`, { admin: true });
+    },
+
+    async getProductsSummary(options?: { startDate?: string; endDate?: string; barberId?: string }) {
+      const params = new URLSearchParams();
+      if (options?.startDate) params.set('startDate', options.startDate);
+      if (options?.endDate) params.set('endDate', options.endDate);
+      if (options?.barberId) params.set('barberId', options.barberId);
+      const qs = params.toString();
+      return apiFetch<{
+        totalSales: number;
+        totalRevenueCents: number;
+        totalCommissionCents: number;
+        totalItemsSold: number;
+        byCategory: Array<{
+          categoryId: string;
+          categoryName: string;
+          revenueCents: number;
+          itemsSold: number;
+        }>;
+        byProduct: Array<{
+          productId: string;
+          productName: string;
+          revenueCents: number;
+          quantitySold: number;
+        }>;
+        byPaymentMethod: Array<{
+          method: 'credit' | 'debit' | 'cash' | 'pix';
+          revenueCents: number;
+          count: number;
+        }>;
+      }>(`/api/admin/products/summary${qs ? `?${qs}` : ''}`, { admin: true });
+    },
+
     logout() {
       setAdminToken(null);
     },

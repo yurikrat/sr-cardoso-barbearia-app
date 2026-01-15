@@ -17,6 +17,13 @@ import {
   adminWhatsappSendConfirmationRequestSchema,
   type AdminWhatsappStatusResponse,
   type BrandingSettings,
+  createProductCategorySchema,
+  updateProductCategorySchema,
+  createProductSchema,
+  updateProductSchema,
+  createSaleSchema,
+  createStockMovementSchema,
+  updateProductsConfigSchema,
 } from '@sr-cardoso/shared';
 import type { Env } from '../lib/env.js';
 import {
@@ -65,6 +72,26 @@ import {
   broadcastWithMedia,
   sendBarberBirthdayAlerts,
 } from '../services/whatsappNotifications.js';
+import {
+  getProductsConfig,
+  updateProductsConfig,
+  listProductCategories,
+  createProductCategory,
+  updateProductCategory,
+  deleteProductCategory,
+  listProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  createSale,
+  listSales,
+  getSale,
+  createStockMovement,
+  listStockMovements,
+  getStockAlerts,
+  getProductsSummary,
+} from '../lib/products.js';
 
 export type AdminRouteDeps = {
   env: Env;
@@ -1713,6 +1740,36 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // Endpoint público para cron de alertas de estoque (validado por secret header)
+  app.post('/api/cron/check-stock-alerts', async (req, res) => {
+    try {
+      // Valida secret do cron (Cloud Scheduler)
+      const cronSecret = req.get('x-cron-secret') || req.get('authorization');
+      const expectedSecret = env.CRON_SECRET;
+      
+      if (expectedSecret && cronSecret !== expectedSecret && cronSecret !== `Bearer ${expectedSecret}`) {
+        return res.status(401).json({ error: 'Não autorizado' });
+      }
+
+      const { checkAndSendStockAlerts } = await import('../services/whatsappNotifications.js');
+      const result = await checkAndSendStockAlerts(db, env);
+
+      console.log(`[CRON StockAlert] Alertas enviados: ${result.alertsSent}`);
+      if (result.errors.length > 0) {
+        console.log(`[CRON StockAlert] Erros: ${result.errors.join(', ')}`);
+      }
+
+      return res.json({
+        success: true,
+        alertsSent: result.alertsSent,
+        errors: result.errors,
+      });
+    } catch (e: any) {
+      console.error('Error in stock alert cron:', e);
+      return res.status(500).json({ error: 'Erro ao processar alertas de estoque' });
+    }
+  });
+
   app.post('/api/admin/whatsapp/connect', requireAdminMw, requireMaster(), async (req, res) => {
     try {
       const instanceName = getEvolutionInstanceName(env);
@@ -2634,6 +2691,337 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       }
     }
   );
+
+  // ============================================================
+  // PRODUTOS - CONFIGURAÇÃO
+  // ============================================================
+
+  app.get('/api/admin/products/config', requireAdminMw, async (_req, res) => {
+    try {
+      const config = await getProductsConfig(db);
+      return res.json(config);
+    } catch (e: any) {
+      console.error('Error getting products config:', e);
+      return res.status(500).json({ error: 'Erro ao buscar configuração de produtos' });
+    }
+  });
+
+  app.put('/api/admin/products/config', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const parsed = updateProductsConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+      const config = await updateProductsConfig(db, parsed.data);
+      return res.json(config);
+    } catch (e: any) {
+      console.error('Error updating products config:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar configuração' });
+    }
+  });
+
+  // ============================================================
+  // PRODUTOS - CATEGORIAS
+  // ============================================================
+
+  app.get('/api/admin/products/categories', requireAdminMw, async (_req, res) => {
+    try {
+      const categories = await listProductCategories(db);
+      return res.json(categories);
+    } catch (e: any) {
+      console.error('Error listing categories:', e);
+      return res.status(500).json({ error: 'Erro ao listar categorias' });
+    }
+  });
+
+  app.post('/api/admin/products/categories', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const parsed = createProductCategorySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+      const category = await createProductCategory(db, {
+        name: parsed.data.name,
+        sortOrder: parsed.data.sortOrder ?? 0,
+        active: parsed.data.active ?? true,
+      });
+      return res.status(201).json(category);
+    } catch (e: any) {
+      console.error('Error creating category:', e);
+      return res.status(500).json({ error: 'Erro ao criar categoria' });
+    }
+  });
+
+  app.put('/api/admin/products/categories/:id', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const parsed = updateProductCategorySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+      const category = await updateProductCategory(db, id, parsed.data);
+      if (!category) return res.status(404).json({ error: 'Categoria não encontrada' });
+      return res.json(category);
+    } catch (e: any) {
+      console.error('Error updating category:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar categoria' });
+    }
+  });
+
+  app.delete('/api/admin/products/categories/:id', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      await deleteProductCategory(db, id);
+      return res.json({ success: true });
+    } catch (e: any) {
+      console.error('Error deleting category:', e);
+      if (e.message?.includes('produtos associados')) {
+        return res.status(400).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao excluir categoria' });
+    }
+  });
+
+  // ============================================================
+  // PRODUTOS - CRUD
+  // ============================================================
+
+  app.get('/api/admin/products', requireAdminMw, async (req, res) => {
+    try {
+      const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : undefined;
+      const activeOnly = req.query.activeOnly === 'true';
+      const products = await listProducts(db, { categoryId, activeOnly });
+      return res.json(products);
+    } catch (e: any) {
+      console.error('Error listing products:', e);
+      return res.status(500).json({ error: 'Erro ao listar produtos' });
+    }
+  });
+
+  app.get('/api/admin/products/:id', requireAdminMw, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const product = await getProduct(db, id);
+      if (!product) return res.status(404).json({ error: 'Produto não encontrado' });
+      return res.json(product);
+    } catch (e: any) {
+      console.error('Error getting product:', e);
+      return res.status(500).json({ error: 'Erro ao buscar produto' });
+    }
+  });
+
+  app.post('/api/admin/products', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const parsed = createProductSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+      const config = await getProductsConfig(db);
+      const product = await createProduct(db, {
+        name: parsed.data.name,
+        description: parsed.data.description,
+        categoryId: parsed.data.categoryId,
+        priceCents: parsed.data.priceCents,
+        costCents: parsed.data.costCents,
+        sku: parsed.data.sku,
+        stockQuantity: parsed.data.stockQuantity ?? 0,
+        minStockAlert: parsed.data.minStockAlert ?? 0,
+        commissionPct: parsed.data.commissionPct ?? config.defaultCommissionPct,
+        active: parsed.data.active ?? true,
+        imageUrl: parsed.data.imageUrl,
+      });
+      return res.status(201).json(product);
+    } catch (e: any) {
+      console.error('Error creating product:', e);
+      return res.status(500).json({ error: 'Erro ao criar produto' });
+    }
+  });
+
+  app.put('/api/admin/products/:id', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const parsed = updateProductSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+      const product = await updateProduct(db, id, parsed.data);
+      if (!product) return res.status(404).json({ error: 'Produto não encontrado' });
+      return res.json(product);
+    } catch (e: any) {
+      console.error('Error updating product:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar produto' });
+    }
+  });
+
+  app.delete('/api/admin/products/:id', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      await deleteProduct(db, id);
+      return res.json({ success: true });
+    } catch (e: any) {
+      console.error('Error deleting product:', e);
+      return res.status(500).json({ error: 'Erro ao excluir produto' });
+    }
+  });
+
+  // ============================================================
+  // VENDAS
+  // ============================================================
+
+  app.get('/api/admin/sales', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId =
+        admin.role === 'barber' && admin.barberId
+          ? admin.barberId
+          : typeof req.query.barberId === 'string'
+          ? req.query.barberId
+          : undefined;
+      const dateKey = typeof req.query.dateKey === 'string' ? req.query.dateKey : undefined;
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const origin = req.query.origin === 'standalone' || req.query.origin === 'booking' ? req.query.origin : undefined;
+
+      const sales = await listSales(db, { barberId, dateKey, startDate, endDate, origin });
+      return res.json(sales);
+    } catch (e: any) {
+      console.error('Error listing sales:', e);
+      return res.status(500).json({ error: 'Erro ao listar vendas' });
+    }
+  });
+
+  app.get('/api/admin/sales/:id', requireAdminMw, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const sale = await getSale(db, id);
+      if (!sale) return res.status(404).json({ error: 'Venda não encontrada' });
+
+      const admin = getAdminFromReq(req);
+      if (admin.role === 'barber' && admin.barberId && sale.barberId !== admin.barberId) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
+
+      return res.json(sale);
+    } catch (e: any) {
+      console.error('Error getting sale:', e);
+      return res.status(500).json({ error: 'Erro ao buscar venda' });
+    }
+  });
+
+  app.post('/api/admin/sales', requireAdminMw, async (req, res) => {
+    try {
+      const parsed = createSaleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+
+      const admin = getAdminFromReq(req);
+      // Barber can only create sales for themselves
+      if (admin.role === 'barber' && admin.barberId && parsed.data.barberId !== admin.barberId) {
+        return res.status(403).json({ error: 'Barbeiro só pode registrar vendas próprias' });
+      }
+
+      // Get barber name for snapshot
+      const barberDoc = await db.collection('barbers').doc(parsed.data.barberId).get();
+      const barberName = barberDoc.exists ? (barberDoc.data()?.name as string) : undefined;
+
+      const sale = await createSale(
+        db,
+        {
+          customerId: parsed.data.customerId,
+          customerName: parsed.data.customerName,
+          barberId: parsed.data.barberId,
+          barberName,
+          items: parsed.data.items,
+          paymentMethod: parsed.data.paymentMethod,
+          origin: parsed.data.origin ?? 'standalone',
+          bookingId: parsed.data.bookingId,
+        },
+        admin.username
+      );
+
+      return res.status(201).json(sale);
+    } catch (e: any) {
+      console.error('Error creating sale:', e);
+      if (e.message?.includes('não encontrado') || e.message?.includes('inativo') || e.message?.includes('insuficiente')) {
+        return res.status(400).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao criar venda' });
+    }
+  });
+
+  // ============================================================
+  // MOVIMENTAÇÃO DE ESTOQUE
+  // ============================================================
+
+  app.get('/api/admin/stock/movements', requireAdminMw, async (req, res) => {
+    try {
+      const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
+      const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+      const movements = await listStockMovements(db, { productId, limit });
+      return res.json(movements);
+    } catch (e: any) {
+      console.error('Error listing stock movements:', e);
+      return res.status(500).json({ error: 'Erro ao listar movimentações' });
+    }
+  });
+
+  app.post('/api/admin/stock/movements', requireAdminMw, requireMaster(), async (req, res) => {
+    try {
+      const parsed = createStockMovementSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.errors });
+      }
+
+      const admin = getAdminFromReq(req);
+      const movement = await createStockMovement(db, parsed.data, admin.username);
+      return res.status(201).json(movement);
+    } catch (e: any) {
+      console.error('Error creating stock movement:', e);
+      if (e.message?.includes('não encontrado')) {
+        return res.status(400).json({ error: e.message });
+      }
+      return res.status(500).json({ error: 'Erro ao registrar movimentação' });
+    }
+  });
+
+  // ============================================================
+  // ALERTAS DE ESTOQUE
+  // ============================================================
+
+  app.get('/api/admin/stock/alerts', requireAdminMw, async (_req, res) => {
+    try {
+      const alerts = await getStockAlerts(db);
+      return res.json(alerts);
+    } catch (e: any) {
+      console.error('Error getting stock alerts:', e);
+      return res.status(500).json({ error: 'Erro ao buscar alertas de estoque' });
+    }
+  });
+
+  // ============================================================
+  // RESUMO FINANCEIRO DE PRODUTOS
+  // ============================================================
+
+  app.get('/api/admin/products/summary', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId =
+        admin.role === 'barber' && admin.barberId
+          ? admin.barberId
+          : typeof req.query.barberId === 'string'
+          ? req.query.barberId
+          : undefined;
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+      const summary = await getProductsSummary(db, { startDate, endDate, barberId });
+      return res.json(summary);
+    } catch (e: any) {
+      console.error('Error getting products summary:', e);
+      return res.status(500).json({ error: 'Erro ao buscar resumo de produtos' });
+    }
+  });
 }
 
 function formatICSDate(date: Date): string {

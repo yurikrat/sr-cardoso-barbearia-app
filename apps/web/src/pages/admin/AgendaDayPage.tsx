@@ -12,8 +12,8 @@ import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { adminCancelBookingFn } from '@/lib/api-compat';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock } from 'lucide-react';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock, Package, Minus, ShoppingCart } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS, ADMIN_TIME_SLOTS } from '@/utils/constants';
@@ -21,7 +21,11 @@ import { cn } from '@/lib/utils';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { PaymentMethod } from '@sr-cardoso/shared';
+
+// Tipo local para produtos do checkout (baseado no retorno da API)
+type CheckoutProduct = Awaited<ReturnType<typeof api.admin.listProducts>>[number];
 
 // Labels para formas de pagamento (mantido em sincronia com packages/shared)
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -134,8 +138,24 @@ export default function AgendaPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | ''>('');
   const [bookingToComplete, setBookingToComplete] = useState<Booking | null>(null);
+  // Estados para produtos no checkout
+  const [checkoutCart, setCheckoutCart] = useState<Array<{ productId: string; quantity: number }>>([]);
+  const [showProductsSection, setShowProductsSection] = useState(false);
 
   const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+  // Buscar lista de produtos ativos para o checkout
+  const { data: productsData } = useQuery({
+    queryKey: ['products-checkout'],
+    queryFn: () => api.admin.listProducts({ activeOnly: true }),
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    enabled: paymentModalOpen, // Só buscar quando o modal estiver aberto
+  });
+  const availableProducts = useMemo((): CheckoutProduct[] => {
+    if (!productsData) return [];
+    // Filtrar produtos com estoque > 0
+    return productsData.filter(p => p.stockQuantity > 0);
+  }, [productsData]);
 
   // Force re-render every minute to update "now" line
   useEffect(() => {
@@ -392,20 +412,99 @@ export default function AgendaPage() {
   const handleConcluirClick = (booking: Booking) => {
     setBookingToComplete(booking);
     setSelectedPaymentMethod('');
+    setCheckoutCart([]);
+    setShowProductsSection(false);
     setPaymentModalOpen(true);
   };
 
-  // Handler para confirmar conclusão com forma de pagamento
-  const handleConfirmComplete = () => {
-    if (!bookingToComplete || !selectedPaymentMethod) return;
-    setStatusMutation.mutate({ 
-      bookingId: bookingToComplete.id, 
-      status: 'completed', 
-      paymentMethod: selectedPaymentMethod 
+  // Helpers para manipular carrinho de produtos
+  const addToCart = (productId: string) => {
+    const product = availableProducts.find(p => p.id === productId);
+    if (!product) return;
+    
+    setCheckoutCart(prev => {
+      const existing = prev.find(item => item.productId === productId);
+      if (existing) {
+        // Não permitir adicionar mais que o estoque disponível
+        if (existing.quantity >= product.stockQuantity) return prev;
+        return prev.map(item => 
+          item.productId === productId 
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
+      return [...prev, { productId, quantity: 1 }];
     });
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCheckoutCart(prev => {
+      const existing = prev.find(item => item.productId === productId);
+      if (!existing) return prev;
+      if (existing.quantity <= 1) {
+        return prev.filter(item => item.productId !== productId);
+      }
+      return prev.map(item =>
+        item.productId === productId
+          ? { ...item, quantity: item.quantity - 1 }
+          : item
+      );
+    });
+  };
+
+  const getCartTotal = () => {
+    return checkoutCart.reduce((total, item) => {
+      const product = availableProducts.find(p => p.id === item.productId);
+      return total + (product?.priceCents ?? 0) * item.quantity;
+    }, 0);
+  };
+
+  // Handler para confirmar conclusão com forma de pagamento
+  const handleConfirmComplete = async () => {
+    if (!bookingToComplete || !selectedPaymentMethod) return;
+    
+    try {
+      // 1. Atualizar status do booking
+      setStatusMutation.mutate({ 
+        bookingId: bookingToComplete.id, 
+        status: 'completed', 
+        paymentMethod: selectedPaymentMethod 
+      });
+      
+      // 2. Se há produtos no carrinho, criar a venda
+      if (checkoutCart.length > 0 && bookingToComplete.barberId) {
+        const items = checkoutCart.map(item => {
+          const product = availableProducts.find(p => p.id === item.productId);
+          return {
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPriceCents: product?.priceCents ?? 0,
+          };
+        });
+        
+        await api.admin.createSale({
+          barberId: bookingToComplete.barberId,
+          customerId: undefined, // Poderia vincular ao cliente do booking se tivéssemos o ID
+          paymentMethod: selectedPaymentMethod,
+          items,
+          bookingId: bookingToComplete.id,
+        });
+        
+        toast({ 
+          title: 'Venda registrada', 
+          description: `${checkoutCart.length} produto(s) vendido(s).` 
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao registrar venda.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
+    }
+    
     setPaymentModalOpen(false);
     setBookingToComplete(null);
     setSelectedPaymentMethod('');
+    setCheckoutCart([]);
+    setShowProductsSection(false);
   };
 
   const handleOpenWhatsApp = (booking: Booking) => {
@@ -834,77 +933,174 @@ export default function AgendaPage() {
           setPaymentModalOpen(false);
           setBookingToComplete(null);
           setSelectedPaymentMethod('');
+          setCheckoutCart([]);
+          setShowProductsSection(false);
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Concluir Atendimento</DialogTitle>
             <DialogDescription>
-              Selecione a forma de pagamento para finalizar.
+              Selecione a forma de pagamento{availableProducts.length > 0 ? ' e adicione produtos se desejar' : ''}.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <Label className="text-base font-medium mb-3 block">Forma de Pagamento</Label>
-            <RadioGroup 
-              value={selectedPaymentMethod} 
-              onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
-              className="grid grid-cols-2 gap-2"
-            >
-              <div 
-                className={cn(
-                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
-                  selectedPaymentMethod === 'credit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                )}
-                onClick={() => setSelectedPaymentMethod('credit')}
+          
+          <div className="flex-1 overflow-y-auto py-2 space-y-4">
+            {/* Forma de Pagamento */}
+            <div>
+              <Label className="text-base font-medium mb-3 block">Forma de Pagamento</Label>
+              <RadioGroup 
+                value={selectedPaymentMethod} 
+                onValueChange={(value) => setSelectedPaymentMethod(value as PaymentMethod)}
+                className="grid grid-cols-2 gap-2"
               >
-                <RadioGroupItem value="credit" id="payment-credit" className="sr-only" />
-                <span className="text-2xl mb-1">💳</span>
-                <Label htmlFor="payment-credit" className="cursor-pointer text-sm font-medium text-center">
-                  Crédito
-                </Label>
-              </div>
-              <div 
-                className={cn(
-                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
-                  selectedPaymentMethod === 'debit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                <div 
+                  className={cn(
+                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                    selectedPaymentMethod === 'credit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedPaymentMethod('credit')}
+                >
+                  <RadioGroupItem value="credit" id="payment-credit" className="sr-only" />
+                  <span className="text-xl mb-0.5">💳</span>
+                  <Label htmlFor="payment-credit" className="cursor-pointer text-sm font-medium text-center">
+                    Crédito
+                  </Label>
+                </div>
+                <div 
+                  className={cn(
+                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                    selectedPaymentMethod === 'debit' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedPaymentMethod('debit')}
+                >
+                  <RadioGroupItem value="debit" id="payment-debit" className="sr-only" />
+                  <span className="text-xl mb-0.5">💳</span>
+                  <Label htmlFor="payment-debit" className="cursor-pointer text-sm font-medium text-center">
+                    Débito
+                  </Label>
+                </div>
+                <div 
+                  className={cn(
+                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                    selectedPaymentMethod === 'cash' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedPaymentMethod('cash')}
+                >
+                  <RadioGroupItem value="cash" id="payment-cash" className="sr-only" />
+                  <span className="text-xl mb-0.5">💵</span>
+                  <Label htmlFor="payment-cash" className="cursor-pointer text-sm font-medium text-center">
+                    Dinheiro
+                  </Label>
+                </div>
+                <div 
+                  className={cn(
+                    "flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all min-h-[70px] active:scale-95",
+                    selectedPaymentMethod === 'pix' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
+                  )}
+                  onClick={() => setSelectedPaymentMethod('pix')}
+                >
+                  <RadioGroupItem value="pix" id="payment-pix" className="sr-only" />
+                  <span className="text-xl mb-0.5">📱</span>
+                  <Label htmlFor="payment-pix" className="cursor-pointer text-sm font-medium text-center">
+                    Pix
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Seção de Produtos */}
+            {availableProducts.length > 0 && (
+              <div className="border-t pt-4">
+                <button
+                  type="button"
+                  className="flex items-center justify-between w-full text-left"
+                  onClick={() => setShowProductsSection(!showProductsSection)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">Adicionar Produtos</span>
+                    {checkoutCart.length > 0 && (
+                      <Badge variant="secondary" className="ml-1">
+                        {checkoutCart.reduce((sum, item) => sum + item.quantity, 0)}
+                      </Badge>
+                    )}
+                  </div>
+                  <ChevronRight className={cn(
+                    "h-5 w-5 text-muted-foreground transition-transform",
+                    showProductsSection && "rotate-90"
+                  )} />
+                </button>
+
+                {showProductsSection && (
+                  <div className="mt-3 space-y-2">
+                    <ScrollArea className="h-[200px] rounded-md border p-2">
+                      <div className="space-y-2">
+                        {availableProducts.map((product) => {
+                          const cartItem = checkoutCart.find(item => item.productId === product.id);
+                          const quantity = cartItem?.quantity ?? 0;
+                          return (
+                            <div 
+                              key={product.id}
+                              className="flex items-center justify-between p-2 rounded-lg border bg-card/50"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm truncate">{product.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {(product.priceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  <span className="ml-2 opacity-60">({product.stockQuantity} em estoque)</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 ml-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => removeFromCart(product.id)}
+                                  disabled={quantity === 0}
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </Button>
+                                <span className="w-8 text-center font-medium">{quantity}</span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => addToCart(product.id)}
+                                  disabled={quantity >= product.stockQuantity}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+
+                    {/* Resumo do carrinho */}
+                    {checkoutCart.length > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center gap-2">
+                          <ShoppingCart className="h-4 w-4 text-amber-600" />
+                          <span className="text-sm font-medium">
+                            {checkoutCart.reduce((sum, item) => sum + item.quantity, 0)} produto(s)
+                          </span>
+                        </div>
+                        <span className="font-bold text-amber-700 dark:text-amber-400">
+                          {(getCartTotal() / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
-                onClick={() => setSelectedPaymentMethod('debit')}
-              >
-                <RadioGroupItem value="debit" id="payment-debit" className="sr-only" />
-                <span className="text-2xl mb-1">💳</span>
-                <Label htmlFor="payment-debit" className="cursor-pointer text-sm font-medium text-center">
-                  Débito
-                </Label>
               </div>
-              <div 
-                className={cn(
-                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
-                  selectedPaymentMethod === 'cash' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                )}
-                onClick={() => setSelectedPaymentMethod('cash')}
-              >
-                <RadioGroupItem value="cash" id="payment-cash" className="sr-only" />
-                <span className="text-2xl mb-1">💵</span>
-                <Label htmlFor="payment-cash" className="cursor-pointer text-sm font-medium text-center">
-                  Dinheiro
-                </Label>
-              </div>
-              <div 
-                className={cn(
-                  "flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all min-h-[80px] active:scale-95",
-                  selectedPaymentMethod === 'pix' ? "border-primary bg-primary/10 ring-2 ring-primary" : "hover:bg-accent/50"
-                )}
-                onClick={() => setSelectedPaymentMethod('pix')}
-              >
-                <RadioGroupItem value="pix" id="payment-pix" className="sr-only" />
-                <span className="text-2xl mb-1">📱</span>
-                <Label htmlFor="payment-pix" className="cursor-pointer text-sm font-medium text-center">
-                  Pix
-                </Label>
-              </div>
-            </RadioGroup>
+            )}
           </div>
-          <DialogFooter className="flex-row gap-2 sm:gap-0">
+
+          <DialogFooter className="flex-row gap-2 sm:gap-0 pt-4 border-t">
             <Button 
               variant="outline" 
               className="flex-1 sm:flex-none h-12"
@@ -912,6 +1108,8 @@ export default function AgendaPage() {
                 setPaymentModalOpen(false);
                 setBookingToComplete(null);
                 setSelectedPaymentMethod('');
+                setCheckoutCart([]);
+                setShowProductsSection(false);
               }}
             >
               Voltar

@@ -5,11 +5,13 @@ export * from './types/booking';
 export * from './types/slot';
 export * from './types/branding';
 export * from './types/whatsappNotifications';
+export * from './types/product';
 
 // Schemas
 export * from './schemas/booking.schema';
 export * from './schemas/customer.schema';
 export * from './schemas/whatsapp.schema';
+export * from './schemas/product.schema';
 
 // Utils
 export * from './utils/phone';

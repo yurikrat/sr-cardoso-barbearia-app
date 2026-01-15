@@ -26,6 +26,8 @@ import ChangePasswordPage from './pages/admin/ChangePasswordPage';
 import ScheduleConfigPage from './pages/admin/ScheduleConfigPage';
 import BrandingPage from './pages/admin/BrandingPage';
 import WhatsappPage from './pages/admin/WhatsappPage';
+import ProductsPage from './pages/admin/ProductsPage';
+import SalesPage from './pages/admin/SalesPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -185,6 +187,24 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ScheduleConfigPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/produtos"
+              element={
+                <ProtectedRoute>
+                  <MasterOnlyRoute>
+                    <ProductsPage />
+                  </MasterOnlyRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/vendas"
+              element={
+                <ProtectedRoute>
+                  <SalesPage />
                 </ProtectedRoute>
               }
             />

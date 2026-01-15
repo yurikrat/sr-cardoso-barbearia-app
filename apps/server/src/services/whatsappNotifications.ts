@@ -984,3 +984,141 @@ export async function sendBarberBirthdayAlerts(
   
   return { barbersNotified, customersIncluded, errors };
 }
+
+// ============================================================
+// ALERTAS DE ESTOQUE BAIXO
+// ============================================================
+
+interface StockAlertInfo {
+  productId: string;
+  productName: string;
+  categoryName: string;
+  currentStock: number;
+  minStock: number;
+  status: 'low' | 'out';
+}
+
+/**
+ * Constrói mensagem de alerta de estoque baixo
+ */
+function buildStockAlertMessage(alerts: StockAlertInfo[]): string {
+  const outOfStock = alerts.filter(a => a.status === 'out');
+  const lowStock = alerts.filter(a => a.status === 'low');
+
+  const lines: string[] = ['📦 *Alerta de Estoque*', ''];
+
+  if (outOfStock.length > 0) {
+    lines.push('❌ *SEM ESTOQUE:*');
+    for (const item of outOfStock) {
+      lines.push(`• ${item.productName} (${item.categoryName})`);
+    }
+    lines.push('');
+  }
+
+  if (lowStock.length > 0) {
+    lines.push('⚠️ *ESTOQUE BAIXO:*');
+    for (const item of lowStock) {
+      lines.push(`• ${item.productName}: ${item.currentStock} un (mín: ${item.minStock})`);
+    }
+    lines.push('');
+  }
+
+  lines.push('Acesse o painel admin para repor o estoque.');
+
+  return lines.join('\n');
+}
+
+/**
+ * Envia alertas de estoque baixo para o admin master (Sr. Cardoso)
+ * Deve ser chamado via cron job ou após uma venda
+ */
+export async function sendStockAlerts(
+  db: Firestore,
+  env: Env,
+  alerts: StockAlertInfo[]
+): Promise<{ sent: boolean; error?: string }> {
+  if (alerts.length === 0) {
+    return { sent: false };
+  }
+
+  // Buscar telefone do admin master (sr-cardoso)
+  const masterPhone = await getBarberPhoneE164(db, 'sr-cardoso');
+  if (!masterPhone) {
+    console.log('[StockAlert] ⚠️ Admin master sem telefone cadastrado');
+    return { sent: false, error: 'Admin master sem telefone cadastrado' };
+  }
+
+  const message = buildStockAlertMessage(alerts);
+  const result = await sendWhatsAppMessage(env, masterPhone, message);
+
+  if (result.success) {
+    console.log(`[StockAlert] ✓ Alerta enviado: ${alerts.length} produto(s)`);
+    
+    // Marcar alertas como notificados no Firestore
+    const batch = db.batch();
+    const now = FieldValue.serverTimestamp();
+    for (const alert of alerts) {
+      const alertDocRef = db.doc(`stockAlertHistory/${alert.productId}`);
+      batch.set(alertDocRef, {
+        productId: alert.productId,
+        productName: alert.productName,
+        status: alert.status,
+        notifiedAt: now,
+      }, { merge: true });
+    }
+    await batch.commit();
+
+    return { sent: true };
+  }
+
+  console.log(`[StockAlert] ✗ Falha ao enviar: ${result.error}`);
+  return { sent: false, error: result.error };
+}
+
+/**
+ * Verifica e envia alertas de estoque (para cron job)
+ * Evita enviar alertas repetidos dentro de 24h
+ */
+export async function checkAndSendStockAlerts(
+  db: Firestore,
+  env: Env
+): Promise<{ alertsSent: number; errors: string[] }> {
+  const { getStockAlerts, getProductsConfig } = await import('../lib/products.js');
+  
+  const config = await getProductsConfig(db);
+  if (!config.lowStockAlertEnabled) {
+    return { alertsSent: 0, errors: [] };
+  }
+
+  const allAlerts = await getStockAlerts(db);
+  if (allAlerts.length === 0) {
+    return { alertsSent: 0, errors: [] };
+  }
+
+  // Filtrar alertas já notificados nas últimas 24h
+  const oneDayAgo = DateTime.now().minus({ hours: 24 }).toJSDate();
+  const alertsToSend: StockAlertInfo[] = [];
+
+  for (const alert of allAlerts) {
+    const historyDoc = await db.doc(`stockAlertHistory/${alert.productId}`).get();
+    if (historyDoc.exists) {
+      const notifiedAt = historyDoc.data()?.notifiedAt;
+      if (notifiedAt instanceof Timestamp && notifiedAt.toDate() > oneDayAgo) {
+        // Já notificado recentemente, pular
+        continue;
+      }
+    }
+    alertsToSend.push(alert);
+  }
+
+  if (alertsToSend.length === 0) {
+    return { alertsSent: 0, errors: [] };
+  }
+
+  const result = await sendStockAlerts(db, env, alertsToSend);
+  
+  return {
+    alertsSent: result.sent ? alertsToSend.length : 0,
+    errors: result.error ? [result.error] : [],
+  };
+}

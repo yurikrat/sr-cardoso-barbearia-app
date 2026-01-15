@@ -286,6 +286,18 @@ gcloud firestore indexes create --file=firebase/firestore.indexes.json --project
   - Templates editáveis pelo admin (texto simples, sem código)
   - Fila de retry para mensagens que falharam
   - Painel de configuração em `/admin/whatsapp`
+- ✅ **Gestão de Produtos e Estoque** (`/admin/produtos`):
+  - CRUD de produtos (pomadas, bebidas, etc.)
+  - Categorias customizáveis
+  - Controle de estoque com movimentações (entrada/saída)
+  - Alertas de estoque baixo (badge no menu + WhatsApp via cron)
+  - Configuração de estoque mínimo por produto
+  - Comissão por produto (% configurável, como serviços)
+- ✅ **Vendas de Produtos** (`/admin/vendas`):
+  - Venda standalone (sem agendamento)
+  - Venda durante checkout do atendimento
+  - Integração com financeiro (filtro por origem: serviços/produtos/todos)
+  - Histórico de vendas com filtros por data e barbeiro
 
 ## 🔐 Autenticação Admin (RBAC)
 
@@ -362,6 +374,20 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 | `POST` | `/api/admin/slots/block` | Bloquear horários |
 | `GET` | `/api/admin/customers` | Listar clientes |
 | `PATCH` | `/api/admin/users/:username/phone` | Atualizar telefone do barbeiro |
+| `GET` | `/api/admin/products` | Listar produtos |
+| `POST` | `/api/admin/products` | Criar produto |
+| `PUT` | `/api/admin/products/:id` | Atualizar produto |
+| `DELETE` | `/api/admin/products/:id` | Excluir produto |
+| `GET` | `/api/admin/products/categories` | Listar categorias de produtos |
+| `POST` | `/api/admin/products/categories` | Criar categoria |
+| `PUT` | `/api/admin/products/categories/:id` | Atualizar categoria |
+| `DELETE` | `/api/admin/products/categories/:id` | Excluir categoria |
+| `GET` | `/api/admin/sales` | Listar vendas |
+| `POST` | `/api/admin/sales` | Registrar venda |
+| `DELETE` | `/api/admin/sales/:id` | Excluir venda |
+| `GET` | `/api/admin/stock-alerts` | Alertas de estoque baixo |
+| `POST` | `/api/admin/stock-movements` | Registrar movimentação de estoque |
+| `GET` | `/api/admin/products-summary` | Resumo de vendas de produtos |
 
 **Cron (requer `x-cron-secret`):**
 
@@ -370,6 +396,7 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 | `POST` | `/api/cron/send-reminders` | Enviar lembretes WhatsApp |
 | `POST` | `/api/cron/process-queue` | Processar fila de retry |
 | `POST` | `/api/cron/send-birthdays` | Alertar barbeiros sobre aniversariantes |
+| `POST` | `/api/cron/check-stock-alerts` | Enviar alertas de estoque baixo (WhatsApp) |
 
 ### Fluxo de Dados
 
@@ -399,8 +426,14 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 - `barbers/{barberId}/slots/{slotId}` - Slots (bookings/blocks)
 - `adminUsers/{username}` - Credenciais admin (PBKDF2 hash)
 - `whatsappMessageQueue/{messageId}` - Fila de retry para mensagens WhatsApp
+- `products/{productId}` - Catálogo de produtos (pomadas, bebidas, etc.)
+- `productCategories/{categoryId}` - Categorias de produtos
+- `sales/{saleId}` - Vendas de produtos
+- `stockMovements/{movementId}` - Movimentações de estoque
+- `stockAlertHistory/{alertId}` - Histórico de alertas enviados (dedup)
 - `settings/whatsapp-notifications` - Configurações de templates WhatsApp
 - `settings/finance` - Catálogo de serviços e preços
+- `settings/products` - Configurações do módulo de produtos
 
 ## � WhatsApp (Evolution API)
 

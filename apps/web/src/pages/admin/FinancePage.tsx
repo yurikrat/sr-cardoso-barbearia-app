@@ -11,7 +11,9 @@ import {
   Users,
   Download,
   Trash2,
-  Info
+  Info,
+  Package,
+  ShoppingBag
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -83,6 +85,8 @@ export default function FinancePage() {
   const [selectedYear, setSelectedYear] = useState<string>(() => {
     return DateTime.now().setZone('America/Sao_Paulo').toFormat('yyyy');
   });
+  // Filtro de origem da receita: serviços, produtos ou todos
+  const [revenueSource, setRevenueSource] = useState<'services' | 'products' | 'all'>('all');
   const [loading, setLoading] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -110,6 +114,32 @@ export default function FinancePage() {
   };
 
   const [configDraft, setConfigDraft] = useState<FinanceConfig | null>(null);
+
+  // Dados de vendas de produtos
+  type ProductsSummary = {
+    totalSales: number;
+    totalRevenueCents: number;
+    totalCommissionCents: number;
+    totalItemsSold: number;
+    byCategory: Array<{
+      categoryId: string;
+      categoryName: string;
+      revenueCents: number;
+      itemsSold: number;
+    }>;
+    byProduct: Array<{
+      productId: string;
+      productName: string;
+      revenueCents: number;
+      quantitySold: number;
+    }>;
+    byPaymentMethod: Array<{
+      method: 'credit' | 'debit' | 'cash' | 'pix';
+      revenueCents: number;
+      count: number;
+    }>;
+  };
+  const [productsSummary, setProductsSummary] = useState<ProductsSummary | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -344,6 +374,8 @@ export default function FinancePage() {
       setLoading(true);
       try {
         const barberId = selectedBarberId === 'all' ? null : selectedBarberId;
+        
+        // Buscar dados de serviços
         const data = await api.admin.financeSummary({ startDateKey, endDateKey, barberId });
         setSummary({
           totalBookings: data.totalBookings,
@@ -362,6 +394,14 @@ export default function FinancePage() {
           serviceCatalog: data.serviceCatalog,
           commissions: data.commissions,
         });
+        
+        // Buscar dados de produtos
+        const productsData = await api.admin.getProductsSummary({
+          startDate: startDateKey,
+          endDate: endDateKey,
+          barberId: barberId ?? undefined,
+        });
+        setProductsSummary(productsData);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : null;
         toast({
@@ -370,6 +410,7 @@ export default function FinancePage() {
           variant: 'destructive',
         });
         setSummary(null);
+        setProductsSummary(null);
       } finally {
         setLoading(false);
       }
@@ -478,6 +519,18 @@ export default function FinancePage() {
               </Select>
             )}
 
+            {/* Seletor de origem da receita */}
+            <Select value={revenueSource} onValueChange={(v) => setRevenueSource(v as 'services' | 'products' | 'all')}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tudo</SelectItem>
+                <SelectItem value="services">Serviços</SelectItem>
+                <SelectItem value="products">Produtos</SelectItem>
+              </SelectContent>
+            </Select>
+
             <Button variant="outline" size="icon" onClick={handleExport} disabled={!summary} title="Exportar Excel">
               <Download className="h-4 w-4" />
             </Button>
@@ -506,15 +559,50 @@ export default function FinancePage() {
                   : summary.commissions.defaultBarberPct
                 : null;
 
-              const displayedEstimatedCents = isBarber ? (summary.estimatedBarberCents ?? 0) : (summary.estimatedRevenueCents ?? 0);
-              const displayedRealizedCents = isBarber ? (summary.realizedBarberCents ?? 0) : (summary.realizedRevenueCents ?? 0);
-              const projectionBaseCents = summary.projectionRevenueCents ?? summary.revenueCents;
-              const displayedProjectionCents = isBarber && pct != null ? Math.round(projectionBaseCents * pct) : projectionBaseCents;
+              // Valores de serviços
+              const servicesEstimatedCents = isBarber ? (summary.estimatedBarberCents ?? 0) : (summary.estimatedRevenueCents ?? 0);
+              const servicesRealizedCents = isBarber ? (summary.realizedBarberCents ?? 0) : (summary.realizedRevenueCents ?? 0);
+              const servicesProjectionCents = summary.projectionRevenueCents ?? summary.revenueCents;
+              const servicesProjectionDisplayed = isBarber && pct != null ? Math.round(servicesProjectionCents * pct) : servicesProjectionCents;
+
+              // Valores de produtos
+              const productsRevenueCents = productsSummary?.totalRevenueCents ?? 0;
+              const productsCommissionCents = productsSummary?.totalCommissionCents ?? 0;
+              // Para barbers, mostrar comissão; para master, mostrar total
+              const productsDisplayedCents = isBarber ? productsCommissionCents : productsRevenueCents;
+              const productsBarberiaCents = productsRevenueCents - productsCommissionCents;
+
+              // Valores combinados baseados no filtro
+              let displayedEstimatedCents: number;
+              let displayedRealizedCents: number;
+              let displayedProjectionCents: number;
+              let showProductsBreakdown = false;
+
+              switch (revenueSource) {
+                case 'services':
+                  displayedEstimatedCents = servicesEstimatedCents;
+                  displayedRealizedCents = servicesRealizedCents;
+                  displayedProjectionCents = servicesProjectionDisplayed;
+                  break;
+                case 'products':
+                  displayedEstimatedCents = 0; // Produtos não têm "previsto"
+                  displayedRealizedCents = productsDisplayedCents;
+                  displayedProjectionCents = productsDisplayedCents; // Projeção = realizado para produtos
+                  showProductsBreakdown = true;
+                  break;
+                default: // 'all'
+                  displayedEstimatedCents = servicesEstimatedCents;
+                  displayedRealizedCents = servicesRealizedCents + productsDisplayedCents;
+                  displayedProjectionCents = servicesProjectionDisplayed + productsDisplayedCents;
+                  showProductsBreakdown = productsRevenueCents > 0;
+              }
 
               return (
                 <>
                   {/* KPI Grid */}
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {/* Card de Agendamentos/Vendas */}
+              {revenueSource !== 'products' && (
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Agendamentos</CardTitle>
@@ -530,7 +618,25 @@ export default function FinancePage() {
                   </p>
                 </CardContent>
               </Card>
+              )}
 
+              {/* Card de Vendas de Produtos */}
+              {(revenueSource === 'products' || revenueSource === 'all') && productsSummary && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Vendas de Produtos</CardTitle>
+                  <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{productsSummary.totalSales}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {productsSummary.totalItemsSold} {productsSummary.totalItemsSold === 1 ? 'item vendido' : 'itens vendidos'}
+                  </p>
+                </CardContent>
+              </Card>
+              )}
+
+              {revenueSource !== 'products' && (
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Previsto</CardTitle>
@@ -562,6 +668,7 @@ export default function FinancePage() {
                   )}
                 </CardContent>
               </Card>
+              )}
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -570,10 +677,18 @@ export default function FinancePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(displayedRealizedCents)}</div>
-                  {isMaster && (summary.realizedBarberCents != null || summary.realizedShopCents != null) && (
+                  {/* Breakdown por origem quando mostra tudo */}
+                  {showProductsBreakdown && revenueSource === 'all' && (
                     <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
-                      <span>P: {formatMoneyBRLFromCents(summary.realizedBarberCents ?? 0)}</span>
-                      <span>B: {formatMoneyBRLFromCents(summary.realizedShopCents ?? 0)}</span>
+                      <span className="flex items-center gap-1"><Scissors className="h-3 w-3" /> {formatMoneyBRLFromCents(servicesRealizedCents)}</span>
+                      <span className="flex items-center gap-1"><Package className="h-3 w-3" /> {formatMoneyBRLFromCents(productsDisplayedCents)}</span>
+                    </div>
+                  )}
+                  {/* Breakdown P/B para serviços */}
+                  {isMaster && revenueSource !== 'products' && (summary.realizedBarberCents != null || summary.realizedShopCents != null) && (
+                    <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
+                      <span>P: {formatMoneyBRLFromCents((summary.realizedBarberCents ?? 0) + (revenueSource === 'all' ? productsCommissionCents : 0))}</span>
+                      <span>B: {formatMoneyBRLFromCents((summary.realizedShopCents ?? 0) + (revenueSource === 'all' ? productsBarberiaCents : 0))}</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button type="button" className="inline-flex items-center" aria-label="Entenda P e B">
@@ -585,11 +700,18 @@ export default function FinancePage() {
                             <div className="font-medium">Divisão (P/B)</div>
                             <div>P = Profissional (comissão)</div>
                             <div>B = Barbearia</div>
-                            <div className="text-muted-foreground">Realizado: soma de Concluído.</div>
+                            <div className="text-muted-foreground">Realizado: soma de Concluído{revenueSource === 'all' ? ' + vendas de produtos' : ''}.</div>
                             <div className="text-muted-foreground">Dono (Sr. Cardoso): P=100%.</div>
                           </div>
                         </TooltipContent>
                       </Tooltip>
+                    </div>
+                  )}
+                  {/* Breakdown P/B para apenas produtos */}
+                  {isMaster && revenueSource === 'products' && productsRevenueCents > 0 && (
+                    <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
+                      <span>P: {formatMoneyBRLFromCents(productsCommissionCents)}</span>
+                      <span>B: {formatMoneyBRLFromCents(productsBarberiaCents)}</span>
                     </div>
                   )}
                 </CardContent>
@@ -603,7 +725,8 @@ export default function FinancePage() {
                 <CardContent>
                   <div className="text-2xl font-bold">{formatMoneyBRLFromCents(displayedProjectionCents)}</div>
                   <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2">
-                    <span>Baseado no histórico</span>
+                    <span>{revenueSource === 'products' ? 'Total de vendas' : 'Baseado no histórico'}</span>
+                    {revenueSource !== 'products' && (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button type="button" className="inline-flex items-center" aria-label="Como a projeção é calculada">
@@ -621,6 +744,7 @@ export default function FinancePage() {
                         </div>
                       </TooltipContent>
                     </Tooltip>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -631,9 +755,11 @@ export default function FinancePage() {
               );
             })()}
 
+            {/* Cards de Mix de Serviços e Produtos */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
               {/* Mix de Serviços */}
-              <Card className="lg:col-span-4">
+              {revenueSource !== 'products' && (
+              <Card className={revenueSource === 'all' ? 'lg:col-span-4' : 'lg:col-span-7'}>
                 <CardHeader>
                   <CardTitle className="font-serif flex items-center gap-2">
                     <Scissors className="h-5 w-5" />
@@ -680,8 +806,52 @@ export default function FinancePage() {
                   </div>
                 </CardContent>
               </Card>
+              )}
+
+              {/* Mix de Produtos */}
+              {(revenueSource === 'products' || revenueSource === 'all') && productsSummary && productsSummary.byProduct.length > 0 && (
+              <Card className={revenueSource === 'products' ? 'lg:col-span-4' : 'lg:col-span-3'}>
+                <CardHeader>
+                  <CardTitle className="font-serif flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    Mix de Produtos
+                  </CardTitle>
+                  <CardDescription>Distribuição dos produtos vendidos no período.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {(() => {
+                      const products = productsSummary.byProduct.sort((a, b) => b.quantitySold - a.quantitySold);
+                      const maxQty = Math.max(...products.map(p => p.quantitySold), 1);
+
+                      if (products.length === 0) {
+                        return <div className="text-sm text-muted-foreground">Nenhum produto vendido.</div>;
+                      }
+
+                      return products.slice(0, 8).map((p) => (
+                        <div key={p.productId} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium truncate max-w-[60%]">{p.productName}</span>
+                            <span className="text-muted-foreground">
+                              {p.quantitySold} <span className="text-xs mx-1">×</span> {formatMoneyBRLFromCents(Math.round(p.revenueCents / p.quantitySold))}
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-amber-500 transition-all duration-500" 
+                              style={{ width: `${(p.quantitySold / maxQty) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </CardContent>
+              </Card>
+              )}
 
               {/* Status */}
+              {revenueSource !== 'products' && (
               <Card className="lg:col-span-3">
                 <CardHeader>
                   <CardTitle className="font-serif flex items-center gap-2">
@@ -710,6 +880,37 @@ export default function FinancePage() {
                   </div>
                 </CardContent>
               </Card>
+              )}
+
+              {/* Categorias de Produtos (quando visualizando apenas produtos) */}
+              {revenueSource === 'products' && productsSummary && productsSummary.byCategory.length > 0 && (
+              <Card className="lg:col-span-3">
+                <CardHeader>
+                  <CardTitle className="font-serif flex items-center gap-2">
+                    <ShoppingBag className="h-5 w-5" />
+                    Por Categoria
+                  </CardTitle>
+                  <CardDescription>Receita por categoria de produto.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {productsSummary.byCategory
+                      .sort((a, b) => b.revenueCents - a.revenueCents)
+                      .map((cat) => (
+                        <div key={cat.categoryId} className="flex items-center justify-between p-2 rounded-lg border bg-card/50">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{cat.categoryName}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {cat.itemsSold} {cat.itemsSold === 1 ? 'un' : 'un'}
+                            </Badge>
+                          </div>
+                          <span className="font-bold">{formatMoneyBRLFromCents(cat.revenueCents)}</span>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+              )}
 
               {/* Formas de Pagamento */}
               <Card className="lg:col-span-3">
@@ -718,49 +919,89 @@ export default function FinancePage() {
                     <Wallet className="h-5 w-5" />
                     Formas de Pagamento
                   </CardTitle>
-                  <CardDescription>Distribuição por forma de pagamento (apenas concluídos).</CardDescription>
+                  <CardDescription>Distribuição por forma de pagamento{revenueSource !== 'products' ? ' (apenas concluídos)' : ''}.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {summary.countsByPaymentMethod && Object.entries(summary.countsByPaymentMethod)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([method, count]) => {
-                        const revenueCents = summary.revenueByPaymentMethod?.[method] ?? 0;
-                        const totalCompleted = Object.values(summary.countsByPaymentMethod || {}).reduce((a, b) => a + b, 0);
-                        const percentage = totalCompleted > 0 ? Math.round((count / totalCompleted) * 100) : 0;
-                        const methodLabels: Record<string, string> = {
-                          credit: 'Cartão de Crédito',
-                          debit: 'Cartão de Débito',
-                          cash: 'Dinheiro',
-                          pix: 'Pix',
-                        };
-                        const methodIcons: Record<string, string> = {
-                          credit: '💳',
-                          debit: '💳',
-                          cash: '💵',
-                          pix: '📱',
-                        };
-                        return (
-                          <div key={method} className="flex items-center justify-between p-3 rounded-lg border bg-card/50">
-                            <div className="flex items-center gap-3">
-                              <span className="text-xl">{methodIcons[method] ?? '💰'}</span>
-                              <div>
-                                <div className="font-medium">{methodLabels[method] ?? method}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {formatMoneyBRLFromCents(revenueCents)}
+                    {(() => {
+                      // Consolidar formas de pagamento de serviços e produtos
+                      const methodLabels: Record<string, string> = {
+                        credit: 'Cartão de Crédito',
+                        debit: 'Cartão de Débito',
+                        cash: 'Dinheiro',
+                        pix: 'Pix',
+                      };
+                      const methodIcons: Record<string, string> = {
+                        credit: '💳',
+                        debit: '💳',
+                        cash: '💵',
+                        pix: '📱',
+                      };
+
+                      // Serviços
+                      const servicePayments: Record<string, { count: number; revenueCents: number }> = {};
+                      if (revenueSource !== 'products' && summary.countsByPaymentMethod) {
+                        Object.entries(summary.countsByPaymentMethod).forEach(([method, count]) => {
+                          servicePayments[method] = {
+                            count,
+                            revenueCents: summary.revenueByPaymentMethod?.[method] ?? 0,
+                          };
+                        });
+                      }
+
+                      // Produtos
+                      const productPayments: Record<string, { count: number; revenueCents: number }> = {};
+                      if (revenueSource !== 'services' && productsSummary?.byPaymentMethod) {
+                        productsSummary.byPaymentMethod.forEach((pm) => {
+                          productPayments[pm.method] = {
+                            count: pm.count,
+                            revenueCents: pm.revenueCents,
+                          };
+                        });
+                      }
+
+                      // Consolidar
+                      const allMethods = new Set([...Object.keys(servicePayments), ...Object.keys(productPayments)]);
+                      const consolidated: Array<{ method: string; count: number; revenueCents: number }> = [];
+                      allMethods.forEach((method) => {
+                        const svc = servicePayments[method] ?? { count: 0, revenueCents: 0 };
+                        const prd = productPayments[method] ?? { count: 0, revenueCents: 0 };
+                        consolidated.push({
+                          method,
+                          count: svc.count + prd.count,
+                          revenueCents: svc.revenueCents + prd.revenueCents,
+                        });
+                      });
+
+                      const totalCount = consolidated.reduce((a, b) => a + b.count, 0);
+
+                      if (consolidated.length === 0) {
+                        return <div className="text-sm text-muted-foreground">Nenhum pagamento registrado.</div>;
+                      }
+
+                      return consolidated
+                        .sort((a, b) => b.count - a.count)
+                        .map(({ method, count, revenueCents }) => {
+                          const percentage = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
+                          return (
+                            <div key={method} className="flex items-center justify-between p-3 rounded-lg border bg-card/50">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xl">{methodIcons[method] ?? '💰'}</span>
+                                <div>
+                                  <div className="font-medium">{methodLabels[method] ?? method}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {formatMoneyBRLFromCents(revenueCents)}
+                                  </div>
                                 </div>
                               </div>
+                              <div className="text-right">
+                                <div className="font-bold">{count}</div>
+                                <div className="text-xs text-muted-foreground">{percentage}%</div>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <div className="font-bold">{count}</div>
-                              <div className="text-xs text-muted-foreground">{percentage}%</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    {(!summary.countsByPaymentMethod || Object.keys(summary.countsByPaymentMethod).length === 0) && (
-                      <div className="text-sm text-muted-foreground">Nenhum pagamento registrado.</div>
-                    )}
+                          );
+                        });
+                    })()}
                   </div>
                 </CardContent>
               </Card>
