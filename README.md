@@ -256,6 +256,25 @@ npm run serve
   - Fila de retry para mensagens que falharam
   - Painel de configuração em `/admin/whatsapp`
 
+## 🔐 Autenticação Admin (RBAC)
+
+O painel admin suporta dois papéis com permissões distintas:
+
+| Role | Acesso |
+|------|--------|
+| `master` | Acesso total: todos os barbeiros, gestão de usuários, configurações WhatsApp |
+| `barber` | Acesso escopado ao próprio `barberId` apenas |
+
+**Detalhes técnicos:**
+- Credenciais armazenadas em `adminUsers` (Firestore) com hash PBKDF2
+- JWT claims: `{ role, username, barberId? }`
+- Token armazenado em `localStorage` key: `sr_admin_token`
+- Expiração do token: 7 dias
+
+**Owner Barber:**
+- Barbeiro **Sr. Cardoso** tem ID fixo: `sr-cardoso` (constante `OWNER_BARBER_ID`)
+- Sempre exibido **primeiro** em listas/tabs do admin
+
 ## 🏗️ Arquitetura
 
 ### Stack Tecnológica
@@ -279,6 +298,14 @@ npm run serve
 - TypeScript types
 - Zod schemas
 - Utilitários (Luxon)
+
+### Backend Híbrido
+
+O projeto usa uma arquitetura híbrida:
+- **`apps/server/`** (Cloud Run): Endpoints HTTP principais via Express
+- **`apps/functions/`** (Firebase Functions): Operações legadas de admin (em migração)
+
+Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Firebase SDK.
 
 ### Fluxo de Dados
 
@@ -306,6 +333,10 @@ npm run serve
 - `customers/{customerId}` - Perfis de clientes
 - `bookings/{bookingId}` - Reservas
 - `barbers/{barberId}/slots/{slotId}` - Slots (bookings/blocks)
+- `adminUsers/{username}` - Credenciais admin (PBKDF2 hash)
+- `whatsappMessageQueue/{messageId}` - Fila de retry para mensagens WhatsApp
+- `settings/whatsapp-notifications` - Configurações de templates WhatsApp
+- `settings/finance` - Catálogo de serviços e preços
 
 ## � WhatsApp (Evolution API)
 
@@ -332,8 +363,11 @@ O sistema usa **Evolution API** (self-hosted) para envio de mensagens WhatsApp. 
 
 - **VM**: `sr-cardoso-evolution` (us-central1-a, e2-micro)
 - **IP interno**: `10.128.0.2`
+- **IP externo**: `136.119.212.151`
 - **Instância Evolution**: `sr-cardoso`
 - **Evolution API versão**: 2.3.7
+- **Containers**: Evolution API, PostgreSQL, Redis
+- **Disco**: 30GB (Ubuntu 22.04 LTS)
 
 ### Verificar status da VM
 
@@ -346,6 +380,10 @@ gcloud compute ssh sr-cardoso-evolution --project=sr-cardoso-barbearia-prd --zon
 
 # Verificar containers (dentro da VM)
 sudo docker ps
+sudo docker stats --no-stream
+
+# Ver uso de recursos
+uptime && free -h && df -h
 
 # Ver instâncias do Evolution (dentro da VM)
 curl -s http://localhost:8080/instance/fetchInstances -H 'apikey: <API_KEY>'
@@ -394,14 +432,43 @@ curl -X POST "http://localhost:8080/instance/create" \
 
 ### Crons (Cloud Scheduler)
 
-```bash
-# Enviar lembretes (executar a cada 5 min)
-POST /api/cron/send-reminders
-Header: x-cron-secret: <CRON_SECRET>
+Os cron jobs são executados via Cloud Scheduler chamando endpoints do Cloud Run:
 
-# Processar fila de retry (executar a cada 10 min)
-POST /api/cron/process-queue
-Header: x-cron-secret: <CRON_SECRET>
+| Job | Endpoint | Frequência | Função |
+|-----|----------|------------|--------|
+| `send-reminders` | `POST /api/cron/send-reminders` | A cada 15 min | Envia lembretes WhatsApp antes do horário |
+| `process-queue` | `POST /api/cron/process-queue` | A cada 5 min | Reprocessa mensagens que falharam |
+| `send-birthdays` | `POST /api/cron/send-birthdays` | Diário às 9h | Alerta barbeiros sobre aniversariantes |
+
+**Autenticação**: Header `x-cron-secret` com valor de `CRON_SECRET` (compat: `x-cron-key`).
+
+```bash
+# Criar job de lembretes
+gcloud scheduler jobs create http send-reminders \
+  --location=us-central1 \
+  --schedule="*/15 * * * *" \
+  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/send-reminders" \
+  --http-method=POST \
+  --headers="x-cron-secret=SEU_CRON_SECRET" \
+  --project=sr-cardoso-barbearia-prd
+
+# Criar job de fila de retry
+gcloud scheduler jobs create http process-queue \
+  --location=us-central1 \
+  --schedule="*/5 * * * *" \
+  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/process-queue" \
+  --http-method=POST \
+  --headers="x-cron-secret=SEU_CRON_SECRET" \
+  --project=sr-cardoso-barbearia-prd
+
+# Criar job de aniversários (9h horário de Brasília = 12:00 UTC)
+gcloud scheduler jobs create http send-birthdays \
+  --location=us-central1 \
+  --schedule="0 12 * * *" \
+  --uri="https://sr-cardoso-barbearia-837045103376.us-central1.run.app/api/cron/send-birthdays" \
+  --http-method=POST \
+  --headers="x-cron-secret=SEU_CRON_SECRET" \
+  --project=sr-cardoso-barbearia-prd
 ```
 
 ## �🔐 Segurança
