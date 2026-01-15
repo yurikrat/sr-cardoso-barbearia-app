@@ -217,8 +217,16 @@ Para evitar crash do tipo **“toDate is not a function”**, usamos parsing def
 - `ADMIN_JWT_SECRET` (obrigatório)
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` (bootstrap de master, opcional)
 - `GCP_PROJECT_ID`
+- `GCP_STORAGE_BUCKET` (bucket para branding/assets)
 - `WEB_ORIGIN` (CORS)
 - `CANCEL_LINK_PEPPER`
+- `APP_BASE_URL` (URL pública do app, ex: `https://srcardoso.com.br`)
+- `CRON_SECRET` (autenticação dos cron jobs)
+
+### Evolution API (WhatsApp)
+- `EVOLUTION_BASE_URL` (IP interno da VM, ex: `http://10.128.0.2:8080`)
+- `EVOLUTION_INSTANCE_NAME` (nome da instância, ex: `sr-cardoso`)
+- `EVOLUTION_API_KEY` (via Secret Manager)
 
 ---
 
@@ -226,8 +234,11 @@ Para evitar crash do tipo **“toDate is not a function”**, usamos parsing def
 
 No root:
 - `npm install`
-- `npm run dev` (frontend)
-- `npm run build:web` (validação rápida do frontend)
+- `npm run dev` (frontend, porta 5173)
+- `npm run dev:server` (backend Express, porta 8080)
+- `npm run build` (build de todos os workspaces)
+- `npm run build:shared` (necessário antes de outros builds)
+- `npm run type-check` (verificação de tipos)
 
 Detalhes completos e deploy estão no `README.md`.
 

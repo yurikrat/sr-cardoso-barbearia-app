@@ -1,6 +1,6 @@
 # GCP — Documentação viva (sr-cardoso-barbearia-prd)
 
-Data de referência: 2025-12-29 (BRT)
+Data de referência: 2026-01-14 (BRT)
 
 Este documento descreve **o que existe** e **o que foi criado/alterado** na Google Cloud Platform para o projeto `sr-cardoso-barbearia-prd`, com foco em:
 - Cloud Run (app)
@@ -40,8 +40,9 @@ Comando usado:
 ### Serviço: `sr-cardoso-barbearia`
 
 - Região: `us-central1`
-- URL: `https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app`
-- Latest ready revision (na coleta): `sr-cardoso-barbearia-00116-hl5`
+- URL principal: `https://sr-cardoso-barbearia-837045103376.us-central1.run.app`
+- URL alternativa (legacy): `https://sr-cardoso-barbearia-pspp7ojloq-uc.a.run.app`
+- Domínio customizado: `https://srcardoso.com.br`
 
 Comando usado:
 - `gcloud run services list --region us-central1 --format="table(metadata.name,status.url,status.latestReadyRevisionName)"`
