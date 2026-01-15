@@ -549,9 +549,10 @@ export default function AgendaPage() {
       millisecond: 0,
     });
     
-    // Filter bookings for this day
+    // Filter bookings for this day (exclude cancelled - they pollute the view when someone else books the same slot)
     const dayBookings = bookings.filter(b => 
-      DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(dayStart, 'day')
+      DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(dayStart, 'day') &&
+      b.status !== 'cancelled'
     );
 
     const events = [
@@ -687,7 +688,8 @@ export default function AgendaPage() {
 
           {days.map(day => {
              const dayBookings = bookings.filter(b => 
-              DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day')
+              DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day') &&
+              b.status !== 'cancelled'
             );
             return (
               <div key={day.toISODate()} className="relative border-r border-border/40 bg-background/30">
@@ -752,7 +754,8 @@ export default function AgendaPage() {
         {days.map(day => {
           const isCurrentMonth = day.hasSame(DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }), 'month');
           const dayBookings = bookings.filter(b => 
-            DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day')
+            DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day') &&
+            b.status !== 'cancelled'
           );
           const isToday = day.hasSame(DateTime.now().setZone('America/Sao_Paulo'), 'day');
 

@@ -2811,6 +2811,28 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
+  // IMPORTANTE: Esta rota DEVE vir ANTES de /api/admin/products/:id
+  // para evitar que "summary" seja interpretado como um ID de produto
+  app.get('/api/admin/products/summary', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const barberId =
+        admin.role === 'barber' && admin.barberId
+          ? admin.barberId
+          : typeof req.query.barberId === 'string'
+          ? req.query.barberId
+          : undefined;
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+      const summary = await getProductsSummary(db, { startDate, endDate, barberId });
+      return res.json(summary);
+    } catch (e: any) {
+      console.error('Error getting products summary:', e);
+      return res.status(500).json({ error: 'Erro ao buscar resumo de produtos' });
+    }
+  });
+
   app.get('/api/admin/products/:id', requireAdminMw, async (req, res) => {
     try {
       const { id } = req.params;
@@ -3009,30 +3031,6 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     } catch (e: any) {
       console.error('Error getting stock alerts:', e);
       return res.status(500).json({ error: 'Erro ao buscar alertas de estoque' });
-    }
-  });
-
-  // ============================================================
-  // RESUMO FINANCEIRO DE PRODUTOS
-  // ============================================================
-
-  app.get('/api/admin/products/summary', requireAdminMw, async (req, res) => {
-    try {
-      const admin = getAdminFromReq(req);
-      const barberId =
-        admin.role === 'barber' && admin.barberId
-          ? admin.barberId
-          : typeof req.query.barberId === 'string'
-          ? req.query.barberId
-          : undefined;
-      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
-      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
-
-      const summary = await getProductsSummary(db, { startDate, endDate, barberId });
-      return res.json(summary);
-    } catch (e: any) {
-      console.error('Error getting products summary:', e);
-      return res.status(500).json({ error: 'Erro ao buscar resumo de produtos' });
     }
   });
 }
