@@ -41,6 +41,12 @@ type Product = {
 
 type Barber = { id: string; name: string };
 
+type CustomerOption = {
+  id: string;
+  name: string;
+  whatsappE164?: string;
+};
+
 type CartItem = {
   productId: string;
   productName: string;
@@ -87,10 +93,13 @@ export function SaleModal({
   const [loading, setLoading] = useState(false);
   const [barbers, setBarbers] = useState<Barber[]>(propBarbers ?? []);
   const [products, setProducts] = useState<Product[]>(propProducts ?? []);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [customerQuery, setCustomerQuery] = useState('');
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleForm, setSaleForm] = useState({
     barberId: '',
+    customerId: '',
     customerName: '',
     paymentMethod: 'pix' as 'credit' | 'debit' | 'cash' | 'pix',
   });
@@ -106,9 +115,10 @@ export function SaleModal({
         const results = await Promise.allSettled([
           propBarbers ? Promise.resolve(null) : api.admin.listBarbers(),
           propProducts ? Promise.resolve(null) : api.admin.listProducts({ activeOnly: true }),
+          api.admin.listCustomers(200),
         ]);
 
-        const [barbersResult, productsResult] = results;
+        const [barbersResult, productsResult, customersResult] = results;
 
         if (!propBarbers && barbersResult.status === 'fulfilled' && barbersResult.value) {
           setBarbers(barbersResult.value.items?.map((b) => ({ id: b.id, name: b.name })) ?? []);
@@ -116,6 +126,25 @@ export function SaleModal({
 
         if (!propProducts && productsResult.status === 'fulfilled' && productsResult.value) {
           setProducts(productsResult.value);
+        }
+
+        if (customersResult.status === 'fulfilled' && customersResult.value) {
+          const items = customersResult.value.items ?? [];
+          const mapped = items
+            .map((raw) => {
+              if (!raw || typeof raw !== 'object') return null;
+              const data = raw as Record<string, unknown>;
+              const id = String(data.id ?? '');
+              if (!id) return null;
+              const identity = data.identity && typeof data.identity === 'object' ? (data.identity as Record<string, unknown>) : {};
+              const firstName = typeof identity.firstName === 'string' ? identity.firstName : '';
+              const lastName = typeof identity.lastName === 'string' ? identity.lastName : '';
+              const name = `${firstName} ${lastName}`.trim() || 'Cliente sem nome';
+              const whatsappE164 = typeof identity.whatsappE164 === 'string' ? identity.whatsappE164 : undefined;
+              return { id, name, whatsappE164 } as CustomerOption;
+            })
+            .filter((item): item is CustomerOption => item !== null);
+          setCustomers(mapped);
         }
       } catch (e) {
         console.error('Erro ao carregar dados:', e);
@@ -134,9 +163,11 @@ export function SaleModal({
       const barberId = defaultBarberId ?? (user?.role === 'barber' && user.barberId ? user.barberId : '');
       setSaleForm({
         barberId,
+        customerId: '',
         customerName: '',
         paymentMethod: 'pix',
       });
+      setCustomerQuery('');
     }
   }, [open, defaultBarberId, user]);
 
@@ -154,6 +185,14 @@ export function SaleModal({
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
   }, [cart]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!customerQuery.trim()) return customers;
+    const q = customerQuery.toLowerCase();
+    return customers.filter((c) =>
+      c.name.toLowerCase().includes(q) || (c.whatsappE164 ?? '').toLowerCase().includes(q)
+    );
+  }, [customers, customerQuery]);
 
   // Add product to cart
   const addToCart = (product: Product) => {
@@ -206,6 +245,7 @@ export function SaleModal({
     try {
       await api.admin.createSale({
         barberId: saleForm.barberId,
+        customerId: saleForm.customerId || undefined,
         customerName: saleForm.customerName || undefined,
         items: cart.map((item) => ({
           productId: item.productId,
@@ -267,10 +307,51 @@ export function SaleModal({
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Nome do cliente (opcional)</Label>
+                <Label>Cliente (opcional)</Label>
+                <Select
+                  value={saleForm.customerId || 'none'}
+                  onValueChange={(val) => {
+                    if (val === 'none') {
+                      setSaleForm({ ...saleForm, customerId: '', customerName: '' });
+                      return;
+                    }
+                    const selected = customers.find((c) => c.id === val);
+                    setSaleForm({
+                      ...saleForm,
+                      customerId: val,
+                      customerName: selected?.name ?? saleForm.customerName,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="p-2">
+                      <Input
+                        placeholder="Buscar cliente..."
+                        value={customerQuery}
+                        onChange={(e) => setCustomerQuery(e.target.value)}
+                      />
+                    </div>
+                    <SelectItem value="none">Sem cliente</SelectItem>
+                    {filteredCustomers.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        {customer.name}
+                        {customer.whatsappE164 ? ` • ${customer.whatsappE164}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   value={saleForm.customerName}
-                  onChange={(e) => setSaleForm({ ...saleForm, customerName: e.target.value })}
+                  onChange={(e) =>
+                    setSaleForm({
+                      ...saleForm,
+                      customerName: e.target.value,
+                      customerId: '',
+                    })
+                  }
                   placeholder="Nome do cliente"
                 />
               </div>

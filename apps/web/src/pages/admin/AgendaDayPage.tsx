@@ -41,6 +41,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 interface Booking {
   id: string;
   barberId?: string;
+  customerId?: string;
   customer: { firstName: string; lastName: string; whatsappE164: string };
   serviceType: string;
   slotStart: Date;
@@ -48,6 +49,8 @@ interface Booking {
   whatsappStatus: string;
   paymentMethod?: PaymentMethod | null;
   paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }> | null;
+  productsPurchased?: boolean;
+  productSaleId?: string;
 }
 
 function slotIdToTimeKey(slotId: string): string | null {
@@ -144,6 +147,12 @@ export default function AgendaPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | ''>('');
   const [splitMode, setSplitMode] = useState(false);
   const [paymentSplits, setPaymentSplits] = useState<Array<{ method: PaymentMethod; amountCents: number }>>([]);
+  const [paymentSplitInputs, setPaymentSplitInputs] = useState<Record<PaymentMethod, string>>({
+    credit: '',
+    debit: '',
+    cash: '',
+    pix: '',
+  });
   const [bookingToComplete, setBookingToComplete] = useState<Booking | null>(null);
   // Estados para produtos no checkout
   const [checkoutCart, setCheckoutCart] = useState<Array<{ productId: string; quantity: number }>>([]);
@@ -310,6 +319,18 @@ export default function AgendaPage() {
     if (selectedBarber !== forcedBarberId) setSelectedBarber(forcedBarberId);
   }, [forcedBarberId, selectedBarber]);
 
+  useEffect(() => {
+    if (!splitMode) return;
+    setPaymentSplitInputs((prev) => {
+      const next = { ...prev };
+      (['credit', 'debit', 'cash', 'pix'] as PaymentMethod[]).forEach((method) => {
+        const entry = paymentSplits.find((item) => item.method === method);
+        next[method] = entry ? (entry.amountCents / 100).toFixed(2).replace('.', ',') : '';
+      });
+      return next;
+    });
+  }, [splitMode, paymentSplits]);
+
   // Load bookings
   useEffect(() => {
     if (!selectedBarber) return;
@@ -363,11 +384,14 @@ export default function AgendaPage() {
         return {
           id: String(data.id ?? ''),
           barberId: typeof data.barberId === 'string' ? data.barberId : undefined,
+          customerId: typeof data.customerId === 'string' ? data.customerId : undefined,
           customer: data.customer as Booking['customer'],
           serviceType: String(data.serviceType ?? ''),
           slotStart,
           status: String(data.status ?? ''),
           whatsappStatus: String(data.whatsappStatus ?? ''),
+          productsPurchased: typeof data.productsPurchased === 'boolean' ? data.productsPurchased : undefined,
+          productSaleId: typeof data.productSaleId === 'string' ? data.productSaleId : undefined,
         };
       }).filter((b): b is Booking => b !== null);
 
@@ -399,8 +423,8 @@ export default function AgendaPage() {
   });
 
   const setStatusMutation = useMutation({
-    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod; paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }> }) => {
-      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod, payload.paymentMethods);
+    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod; paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }>; productsPurchased?: boolean }) => {
+      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod, payload.paymentMethods, payload.productsPurchased);
     },
     onSuccess: (_data, variables) => {
       loadBookings();
@@ -410,6 +434,7 @@ export default function AgendaPage() {
             status: variables.status,
             paymentMethod: variables.paymentMethod ?? variables.paymentMethods?.[0]?.method ?? prev.paymentMethod,
             paymentMethods: variables.paymentMethods ?? prev.paymentMethods,
+            productsPurchased: typeof variables.productsPurchased === 'boolean' ? variables.productsPurchased : prev.productsPurchased,
           }
         : prev));
       // Auto-fechar modal após ação de status
@@ -428,6 +453,7 @@ export default function AgendaPage() {
     setSelectedPaymentMethod('');
     setSplitMode(false);
     setPaymentSplits([]);
+    setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
     setCheckoutCart([]);
     setShowProductsSection(false);
     setPaymentModalOpen(true);
@@ -494,6 +520,17 @@ export default function AgendaPage() {
     return paymentSplits.reduce((sum, entry) => sum + entry.amountCents, 0);
   };
 
+  const parseCurrencyToCents = (input: string) => {
+    const cleaned = input
+      .replace(/\s/g, '')
+      .replace(/[^0-9,]/g, '')
+      .replace(',', '.');
+    if (!cleaned) return 0;
+    const value = Number.parseFloat(cleaned);
+    if (Number.isNaN(value)) return 0;
+    return Math.round(value * 100);
+  };
+
   // Handler para confirmar conclusão com forma de pagamento
   const handleConfirmComplete = async () => {
     if (!bookingToComplete) return;
@@ -519,6 +556,7 @@ export default function AgendaPage() {
         status: 'completed', 
         paymentMethod: splitMode ? undefined : (selectedPaymentMethod || undefined),
         paymentMethods: splitMode ? paymentSplits : undefined,
+        productsPurchased: checkoutCart.length > 0,
       });
       
       // 2. Se há produtos no carrinho, criar a venda
@@ -531,10 +569,14 @@ export default function AgendaPage() {
             unitPriceCents: product?.priceCents ?? 0,
           };
         });
+        const customerName = bookingToComplete.customer
+          ? `${bookingToComplete.customer.firstName ?? ''} ${bookingToComplete.customer.lastName ?? ''}`.trim()
+          : undefined;
         
         await api.admin.createSale({
           barberId: bookingToComplete.barberId,
-          customerId: undefined, // Poderia vincular ao cliente do booking se tivéssemos o ID
+          customerId: bookingToComplete.customerId,
+          customerName: customerName || undefined,
           paymentMethod: primaryMethod,
           items,
           bookingId: bookingToComplete.id,
@@ -945,6 +987,16 @@ export default function AgendaPage() {
                 {selectedBooking.paymentMethod && (
                   <p><span className="font-medium">Forma de pagamento:</span> {PAYMENT_METHOD_LABELS[selectedBooking.paymentMethod]}</p>
                 )}
+                {selectedBooking.status === 'completed' && typeof selectedBooking.productsPurchased === 'boolean' && (
+                  <p>
+                    <span className="font-medium">Produtos:</span>{' '}
+                    {selectedBooking.productsPurchased ? (
+                      <Badge variant="secondary">Comprou</Badge>
+                    ) : (
+                      <Badge variant="outline">Não comprou</Badge>
+                    )}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
@@ -988,6 +1040,7 @@ export default function AgendaPage() {
           setSelectedPaymentMethod('');
           setSplitMode(false);
           setPaymentSplits([]);
+          setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
           setCheckoutCart([]);
           setShowProductsSection(false);
         }
@@ -1007,15 +1060,22 @@ export default function AgendaPage() {
                 <Label className="text-base font-medium">Forma de Pagamento</Label>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Dividir</span>
-                  <Switch checked={splitMode} onCheckedChange={setSplitMode} />
+                  <Switch
+                    checked={splitMode}
+                    onCheckedChange={(checked) => {
+                      setSplitMode(checked);
+                      if (!checked) {
+                        setPaymentSplits([]);
+                        setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
               {splitMode ? (
                 <div className="space-y-3">
                   {(['pix', 'cash', 'credit', 'debit'] as PaymentMethod[]).map((method) => {
-                    const current = paymentSplits.find((entry) => entry.method === method);
-                    const value = current ? (current.amountCents / 100).toFixed(2).replace('.', ',') : '';
                     return (
                       <div key={method} className="flex items-center gap-3">
                         <span className="w-24 text-sm font-medium">{PAYMENT_METHOD_LABELS[method]}</span>
@@ -1023,10 +1083,13 @@ export default function AgendaPage() {
                           type="text"
                           inputMode="decimal"
                           placeholder="0,00"
-                          value={value}
+                          value={paymentSplitInputs[method]}
                           onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                            const raw = e.target.value.replace(/[^0-9,]/g, '').replace(',', '.');
-                            const amount = raw ? Math.round(parseFloat(raw) * 100) : 0;
+                            const raw = e.target.value.replace(/[^0-9,]/g, '');
+                            setPaymentSplitInputs((prev) => ({ ...prev, [method]: raw }));
+                          }}
+                          onBlur={(e: ChangeEvent<HTMLInputElement>) => {
+                            const amount = parseCurrencyToCents(e.target.value);
                             updateSplitAmount(method, amount);
                           }}
                           className="flex-1"
@@ -1201,6 +1264,7 @@ export default function AgendaPage() {
                 setSelectedPaymentMethod('');
                 setSplitMode(false);
                 setPaymentSplits([]);
+                setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
                 setCheckoutCart([]);
                 setShowProductsSection(false);
               }}

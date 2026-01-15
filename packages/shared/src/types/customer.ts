@@ -25,6 +25,9 @@ export interface CustomerStats {
   totalCompleted: number;
   noShowCount: number;
   lastContactAt?: Date;
+  totalPurchases?: number;
+  totalSpentCents?: number;
+  lastPurchaseAt?: Date;
 }
 
 export interface Customer {

@@ -1977,10 +1977,11 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       const admin = getAdminFromReq(req);
       const bookingId = req.params.bookingId;
-      const body = req.body as { status?: unknown; paymentMethod?: unknown; paymentMethods?: unknown };
+      const body = req.body as { status?: unknown; paymentMethod?: unknown; paymentMethods?: unknown; productsPurchased?: unknown };
       const nextStatus = body?.status;
       const paymentMethod = body?.paymentMethod;
       const paymentMethods = body?.paymentMethods;
+      const productsPurchased = body?.productsPurchased;
       
       if (typeof nextStatus !== 'string') return res.status(400).json({ error: 'status é obrigatório' });
 
@@ -2056,6 +2057,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
             updates.paymentMethod = (paymentMethods[0] as any).method ?? paymentMethod;
           } else {
             updates.paymentMethod = paymentMethod; // Salva forma de pagamento
+          }
+          if (typeof productsPurchased === 'boolean') {
+            updates.productsPurchased = productsPurchased;
           }
         }
         if (nextStatus === 'no_show') updates.noShowAt = FieldValue.serverTimestamp();

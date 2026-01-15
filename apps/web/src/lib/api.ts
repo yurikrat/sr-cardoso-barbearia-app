@@ -482,7 +482,8 @@ export const api = {
         bookingId: string,
         status: 'confirmed' | 'completed' | 'no_show',
         paymentMethod?: 'credit' | 'debit' | 'cash' | 'pix',
-        paymentMethods?: Array<{ method: 'credit' | 'debit' | 'cash' | 'pix'; amountCents: number }>
+        paymentMethods?: Array<{ method: 'credit' | 'debit' | 'cash' | 'pix'; amountCents: number }>,
+        productsPurchased?: boolean
       ) {
         const payload = {
           status,
@@ -491,6 +492,7 @@ export const api = {
             : paymentMethod
               ? { paymentMethod }
               : {}),
+          ...(typeof productsPurchased === 'boolean' ? { productsPurchased } : {}),
         };
         return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
           method: 'POST',

@@ -1,4 +1,5 @@
 import type { Firestore } from '@google-cloud/firestore';
+import { FieldValue } from '@google-cloud/firestore';
 import type {
   Product,
   ProductCategory,
@@ -14,6 +15,7 @@ import {
   DEFAULT_PRODUCTS_CONFIG,
 } from '@sr-cardoso/shared';
 import { getNow, getDateKey } from '@sr-cardoso/shared';
+import { OWNER_BARBER_ID } from './finance.js';
 
 // ============================================================
 // COLLECTION PATHS
@@ -243,6 +245,8 @@ export async function createSale(
   let totalCents = 0;
   let commissionCents = 0;
 
+  const isOwner = data.barberId === OWNER_BARBER_ID;
+
   // Busca produtos e monta itens
   for (const item of data.items) {
     const product = await getProduct(db, item.productId);
@@ -256,13 +260,14 @@ export async function createSale(
       throw new Error(`Estoque insuficiente para ${product.name}`);
     }
     const itemTotal = product.priceCents * item.quantity;
-    const itemCommission = Math.round(itemTotal * product.commissionPct);
+    const effectiveCommissionPct = isOwner ? 0 : product.commissionPct;
+    const itemCommission = Math.round(itemTotal * effectiveCommissionPct);
     saleItems.push({
       productId: product.id,
       productName: product.name,
       quantity: item.quantity,
       unitPriceCents: product.priceCents,
-      commissionPct: product.commissionPct,
+      commissionPct: effectiveCommissionPct,
     });
     totalCents += itemTotal;
     commissionCents += itemCommission;
@@ -286,8 +291,13 @@ export async function createSale(
     completedAt: now.toJSDate(),
   };
 
+  const customerRef = data.customerId ? db.collection('customers').doc(data.customerId) : null;
+  const bookingRef = data.bookingId ? db.collection('bookings').doc(data.bookingId) : null;
+
   // Transação para criar venda e atualizar estoque
   await db.runTransaction(async (transaction) => {
+    const customerDoc = customerRef ? await transaction.get(customerRef) : null;
+    const bookingDoc = bookingRef ? await transaction.get(bookingRef) : null;
     transaction.set(saleRef, sale);
 
     // Atualiza estoque de cada produto
@@ -319,6 +329,22 @@ export async function createSale(
         createdAt: now.toJSDate(),
       };
       transaction.set(movementRef, movement);
+    }
+
+    if (customerRef && customerDoc?.exists) {
+      transaction.update(customerRef, {
+        'stats.totalPurchases': FieldValue.increment(1),
+        'stats.totalSpentCents': FieldValue.increment(totalCents),
+        'stats.lastPurchaseAt': now.toJSDate(),
+      });
+    }
+
+    if (bookingRef && bookingDoc?.exists) {
+      transaction.update(bookingRef, {
+        productsPurchased: true,
+        productSaleId: sale.id,
+        updatedAt: now.toJSDate(),
+      });
     }
   });
 
@@ -385,8 +411,13 @@ export async function deleteSale(
 
   const now = getNow();
 
+  const customerRef = sale.customerId ? db.collection('customers').doc(sale.customerId) : null;
+  const bookingRef = sale.bookingId ? db.collection('bookings').doc(sale.bookingId) : null;
+
   // Transação para deletar venda e reverter estoque
   await db.runTransaction(async (transaction) => {
+    const customerDoc = customerRef ? await transaction.get(customerRef) : null;
+    const bookingDoc = bookingRef ? await transaction.get(bookingRef) : null;
     // Remove a venda
     const saleRef = db.collection(SALES_COLLECTION).doc(saleId);
     transaction.delete(saleRef);
@@ -423,6 +454,22 @@ export async function deleteSale(
         };
         transaction.set(movementRef, movement);
       }
+    }
+
+    if (customerRef && customerDoc?.exists) {
+      transaction.update(customerRef, {
+        'stats.totalPurchases': FieldValue.increment(-1),
+        'stats.totalSpentCents': FieldValue.increment(-sale.totalCents),
+        'stats.lastPurchaseAt': now.toJSDate(),
+      });
+    }
+
+    if (bookingRef && bookingDoc?.exists) {
+      transaction.update(bookingRef, {
+        productsPurchased: false,
+        productSaleId: null,
+        updatedAt: now.toJSDate(),
+      });
     }
   });
 }

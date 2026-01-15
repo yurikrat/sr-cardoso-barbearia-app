@@ -46,6 +46,8 @@ export interface Booking {
   whatsappStatus: WhatsAppStatus;
   paymentMethod?: PaymentMethod | null; // Forma de pagamento (preenchido ao concluir)
   paymentMethods?: PaymentSplit[] | null; // Split payment (novo) - sobrescreve paymentMethod se presente
+  productsPurchased?: boolean; // Indica se houve compra de produtos no atendimento
+  productSaleId?: string; // ID da venda de produtos vinculada ao atendimento
   createdAt: Date;
   updatedAt: Date;
   confirmedAt?: Date;
