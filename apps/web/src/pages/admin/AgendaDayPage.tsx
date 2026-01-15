@@ -144,8 +144,6 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
-  const [encaixeModalOpen, setEncaixeModalOpen] = useState(false);
-  const [encaixeTarget, setEncaixeTarget] = useState<{ date: Date; barberId: string; time: string } | null>(null);
   const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
@@ -627,20 +625,6 @@ export default function AgendaPage() {
     setSelectedBooking(null);
   };
 
-  const getSlotBookingCount = (slotStart: Date, barberId?: string) => {
-    const slotKey = bookingToSlotKey(slotStart);
-    return bookings.filter(
-      (b) =>
-        b.status !== 'cancelled' &&
-        bookingToSlotKey(b.slotStart) === slotKey &&
-        (!barberId || b.barberId === barberId)
-    ).length;
-  };
-
-  const selectedSlotCount = selectedBooking
-    ? getSlotBookingCount(selectedBooking.slotStart, selectedBooking.barberId)
-    : 0;
-  const isSlotFull = selectedSlotCount >= 2;
 
   // Função para desbloquear slot
   const handleUnblockSlot = async () => {
@@ -1092,23 +1076,6 @@ export default function AgendaPage() {
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm" disabled={!selectedBooking.customer.whatsappE164}>WhatsApp</Button>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isSlotFull || !(selectedBooking.barberId || selectedBarber)}
-                  onClick={() => {
-                    const slot = DateTime.fromJSDate(selectedBooking.slotStart, { zone: 'America/Sao_Paulo' });
-                    setEncaixeTarget({
-                      date: slot.toJSDate(),
-                      barberId: selectedBooking.barberId ?? selectedBarber,
-                      time: slot.toFormat('HH:mm'),
-                    });
-                    setSelectedBooking(null);
-                    setEncaixeModalOpen(true);
-                  }}
-                >
-                  Encaixe
-                </Button>
-                <Button
                   variant="secondary"
                   size="sm"
                   disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status) || setStatusMutation.isPending}
@@ -1407,17 +1374,6 @@ export default function AgendaPage() {
         onOpenChange={setCreateBookingModalOpen}
         selectedDate={selectedDate}
         selectedBarber={selectedBarber}
-        onSuccess={() => loadBookings()}
-      />
-      <CreateBookingModal
-        open={encaixeModalOpen}
-        onOpenChange={(open) => {
-          setEncaixeModalOpen(open);
-          if (!open) setEncaixeTarget(null);
-        }}
-        selectedDate={encaixeTarget?.date}
-        selectedBarber={encaixeTarget?.barberId}
-        selectedTime={encaixeTarget?.time}
         allowEncaixe
         onSuccess={() => loadBookings()}
       />
