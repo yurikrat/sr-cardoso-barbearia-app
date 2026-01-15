@@ -1680,6 +1680,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
   });
 
   // Endpoint público para cron de aniversário (validado por secret header)
+  // Também verifica alertas de estoque para economizar no Cloud Scheduler
   app.post('/api/cron/send-birthdays', async (req, res) => {
     try {
       // Valida secret do cron (Cloud Scheduler)
@@ -1708,6 +1709,14 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         console.log(`[CRON Birthday] Processados: ${result.processed}, Enviados: ${result.sent}, Pulados: ${result.skipped}, Falhas: ${result.failed}`);
       }
 
+      // 3) Por fim: verificar alertas de estoque baixo
+      const { checkAndSendStockAlerts } = await import('../services/whatsappNotifications.js');
+      const stockResult = await checkAndSendStockAlerts(db, env);
+      console.log(`[CRON StockAlert] Alertas enviados: ${stockResult.alertsSent}`);
+      if (stockResult.errors.length > 0) {
+        console.log(`[CRON StockAlert] Erros: ${stockResult.errors.join(', ')}`);
+      }
+
       // Monta mensagem informativa baseada no resultado
       let message: string;
       if (result.noCustomers) {
@@ -1732,6 +1741,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           barbersNotified: barberAlerts.barbersNotified,
           customersIncluded: barberAlerts.customersIncluded,
           errors: barberAlerts.errors,
+        },
+        stockAlerts: {
+          alertsSent: stockResult.alertsSent,
+          errors: stockResult.errors,
         },
       });
     } catch (e: any) {

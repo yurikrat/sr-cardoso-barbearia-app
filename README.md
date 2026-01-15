@@ -395,8 +395,8 @@ Consulte `apps/web/src/lib/api.ts` para identificar quais rotas são HTTP vs Fir
 |--------|----------|-----------|
 | `POST` | `/api/cron/send-reminders` | Enviar lembretes WhatsApp |
 | `POST` | `/api/cron/process-queue` | Processar fila de retry |
-| `POST` | `/api/cron/send-birthdays` | Alertar barbeiros sobre aniversariantes |
-| `POST` | `/api/cron/check-stock-alerts` | Enviar alertas de estoque baixo (WhatsApp) |
+| `POST` | `/api/cron/send-birthdays` | Alertar barbeiros sobre aniversariantes + verificar estoque baixo |
+| `POST` | `/api/cron/check-stock-alerts` | Enviar alertas de estoque baixo (standalone, opcional) |
 
 ### Fluxo de Dados
 
