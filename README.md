@@ -261,8 +261,10 @@ gcloud firestore indexes create --file=firebase/firestore.indexes.json --project
 ### Admin
 - ✅ Login com JWT (backend)
 - ✅ Agenda do dia por barbeiro
+- ✅ Encaixe manual (até 2 clientes no mesmo horário, split 50/50)
 - ✅ Agenda da semana (visão geral)
 - ✅ Gerenciamento de reservas (visualizar, cancelar)
+- ✅ Agendamento manual com link automático ao cliente (nome + WhatsApp) e WhatsApp opcional
 - ✅ Bloqueio de horários (intervalos)
 - ✅ Módulo de clientes (listagem, busca, estatísticas)
 - ✅ Listas inteligentes:

@@ -93,9 +93,13 @@ interface BookingData {
   customer: {
     firstName: string;
     lastName: string;
-    whatsappE164: string;
+    whatsappE164?: string;
   };
   cancelCode?: string; // Só disponível na criação, não armazenado
+}
+
+function hasValidWhatsApp(phone?: string | null): phone is string {
+  return typeof phone === 'string' && phone.trim().length > 10;
 }
 
 /**
@@ -178,13 +182,14 @@ async function addToQueue(
   db: Firestore,
   booking: BookingData,
   messageType: MessageType,
-  messageText: string
+  messageText: string,
+  phoneE164: string
 ): Promise<string> {
   const queueRef = db.collection(MESSAGE_QUEUE_COLLECTION).doc();
   const queueItem: Omit<WhatsAppMessageQueue, 'id'> = {
     bookingId: booking.id,
     customerId: booking.customerId,
-    phoneE164: booking.customer.whatsappE164,
+    phoneE164,
     messageType,
     messageText,
     status: 'pending',
@@ -242,6 +247,10 @@ export async function sendBookingConfirmation(
   if (!settings.confirmationEnabled) {
     return { sent: false, queued: false };
   }
+
+  if (!hasValidWhatsApp(booking.customer.whatsappE164)) {
+    return { sent: false, queued: false, error: 'Reserva sem WhatsApp' };
+  }
   
   const cancelLink = `${baseUrl}/cancelar/${cancelCode}`;
   const message = await buildConfirmationMessage(db, booking, settings.confirmationMessage, cancelLink);
@@ -258,7 +267,7 @@ export async function sendBookingConfirmation(
   }
   
   // Falhou - adiciona à fila de retry
-  await addToQueue(db, booking, 'confirmation', message);
+  await addToQueue(db, booking, 'confirmation', message, booking.customer.whatsappE164!);
   return { sent: false, queued: true, error: result.error };
 }
 
@@ -272,6 +281,10 @@ export async function sendCancellationConfirmation(
   baseUrl: string
 ): Promise<{ sent: boolean; queued: boolean; error?: string }> {
   const settings = await getNotificationSettings(db);
+
+  if (!hasValidWhatsApp(booking.customer.whatsappE164)) {
+    return { sent: false, queued: false, error: 'Reserva sem WhatsApp' };
+  }
   
   const message = await buildCancellationMessage(db, booking, settings.cancellationMessage, baseUrl);
   
@@ -282,7 +295,7 @@ export async function sendCancellationConfirmation(
   }
   
   // Falhou - adiciona à fila de retry
-  await addToQueue(db, booking, 'cancellation', message);
+  await addToQueue(db, booking, 'cancellation', message, booking.customer.whatsappE164!);
   return { sent: false, queued: true, error: result.error };
 }
 
@@ -299,6 +312,10 @@ export async function sendBookingReminder(
   if (!settings.reminderEnabled) {
     return { sent: false, queued: false };
   }
+
+  if (!hasValidWhatsApp(booking.customer.whatsappE164)) {
+    return { sent: false, queued: false, error: 'Reserva sem WhatsApp' };
+  }
   
   const message = await buildReminderMessage(db, booking, settings.reminderMessage);
   
@@ -313,7 +330,7 @@ export async function sendBookingReminder(
   }
   
   // Falhou - adiciona à fila de retry
-  await addToQueue(db, booking, 'reminder', message);
+  await addToQueue(db, booking, 'reminder', message, booking.customer.whatsappE164!);
   return { sent: false, queued: true, error: result.error };
 }
 

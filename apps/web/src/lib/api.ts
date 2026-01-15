@@ -189,10 +189,11 @@ export const api = {
       barberId: string;
       serviceType: string;
       slotStart: string;
+      allowEncaixe?: boolean;
       customer: {
         firstName: string;
         lastName: string;
-        whatsapp: string;
+        whatsapp?: string;
         birthDate?: string;
       };
     }) {

@@ -42,7 +42,7 @@ interface Booking {
   id: string;
   barberId?: string;
   customerId?: string;
-  customer: { firstName: string; lastName: string; whatsappE164: string };
+  customer: { firstName: string; lastName: string; whatsappE164?: string };
   serviceType: string;
   slotStart: Date;
   status: string;
@@ -51,6 +51,7 @@ interface Booking {
   paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }> | null;
   productsPurchased?: boolean;
   productSaleId?: string;
+  isEncaixe?: boolean;
 }
 
 function slotIdToTimeKey(slotId: string): string | null {
@@ -64,6 +65,10 @@ function slotIdToTimeKey(slotId: string): string | null {
 
 const SLOT_MINUTES = 30;
 const GRID_ROW_PX = 44;
+
+function bookingToSlotKey(slotStart: Date) {
+  return DateTime.fromJSDate(slotStart, { zone: 'America/Sao_Paulo' }).toFormat('yyyyLLdd_HHmm');
+}
 
 function formatBookingStatusPtBr(status: string) {
   switch (status) {
@@ -139,6 +144,8 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
+  const [encaixeModalOpen, setEncaixeModalOpen] = useState(false);
+  const [encaixeTarget, setEncaixeTarget] = useState<{ date: Date; barberId: string; time: string } | null>(null);
   const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
@@ -381,17 +388,25 @@ export default function AgendaPage() {
         const slotStartIso = typeof data.slotStart === 'string' ? data.slotStart : null;
         if (!slotStartIso) return null;
         const slotStart = DateTime.fromISO(slotStartIso, { zone: 'America/Sao_Paulo' }).toJSDate();
+        const customer = isRecord(data.customer) ? data.customer : {};
         return {
           id: String(data.id ?? ''),
           barberId: typeof data.barberId === 'string' ? data.barberId : undefined,
           customerId: typeof data.customerId === 'string' ? data.customerId : undefined,
-          customer: data.customer as Booking['customer'],
+          customer: {
+            firstName: typeof customer.firstName === 'string' ? customer.firstName : '',
+            lastName: typeof customer.lastName === 'string' ? customer.lastName : '',
+            whatsappE164: typeof customer.whatsappE164 === 'string' ? customer.whatsappE164 : undefined,
+          },
           serviceType: String(data.serviceType ?? ''),
           slotStart,
           status: String(data.status ?? ''),
           whatsappStatus: String(data.whatsappStatus ?? ''),
+          paymentMethod: (data.paymentMethod as PaymentMethod | null | undefined) ?? undefined,
+          paymentMethods: Array.isArray(data.paymentMethods) ? (data.paymentMethods as Booking['paymentMethods']) : undefined,
           productsPurchased: typeof data.productsPurchased === 'boolean' ? data.productsPurchased : undefined,
           productSaleId: typeof data.productSaleId === 'string' ? data.productSaleId : undefined,
+          isEncaixe: typeof data.isEncaixe === 'boolean' ? data.isEncaixe : undefined,
         };
       }).filter((b): b is Booking => b !== null);
 
@@ -600,6 +615,10 @@ export default function AgendaPage() {
   };
 
   const handleOpenWhatsApp = (booking: Booking) => {
+    if (!booking.customer.whatsappE164) {
+      toast({ title: 'Sem WhatsApp', description: 'Cliente sem número cadastrado.', variant: 'destructive' });
+      return;
+    }
     // Extrai apenas os dígitos do número E.164 (remove o +)
     const phoneNumber = booking.customer.whatsappE164.replace(/\D/g, '');
     // Abre a conversa direta no WhatsApp Web/App
@@ -607,6 +626,21 @@ export default function AgendaPage() {
     // Auto-fechar modal após ação de WhatsApp
     setSelectedBooking(null);
   };
+
+  const getSlotBookingCount = (slotStart: Date, barberId?: string) => {
+    const slotKey = bookingToSlotKey(slotStart);
+    return bookings.filter(
+      (b) =>
+        b.status !== 'cancelled' &&
+        bookingToSlotKey(b.slotStart) === slotKey &&
+        (!barberId || b.barberId === barberId)
+    ).length;
+  };
+
+  const selectedSlotCount = selectedBooking
+    ? getSlotBookingCount(selectedBooking.slotStart, selectedBooking.barberId)
+    : 0;
+  const isSlotFull = selectedSlotCount >= 2;
 
   // Função para desbloquear slot
   const handleUnblockSlot = async () => {
@@ -646,6 +680,14 @@ export default function AgendaPage() {
       DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(dayStart, 'day') &&
       b.status !== 'cancelled'
     );
+
+    const bookingsBySlot = new Map<string, Booking[]>();
+    dayBookings.forEach((b) => {
+      const slotKey = bookingToSlotKey(b.slotStart);
+      const list = bookingsBySlot.get(slotKey) ?? [];
+      list.push(b);
+      bookingsBySlot.set(slotKey, list);
+    });
 
     const events = [
       ...dayBookings.map(b => {
@@ -718,26 +760,45 @@ export default function AgendaPage() {
                 );
               }
               const b = ev.booking;
+              const slotKey = bookingToSlotKey(b.slotStart);
+              const slotBookings = bookingsBySlot.get(slotKey) ?? [b];
+              const limited = slotBookings.slice(0, 2);
+              const index = limited.findIndex((item) => item.id === b.id);
+              const total = limited.length;
+              const widthPct = total === 2 ? 50 : 100;
+              const leftPct = total === 2 ? index * 50 : 0;
               return (
                 <button
                   key={b.id}
                   onClick={() => setSelectedBooking(b)}
                   className={cn(
-                    "absolute left-1 right-1 rounded px-2 py-1 text-left text-xs border shadow-sm transition-all hover:z-10",
+                    "absolute rounded px-2 py-1 text-left text-xs border shadow-sm transition-all hover:z-10",
                     getStatusCardClasses(b.status)
                   )}
-                  style={{ top: ev.topPx, height: ev.heightPx - 4 }}
+                  style={{
+                    top: ev.topPx,
+                    height: ev.heightPx - 4,
+                    left: `calc(${leftPct}% + 2px)`,
+                    width: `calc(${widthPct}% - 4px)`,
+                  }}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className={cn('font-semibold truncate', b.status === 'cancelled' && 'line-through')}>{b.customer.firstName}</div>
-                    <span
-                      className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                        getStatusPillClasses(b.status)
+                    <div className="flex items-center gap-1">
+                      {b.isEncaixe && (
+                        <span className="rounded px-1 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-600">
+                          E
+                        </span>
                       )}
-                    >
-                      {formatBookingStatusPtBr(b.status)}
-                    </span>
+                      <span
+                        className={cn(
+                          'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                          getStatusPillClasses(b.status)
+                        )}
+                      >
+                        {formatBookingStatusPtBr(b.status)}
+                      </span>
+                    </div>
                   </div>
                   <div className="truncate opacity-80">{SERVICE_LABELS[b.serviceType] || b.serviceType}</div>
                 </button>
@@ -783,6 +844,13 @@ export default function AgendaPage() {
               DateTime.fromJSDate(b.slotStart, { zone: 'America/Sao_Paulo' }).hasSame(day, 'day') &&
               b.status !== 'cancelled'
             );
+            const bookingsBySlot = new Map<string, Booking[]>();
+            dayBookings.forEach((b) => {
+              const slotKey = bookingToSlotKey(b.slotStart);
+              const list = bookingsBySlot.get(slotKey) ?? [];
+              list.push(b);
+              bookingsBySlot.set(slotKey, list);
+            });
             return (
               <div key={day.toISODate()} className="relative border-r border-border/40 bg-background/30">
                 {TIME_SLOTS.map(time => (
@@ -793,27 +861,44 @@ export default function AgendaPage() {
                   const minutesFromStart = start.diff(day.set({ hour: dayStartHour, minute: 0 }), 'minutes').minutes;
                   const topPx = (minutesFromStart / SLOT_MINUTES) * GRID_ROW_PX;
                   if (topPx < 0 || topPx >= TIME_SLOTS.length * GRID_ROW_PX) return null;
+                  const slotKey = bookingToSlotKey(b.slotStart);
+                  const slotBookings = bookingsBySlot.get(slotKey) ?? [b];
+                  const limited = slotBookings.slice(0, 2);
+                  const index = limited.findIndex((item) => item.id === b.id);
+                  const total = limited.length;
+                  const widthPct = total === 2 ? 50 : 100;
+                  const leftPct = total === 2 ? index * 50 : 0;
                   
                   return (
                     <button
                       key={b.id}
                       onClick={() => setSelectedBooking(b)}
                       className={cn(
-                        "absolute left-0.5 right-0.5 rounded px-1 py-0.5 text-xs border shadow-sm overflow-hidden hover:z-10",
+                        "absolute rounded px-1 py-0.5 text-xs border shadow-sm overflow-hidden hover:z-10",
                         getStatusCardClasses(b.status)
                       )}
-                      style={{ top: topPx, height: GRID_ROW_PX - 2 }}
+                      style={{
+                        top: topPx,
+                        height: GRID_ROW_PX - 2,
+                        left: `calc(${leftPct}% + 2px)`,
+                        width: `calc(${widthPct}% - 4px)`,
+                      }}
                     >
                       <div className="flex items-center justify-between gap-1">
                         <div className={cn('font-semibold truncate', b.status === 'cancelled' && 'line-through')}>{b.customer.firstName}</div>
-                        <span
-                          className={cn(
-                            'rounded px-1 py-0.5 text-[10px] font-medium',
-                            getStatusPillClasses(b.status)
+                        <div className="flex items-center gap-1">
+                          {b.isEncaixe && (
+                            <span className="rounded px-1 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-600">E</span>
                           )}
-                        >
-                          {formatBookingStatusPtBr(b.status)}
-                        </span>
+                          <span
+                            className={cn(
+                              'rounded px-1 py-0.5 text-[10px] font-medium',
+                              getStatusPillClasses(b.status)
+                            )}
+                          >
+                            {formatBookingStatusPtBr(b.status)}
+                          </span>
+                        </div>
                       </div>
                     </button>
                   );
@@ -982,8 +1067,14 @@ export default function AgendaPage() {
               <div className="space-y-2 text-sm">
                 <p><span className="font-medium">Serviço:</span> {SERVICE_LABELS[selectedBooking.serviceType] || selectedBooking.serviceType}</p>
                 <p><span className="font-medium">Horário:</span> {formatTime(selectedBooking.slotStart)}</p>
-                <p><span className="font-medium">WhatsApp:</span> {selectedBooking.customer.whatsappE164}</p>
+                <p><span className="font-medium">WhatsApp:</span> {selectedBooking.customer.whatsappE164 || '—'}</p>
                 <p><span className="font-medium">Status:</span> <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge></p>
+                {selectedBooking.isEncaixe && (
+                  <p>
+                    <span className="font-medium">Tipo:</span>{' '}
+                    <Badge variant="secondary">Encaixe</Badge>
+                  </p>
+                )}
                 {selectedBooking.paymentMethod && (
                   <p><span className="font-medium">Forma de pagamento:</span> {PAYMENT_METHOD_LABELS[selectedBooking.paymentMethod]}</p>
                 )}
@@ -999,7 +1090,24 @@ export default function AgendaPage() {
                 )}
               </div>
               <div className="flex gap-2 flex-wrap">
-                <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm">WhatsApp</Button>
+                <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm" disabled={!selectedBooking.customer.whatsappE164}>WhatsApp</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSlotFull || !(selectedBooking.barberId || selectedBarber)}
+                  onClick={() => {
+                    const slot = DateTime.fromJSDate(selectedBooking.slotStart, { zone: 'America/Sao_Paulo' });
+                    setEncaixeTarget({
+                      date: slot.toJSDate(),
+                      barberId: selectedBooking.barberId ?? selectedBarber,
+                      time: slot.toFormat('HH:mm'),
+                    });
+                    setSelectedBooking(null);
+                    setEncaixeModalOpen(true);
+                  }}
+                >
+                  Encaixe
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -1299,6 +1407,18 @@ export default function AgendaPage() {
         onOpenChange={setCreateBookingModalOpen}
         selectedDate={selectedDate}
         selectedBarber={selectedBarber}
+        onSuccess={() => loadBookings()}
+      />
+      <CreateBookingModal
+        open={encaixeModalOpen}
+        onOpenChange={(open) => {
+          setEncaixeModalOpen(open);
+          if (!open) setEncaixeTarget(null);
+        }}
+        selectedDate={encaixeTarget?.date}
+        selectedBarber={encaixeTarget?.barberId}
+        selectedTime={encaixeTarget?.time}
+        allowEncaixe
         onSuccess={() => loadBookings()}
       />
       

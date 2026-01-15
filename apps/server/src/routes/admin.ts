@@ -1000,13 +1000,14 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       const admin = getAdminFromReq(req);
       const { barberId, serviceType, slotStart, customer } = req.body;
+      const allowEncaixe = Boolean((req.body as { allowEncaixe?: unknown })?.allowEncaixe);
 
       if (!barberId || !serviceType || !slotStart || !customer) {
         return res.status(400).json({ error: 'Campos obrigatórios: barberId, serviceType, slotStart, customer' });
       }
 
-      if (!customer.firstName || !customer.lastName || !customer.whatsapp) {
-        return res.status(400).json({ error: 'Cliente deve ter firstName, lastName e whatsapp' });
+      if (!customer.firstName || !customer.lastName) {
+        return res.status(400).json({ error: 'Cliente deve ter firstName e lastName' });
       }
 
       // Verifica permissão do barbeiro
@@ -1056,45 +1057,103 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         }
       }
 
-      // Normaliza telefone usando a mesma função do fluxo público
-      let whatsappE164: string;
-      try {
-        whatsappE164 = normalizeToE164(customer.whatsapp);
-      } catch {
-        return res.status(400).json({ error: 'Formato de telefone inválido' });
+      // Normaliza telefone (opcional)
+      const rawWhatsapp = typeof customer.whatsapp === 'string' ? customer.whatsapp.trim() : '';
+      let whatsappE164: string | null = null;
+      if (rawWhatsapp) {
+        try {
+          whatsappE164 = normalizeToE164(rawWhatsapp);
+        } catch {
+          return res.status(400).json({ error: 'Formato de telefone inválido' });
+        }
       }
 
       // Gera IDs usando as mesmas funções do fluxo público
-      const customerId = generateCustomerId(whatsappE164);
       const slotId = generateSlotId(slotDateTime);
       const dateKey = getDateKey(slotDateTime);
       const bookingId = db.collection('bookings').doc().id;
 
       await db.runTransaction(async (tx) => {
         const slotRef = db.collection('barbers').doc(barberId).collection('slots').doc(slotId);
-        const customerRef = db.collection('customers').doc(customerId);
-        const [slotDoc, customerDoc] = await Promise.all([tx.get(slotRef), tx.get(customerRef)]);
 
-        if (slotDoc.exists) {
+        const slotDoc = await tx.get(slotRef);
+        const slotData = slotDoc.exists ? (slotDoc.data() as { kind?: string; bookingId?: string; bookingIds?: string[] } | undefined) : undefined;
+
+        if (slotDoc.exists && slotData?.kind === 'block') {
+          const err = new Error('blocked');
+          (err as any).code = 'blocked';
+          throw err;
+        }
+
+        const existingBookingIds = Array.isArray(slotData?.bookingIds)
+          ? slotData?.bookingIds.filter((id) => typeof id === 'string')
+          : slotData?.bookingId
+          ? [slotData.bookingId]
+          : [];
+
+        if (slotDoc.exists && !allowEncaixe) {
           const err = new Error('already-exists');
           (err as any).code = 'already-exists';
           throw err;
         }
 
+        if (slotDoc.exists && existingBookingIds.length >= 2) {
+          const err = new Error('slot-full');
+          (err as any).code = 'slot-full';
+          throw err;
+        }
+
+        const normalizedFirstName = String(customer.firstName).trim().toLowerCase();
+        const normalizedLastName = String(customer.lastName).trim().toLowerCase();
+
+        let matchedCustomerId: string | null = null;
+        if (whatsappE164) {
+          const customerQuery = db
+            .collection('customers')
+            .where('identity.whatsappE164', '==', whatsappE164);
+          const customerSnap = await tx.get(customerQuery);
+          for (const doc of customerSnap.docs) {
+            const data = doc.data() as { identity?: { firstName?: string; lastName?: string } };
+            const firstName = (data.identity?.firstName ?? '').trim().toLowerCase();
+            const lastName = (data.identity?.lastName ?? '').trim().toLowerCase();
+            if (firstName === normalizedFirstName && lastName === normalizedLastName) {
+              matchedCustomerId = doc.id;
+              break;
+            }
+          }
+        }
+
+        const customerId = matchedCustomerId
+          ? matchedCustomerId
+          : whatsappE164
+          ? db.collection('customers').doc().id
+          : '';
+        const customerRef = customerId ? db.collection('customers').doc(customerId) : null;
+
         const now = Timestamp.now();
 
-        tx.set(slotRef, {
-          slotStart: Timestamp.fromDate(slotDateTime.toJSDate()),
-          dateKey,
-          kind: 'booking',
-          bookingId,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+        const nextBookingIds = [...existingBookingIds, bookingId];
+
+        if (slotDoc.exists) {
+          tx.update(slotRef, {
+            bookingId: nextBookingIds[0],
+            bookingIds: nextBookingIds,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        } else {
+          tx.set(slotRef, {
+            slotStart: Timestamp.fromDate(slotDateTime.toJSDate()),
+            dateKey,
+            kind: 'booking',
+            bookingId,
+            bookingIds: [bookingId],
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
 
         const bookingRef = db.collection('bookings').doc(bookingId);
-        tx.set(bookingRef, {
-          customerId,
+        const bookingPayload: Record<string, any> = {
           barberId,
           serviceType,
           slotStart: Timestamp.fromDate(slotDateTime.toJSDate()),
@@ -1102,16 +1161,25 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           customer: {
             firstName: customer.firstName.trim(),
             lastName: customer.lastName.trim(),
-            whatsappE164,
+            ...(whatsappE164 ? { whatsappE164 } : {}),
           },
           status: 'booked',
           whatsappStatus: 'pending',
+          isEncaixe: allowEncaixe && existingBookingIds.length > 0,
           createdBy: admin.username,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
-        });
+        };
+        if (customerId) bookingPayload.customerId = customerId;
+        tx.set(bookingRef, bookingPayload);
 
-        if (!customerDoc.exists) {
+        if (customerRef && matchedCustomerId) {
+          const updates: Record<string, any> = {
+            'stats.lastBookingAt': now,
+            'stats.totalBookings': FieldValue.increment(1),
+          };
+          tx.update(customerRef, updates);
+        } else if (customerRef && whatsappE164) {
           tx.set(customerRef, {
             identity: {
               firstName: customer.firstName.trim(),
@@ -1130,12 +1198,6 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
               noShowCount: 0,
             },
           });
-        } else {
-          const updates: Record<string, any> = {
-            'stats.lastBookingAt': now,
-            'stats.totalBookings': FieldValue.increment(1),
-          };
-          tx.update(customerRef, updates);
         }
       });
 
@@ -1143,6 +1205,12 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     } catch (e: unknown) {
       if (e && typeof e === 'object' && (e as any).code === 'already-exists') {
         return res.status(409).json({ error: 'Este horário já foi reservado. Selecione outro.' });
+      }
+      if (e && typeof e === 'object' && (e as any).code === 'slot-full') {
+        return res.status(409).json({ error: 'Este horário já está com dois encaixes.' });
+      }
+      if (e && typeof e === 'object' && (e as any).code === 'blocked') {
+        return res.status(409).json({ error: 'Este horário está bloqueado.' });
       }
       console.error('Error creating booking (admin):', e);
       const msg = e instanceof Error ? e.message : 'Erro desconhecido';
@@ -1169,7 +1237,25 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const oldSlotRef = db.collection('barbers').doc(barberId).collection('slots').doc(oldSlotId);
 
       await db.runTransaction(async (tx) => {
-        tx.delete(oldSlotRef);
+        const slotDoc = await tx.get(oldSlotRef);
+        if (slotDoc.exists) {
+          const slotData = slotDoc.data() as { bookingId?: string; bookingIds?: string[] } | undefined;
+          const existingIds = Array.isArray(slotData?.bookingIds)
+            ? slotData?.bookingIds.filter((id) => typeof id === 'string')
+            : slotData?.bookingId
+            ? [slotData.bookingId]
+            : [];
+          const remaining = existingIds.filter((id) => id !== bookingId);
+          if (remaining.length === 0) {
+            tx.delete(oldSlotRef);
+          } else {
+            tx.update(oldSlotRef, {
+              bookingId: remaining[0],
+              bookingIds: remaining,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        }
         tx.update(bookingRef, {
           status: 'cancelled',
           updatedAt: FieldValue.serverTimestamp(),
@@ -1253,11 +1339,30 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           dateKey: newDateKey,
           kind: 'booking',
           bookingId,
+          bookingIds: [bookingId],
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
         const oldSlotRef = db.collection('barbers').doc(barberId).collection('slots').doc(oldSlotId);
-        tx.delete(oldSlotRef);
+        const oldSlotDoc = await tx.get(oldSlotRef);
+        if (oldSlotDoc.exists) {
+          const slotData = oldSlotDoc.data() as { bookingId?: string; bookingIds?: string[] } | undefined;
+          const existingIds = Array.isArray(slotData?.bookingIds)
+            ? slotData?.bookingIds.filter((id) => typeof id === 'string')
+            : slotData?.bookingId
+            ? [slotData.bookingId]
+            : [];
+          const remaining = existingIds.filter((id) => id !== bookingId);
+          if (remaining.length === 0) {
+            tx.delete(oldSlotRef);
+          } else {
+            tx.update(oldSlotRef, {
+              bookingId: remaining[0],
+              bookingIds: remaining,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        }
         tx.update(bookingRef, {
           slotStart: Timestamp.fromDate(newSlot.toJSDate()),
           dateKey: newDateKey,

@@ -6,6 +6,7 @@ export interface Slot {
   dateKey: string; // YYYY-MM-DD
   kind: SlotKind;
   bookingId?: string;
+  bookingIds?: string[];
   reason?: string; // Para blocks
   createdAt: Date;
   updatedAt: Date;

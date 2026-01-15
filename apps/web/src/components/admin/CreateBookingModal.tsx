@@ -18,6 +18,7 @@ interface CreateBookingModalProps {
   selectedDate?: Date;
   selectedBarber?: string;
   selectedTime?: string;
+  allowEncaixe?: boolean;
   onSuccess?: () => void;
 }
 
@@ -27,6 +28,7 @@ export function CreateBookingModal({
   selectedDate, 
   selectedBarber,
   selectedTime,
+  allowEncaixe,
   onSuccess 
 }: CreateBookingModalProps) {
   const { toast } = useToast();
@@ -140,10 +142,11 @@ export function CreateBookingModal({
       barberId: string;
       serviceType: string;
       slotStart: string;
+      allowEncaixe?: boolean;
       customer: {
         firstName: string;
         lastName: string;
-        whatsapp: string;
+        whatsapp?: string;
       };
     }) => {
       return api.admin.createBooking(data);
@@ -178,10 +181,10 @@ export function CreateBookingModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!firstName.trim() || !lastName.trim() || !whatsapp.trim()) {
+    if (!firstName.trim() || !lastName.trim()) {
       toast({
         title: 'Erro',
-        description: 'Preencha todos os campos do cliente.',
+        description: 'Preencha nome e sobrenome do cliente.',
         variant: 'destructive',
       });
       return;
@@ -195,10 +198,11 @@ export function CreateBookingModal({
       barberId,
       serviceType,
       slotStart: slotStart.toISO() || '',
+      allowEncaixe,
       customer: {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        whatsapp: whatsapp.replace(/\D/g, ''),
+        whatsapp: whatsapp.trim() ? whatsapp.replace(/\D/g, '') : undefined,
       },
     });
   };
@@ -324,7 +328,7 @@ export function CreateBookingModal({
             </div>
 
             <div>
-              <Label htmlFor="whatsapp" className="text-sm font-medium">WhatsApp</Label>
+              <Label htmlFor="whatsapp" className="text-sm font-medium">WhatsApp (opcional)</Label>
               <Input
                 id="whatsapp"
                 value={whatsapp}
@@ -332,7 +336,7 @@ export function CreateBookingModal({
                 placeholder="(11) 99999-9999"
                 className="mt-1.5 h-12 text-base"
                 inputMode="tel"
-                required
+                required={false}
               />
             </div>
           </div>
