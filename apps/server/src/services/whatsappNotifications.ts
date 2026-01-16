@@ -918,6 +918,54 @@ export async function getBarberPhoneE164(db: Firestore, barberId: string): Promi
   return null;
 }
 
+type BarberBookingNotification = {
+  barberId: string;
+  barberName?: string | null;
+  customerName: string;
+  serviceLabel: string;
+  slotStart: Date;
+  isEncaixe?: boolean;
+  source: 'public' | 'admin';
+};
+
+function buildBarberNewBookingMessage(payload: BarberBookingNotification): string {
+  const when = DateTime.fromJSDate(payload.slotStart, { zone: 'America/Sao_Paulo' }).toFormat('dd/LL/yyyy HH:mm');
+  const encaixeTag = payload.isEncaixe ? ' (encaixe)' : '';
+  const barberName = payload.barberName?.trim() || 'Barbeiro';
+
+  return [
+    `✂️ Novo agendamento, ${barberName}!`,
+    '',
+    `Cliente: *${payload.customerName}*`,
+    `Serviço: *${payload.serviceLabel}*${encaixeTag}`,
+    `Horário: *${when}*`,
+    `Origem: ${payload.source === 'public' ? 'Site' : 'Painel admin'}`,
+  ].join('\n');
+}
+
+export async function sendBarberNewBookingNotification(
+  db: Firestore,
+  env: Env,
+  payload: BarberBookingNotification
+): Promise<{ sent: boolean; reason?: string }> {
+  const barberPhone = await getBarberPhoneE164(db, payload.barberId);
+
+  if (!barberPhone) {
+    return { sent: false, reason: 'Barbeiro sem telefone' };
+  }
+
+  const evo = createEvolutionClient(env);
+  const instanceName = getEvolutionInstanceName(env);
+  const text = buildBarberNewBookingMessage(payload);
+
+  await evo.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+    number: toEvolutionNumber(barberPhone),
+    text,
+  });
+
+  return { sent: true };
+}
+
 /**
  * Constrói mensagem de alerta de aniversariantes para o barbeiro
  */

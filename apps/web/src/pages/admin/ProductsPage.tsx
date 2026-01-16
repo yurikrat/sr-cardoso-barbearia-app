@@ -513,7 +513,7 @@ export default function ProductsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-4 mb-4">
+              <div className="flex flex-col gap-4 mb-4 sm:flex-row">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -524,7 +524,7 @@ export default function ProductsPage() {
                   />
                 </div>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-full sm:w-64">
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
                   <SelectContent>

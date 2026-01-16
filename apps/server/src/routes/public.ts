@@ -19,7 +19,7 @@ import {
   getServiceFromConfig,
 } from '../lib/finance.js';
 import { getBrandingConfig } from '../lib/branding.js';
-import { sendBookingConfirmation, sendCancellationConfirmation, processReminders, processMessageQueue } from '../services/whatsappNotifications.js';
+import { sendBarberNewBookingNotification, sendBookingConfirmation, sendCancellationConfirmation, processReminders, processMessageQueue } from '../services/whatsappNotifications.js';
 
 export type PublicRouteDeps = {
   env: Env;
@@ -439,7 +439,7 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
       const barberRef = db.collection('barbers').doc(validated.barberId);
       const barberDoc = await barberRef.get();
       if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
-      const barberData = barberDoc.data() as { active?: unknown; schedule?: any } | undefined;
+      const barberData = barberDoc.data() as { active?: unknown; schedule?: any; name?: unknown } | undefined;
       if (!barberData?.active) return res.status(400).json({ error: 'Barbeiro indisponível' });
 
       // Validate against barber's schedule
@@ -580,6 +580,19 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
         baseUrl
       ).catch((err) => {
         console.error('Error sending WhatsApp confirmation:', err);
+      });
+
+      const barberName = typeof barberData?.name === 'string' ? barberData.name : null;
+      const serviceLabel = service?.label || validated.serviceType;
+      sendBarberNewBookingNotification(db, env, {
+        barberId: validated.barberId,
+        barberName,
+        customerName: `${validated.customer.firstName} ${validated.customer.lastName}`.trim(),
+        serviceLabel,
+        slotStart: slotStart.toJSDate(),
+        source: 'public',
+      }).catch((err) => {
+        console.error('Error sending barber WhatsApp notification:', err);
       });
 
       return res.json({ success: true, bookingId, cancelCode });

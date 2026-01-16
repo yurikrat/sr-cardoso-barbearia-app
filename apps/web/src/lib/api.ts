@@ -216,6 +216,16 @@ export const api = {
         body: JSON.stringify({ newSlotStart }),
       });
     },
+    async updateBookingService(bookingId: string, serviceType: string) {
+      return apiFetch<{ success: boolean; serviceType: string }>(
+        `/api/admin/bookings/${encodeURIComponent(bookingId)}/service`,
+        {
+          method: 'POST',
+          admin: true,
+          body: JSON.stringify({ serviceType }),
+        }
+      );
+    },
     async markWhatsappSent(bookingId: string) {
       return apiFetch<{ success: boolean }>(`/api/admin/bookings/${bookingId}/whatsapp-sent`, {
         method: 'POST',

@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
@@ -137,11 +138,14 @@ export default function AgendaPage() {
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [serviceCatalog, setServiceCatalog] = useState<Array<{ id: string; label: string; active: boolean }>>([]);
   const [blockedTimes, setBlockedTimes] = useState<Map<string, string>>(new Map()); // Map<timeKey, slotId>
   const [selectedBlock, setSelectedBlock] = useState<{ timeKey: string; slotId: string } | null>(null);
   const [unblockDialogOpen, setUnblockDialogOpen] = useState(false);
   const [unblocking, setUnblocking] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [editServiceType, setEditServiceType] = useState('');
+  const [savingService, setSavingService] = useState(false);
   const [loading, setLoading] = useState(false);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
@@ -185,6 +189,11 @@ export default function AgendaPage() {
     return () => clearInterval(t);
   }, []);
   void nowTick;
+
+  useEffect(() => {
+    if (!selectedBooking) return;
+    setEditServiceType(selectedBooking.serviceType);
+  }, [selectedBooking]);
 
   // Derived state
   const dateKey = DateTime.fromJSDate(selectedDate, { zone: 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd');
@@ -343,6 +352,22 @@ export default function AgendaPage() {
     loadBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedBarber, viewMode, refreshToken]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.admin.getFinanceConfig();
+        const services = res?.config?.services ?? [];
+        setServiceCatalog(
+          services
+            .map((s) => ({ id: s.id, label: s.label, active: s.active }))
+            .filter((s) => typeof s.id === 'string' && s.id)
+        );
+      } catch (e) {
+        console.error('Erro ao carregar catálogo de serviços:', e);
+      }
+    })();
+  }, [refreshToken]);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -624,6 +649,25 @@ export default function AgendaPage() {
     window.open(`https://wa.me/${phoneNumber}`, '_blank');
     // Auto-fechar modal após ação de WhatsApp
     setSelectedBooking(null);
+  };
+
+  const handleSaveService = async () => {
+    if (!selectedBooking) return;
+    if (!editServiceType || editServiceType === selectedBooking.serviceType) return;
+
+    setSavingService(true);
+    try {
+      await api.admin.updateBookingService(selectedBooking.id, editServiceType);
+      const updated = { ...selectedBooking, serviceType: editServiceType };
+      setSelectedBooking(updated);
+      setBookings((prev) => prev.map((b) => (b.id === selectedBooking.id ? updated : b)));
+      toast({ title: 'Sucesso', description: 'Serviço atualizado.' });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao atualizar serviço.';
+      toast({ title: 'Erro', description: msg, variant: 'destructive' });
+    } finally {
+      setSavingService(false);
+    }
   };
 
 
@@ -1074,6 +1118,33 @@ export default function AgendaPage() {
                   </p>
                 )}
               </div>
+              {serviceCatalog.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Alterar serviço</Label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Select value={editServiceType || selectedBooking.serviceType} onValueChange={setEditServiceType}>
+                      <SelectTrigger className="w-full sm:w-[260px]">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {serviceCatalog.filter((s) => s.active).map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={savingService || selectedBooking.status === 'cancelled'}
+                      onClick={handleSaveService}
+                    >
+                      {savingService ? 'Salvando...' : 'Atualizar'}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm" disabled={!selectedBooking.customer.whatsappE164}>WhatsApp</Button>
                 <Button

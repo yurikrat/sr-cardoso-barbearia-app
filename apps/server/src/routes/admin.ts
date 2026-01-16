@@ -40,6 +40,7 @@ import {
   FINANCE_CONFIG_DOC_PATH,
   getBarberCommissionPct,
   getFinanceConfig,
+  getServiceFromConfig,
   getServicePriceCentsFromConfig,
   sanitizeFinanceConfig,
   setFinanceConfigCache,
@@ -71,6 +72,7 @@ import {
   processBirthdayMessages,
   broadcastWithMedia,
   sendBarberBirthdayAlerts,
+  sendBarberNewBookingNotification,
 } from '../services/whatsappNotifications.js';
 import {
   getProductsConfig,
@@ -1019,8 +1021,11 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const barberRef = db.collection('barbers').doc(barberId);
       const barberDoc = await barberRef.get();
       if (!barberDoc.exists) return res.status(404).json({ error: 'Barbeiro não encontrado' });
-      const barberData = barberDoc.data() as { active?: unknown; schedule?: any } | undefined;
+      const barberData = barberDoc.data() as { active?: unknown; schedule?: any; name?: unknown } | undefined;
       if (!barberData?.active) return res.status(400).json({ error: 'Barbeiro indisponível' });
+
+      const financeConfig = await getFinanceConfig(db);
+      const serviceLabel = getServiceFromConfig(financeConfig, serviceType)?.label || serviceType;
 
       const slotDateTime = DateTime.fromISO(slotStart, { zone: 'America/Sao_Paulo' });
       if (!slotDateTime.isValid) {
@@ -1072,6 +1077,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       const slotId = generateSlotId(slotDateTime);
       const dateKey = getDateKey(slotDateTime);
       const bookingId = db.collection('bookings').doc().id;
+
+      let createdIsEncaixe = false;
 
       await db.runTransaction(async (tx) => {
         const slotRef = db.collection('barbers').doc(barberId).collection('slots').doc(slotId);
@@ -1170,6 +1177,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         };
+        createdIsEncaixe = Boolean(bookingPayload.isEncaixe);
         if (customerId) bookingPayload.customerId = customerId;
         tx.set(bookingRef, bookingPayload);
 
@@ -1199,6 +1207,19 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
             },
           });
         }
+      });
+
+      const barberName = typeof barberData?.name === 'string' ? barberData.name : null;
+      void sendBarberNewBookingNotification(db, env, {
+        barberId,
+        barberName,
+        customerName: `${customer.firstName} ${customer.lastName}`.trim(),
+        serviceLabel,
+        slotStart: slotDateTime.toJSDate(),
+        isEncaixe: createdIsEncaixe,
+        source: 'admin',
+      }).catch((err) => {
+        console.error('Error sending barber WhatsApp notification:', err);
       });
 
       return res.json({ success: true, bookingId });
@@ -1376,6 +1397,46 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         return res.status(409).json({ error: 'Este horário já está ocupado' });
       }
       return res.status(500).json({ error: 'Erro ao reagendar' });
+    }
+  });
+
+  app.post('/api/admin/bookings/:bookingId/service', requireAdminMw, async (req, res) => {
+    try {
+      const admin = getAdminFromReq(req);
+      const bookingId = req.params.bookingId;
+      const serviceType = typeof req.body?.serviceType === 'string' ? req.body.serviceType.trim() : '';
+
+      if (!bookingId) return res.status(400).json({ error: 'bookingId é obrigatório' });
+      if (!serviceType) return res.status(400).json({ error: 'serviceType é obrigatório' });
+
+      const bookingRef = db.collection('bookings').doc(bookingId);
+      const bookingDoc = await bookingRef.get();
+      if (!bookingDoc.exists) return res.status(404).json({ error: 'Reserva não encontrada' });
+
+      const booking = bookingDoc.data() as any;
+      if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
+        return res.status(403).json({ error: 'Acesso restrito' });
+      }
+
+      if (booking.status === 'cancelled') {
+        return res.status(400).json({ error: 'Reserva cancelada não pode ser alterada' });
+      }
+
+      const financeConfig = await getFinanceConfig(db);
+      const service = getServiceFromConfig(financeConfig, serviceType);
+      if (!service || !service.active) {
+        return res.status(400).json({ error: 'Serviço inválido' });
+      }
+
+      await bookingRef.update({
+        serviceType,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return res.json({ success: true, serviceType });
+    } catch (e) {
+      console.error('Error updating booking service:', e);
+      return res.status(500).json({ error: 'Erro ao atualizar serviço' });
     }
   });
 
