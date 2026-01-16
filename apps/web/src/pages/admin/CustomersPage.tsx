@@ -9,7 +9,7 @@ import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
-import { formatPhoneForDisplay } from '@/utils/phone';
+import { applyPhoneMask, formatPhoneForDisplay, normalizeToE164 } from '@/utils/phone';
 import { 
   Search, 
   User, 
@@ -144,6 +144,13 @@ export default function CustomersPage() {
   const [editBirthdayDay, setEditBirthdayDay] = useState('');
   const [editBirthdayMonth, setEditBirthdayMonth] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingProfileCustomer, setEditingProfileCustomer] = useState<Customer | null>(null);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editWhatsapp, setEditWhatsapp] = useState('');
+  const [editProfileBirthdayDay, setEditProfileBirthdayDay] = useState('');
+  const [editProfileBirthdayMonth, setEditProfileBirthdayMonth] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     loadCustomers();
@@ -315,6 +322,86 @@ export default function CustomersPage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEditProfileModal = useCallback((customer: Customer, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditFirstName(customer.identity.firstName || '');
+    setEditLastName(customer.identity.lastName || '');
+    setEditWhatsapp(customer.identity.whatsappE164 ? formatPhoneForDisplay(customer.identity.whatsappE164) : '');
+    const mmdd = getBirthdayMmdd(customer);
+    if (mmdd) {
+      setEditProfileBirthdayMonth(mmdd.slice(0, 2));
+      setEditProfileBirthdayDay(mmdd.slice(2, 4));
+    } else {
+      setEditProfileBirthdayMonth('');
+      setEditProfileBirthdayDay('');
+    }
+    setEditingProfileCustomer(customer);
+  }, []);
+
+  const handleSaveProfile = async () => {
+    if (!editingProfileCustomer) return;
+
+    const firstName = editFirstName.trim();
+    const lastName = editLastName.trim();
+
+    if (!firstName || !lastName) {
+      toast({
+        title: 'Atenção',
+        description: 'Nome e sobrenome são obrigatórios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let whatsappE164: string | null = null;
+    if (editWhatsapp.trim()) {
+      try {
+        whatsappE164 = normalizeToE164(editWhatsapp);
+      } catch {
+        toast({
+          title: 'Erro',
+          description: 'WhatsApp inválido. Informe um número válido.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    let birthdayMmdd: string | null = null;
+    if (editProfileBirthdayMonth && editProfileBirthdayDay) {
+      birthdayMmdd = `${editProfileBirthdayMonth.padStart(2, '0')}${editProfileBirthdayDay.padStart(2, '0')}`;
+    }
+
+    setSavingProfile(true);
+    try {
+      const res = await api.admin.updateCustomer(editingProfileCustomer.id, {
+        firstName,
+        lastName,
+        whatsappE164,
+        birthdayMmdd,
+      });
+
+      const updated = res.item as Customer;
+      setCustomers((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+      toast({
+        title: 'Sucesso',
+        description: 'Dados do cliente atualizados.',
+      });
+
+      setEditingProfileCustomer(null);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível salvar os dados do cliente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -503,6 +590,13 @@ export default function CustomersPage() {
                               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                                 <Phone className="h-3 w-3" />
                                 <span>{formatPhoneForDisplay(customer.identity.whatsappE164)}</span>
+                                <button
+                                  onClick={(e) => openEditProfileModal(customer, e)}
+                                  className="ml-auto flex items-center justify-center h-7 w-7 rounded hover:bg-muted"
+                                  aria-label="Editar cliente"
+                                >
+                                  <Edit2 className="h-3 w-3 text-muted-foreground" />
+                                </button>
                               </div>
                               
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -575,9 +669,18 @@ export default function CustomersPage() {
                                 onClick={() => navigate(`/admin/clientes/${customer.id}`)}
                               >
                                 <td className="p-4 align-middle">
-                                  <span className="font-medium">
-                                    {customer.identity.firstName} {customer.identity.lastName}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {customer.identity.firstName} {customer.identity.lastName}
+                                    </span>
+                                    <button
+                                      onClick={(e) => openEditProfileModal(customer, e)}
+                                      className="flex items-center justify-center h-7 w-7 rounded hover:bg-muted"
+                                      aria-label="Editar cliente"
+                                    >
+                                      <Edit2 className="h-3 w-3 text-muted-foreground" />
+                                    </button>
+                                  </div>
                                 </td>
                                 <td className="p-4 align-middle">
                                   <div className="flex items-center gap-2">
@@ -864,6 +967,106 @@ export default function CustomersPage() {
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Profile Modal */}
+      <Dialog open={!!editingProfileCustomer} onOpenChange={(open) => !open && setEditingProfileCustomer(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="h-5 w-5" />
+              Editar Cliente
+            </DialogTitle>
+            <DialogDescription>
+              {editingProfileCustomer?.identity.firstName} {editingProfileCustomer?.identity.lastName}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="profile-first-name">Nome</Label>
+              <Input
+                id="profile-first-name"
+                value={editFirstName}
+                onChange={(e) => setEditFirstName(e.target.value)}
+                placeholder="Nome"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profile-last-name">Sobrenome</Label>
+              <Input
+                id="profile-last-name"
+                value={editLastName}
+                onChange={(e) => setEditLastName(e.target.value)}
+                placeholder="Sobrenome"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profile-whatsapp">WhatsApp</Label>
+              <Input
+                id="profile-whatsapp"
+                value={editWhatsapp}
+                onChange={(e) => setEditWhatsapp(applyPhoneMask(e.target.value))}
+                placeholder="(79) 99919-8695"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Aniversário</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Select value={editProfileBirthdayDay} onValueChange={setEditProfileBirthdayDay}>
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Dia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <SelectItem key={d} value={String(d).padStart(2, '0')}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Select value={editProfileBirthdayMonth} onValueChange={setEditProfileBirthdayMonth}>
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS_PT.map((name, i) => (
+                        <SelectItem key={name} value={String(i + 1).padStart(2, '0')}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setEditingProfileCustomer(null)}
+              disabled={savingProfile}
+              className="flex-1 sm:flex-none"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveProfile}
+              disabled={savingProfile}
+              className="flex-1 sm:flex-none"
+            >
+              {savingProfile ? 'Salvando...' : 'Salvar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
