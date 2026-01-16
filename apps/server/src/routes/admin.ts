@@ -1050,8 +1050,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           return res.status(400).json({ error: 'Horário fora do expediente configurado' });
         }
 
-        // Verifica pausas (mantém a validação de pausas do barbeiro)
-        if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+        // Verifica pausas (cliente continua bloqueado; barbeiro pode agendar durante pausa)
+        if (admin.role !== 'barber' && dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
           const isInBreak = dayConfig.breaks.some((brk: any) => {
             return slotTime >= brk.start && slotTime < brk.end;
           });
@@ -1326,8 +1326,8 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
             return res.status(400).json({ error: 'Horário fora do expediente configurado' });
           }
           
-          // Verifica pausas (mantém a validação de pausas do barbeiro)
-          if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
+          // Verifica pausas (cliente continua bloqueado; barbeiro pode reagendar durante pausa)
+          if (admin.role !== 'barber' && dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
             const isInBreak = dayConfig.breaks.some((brk: any) => {
               return slotTime >= brk.start && slotTime < brk.end;
             });
