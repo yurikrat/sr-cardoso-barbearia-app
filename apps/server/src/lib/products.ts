@@ -27,6 +27,12 @@ const SALES_COLLECTION = 'sales';
 const STOCK_MOVEMENTS_COLLECTION = 'stockMovements';
 const PRODUCTS_CONFIG_DOC = 'settings/products';
 
+function stripUndefined<T extends object>(input: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(input as Record<string, unknown>).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
+
 // ============================================================
 // CACHE
 // ============================================================
@@ -179,7 +185,7 @@ export async function createProduct(
     createdAt: now,
     updatedAt: now,
   };
-  await docRef.set(product);
+  await docRef.set(stripUndefined(product));
   return product;
 }
 
@@ -192,7 +198,8 @@ export async function updateProduct(
   const doc = await docRef.get();
   if (!doc.exists) return null;
   const now = new Date();
-  await docRef.update({ ...updates, updatedAt: now });
+  const sanitized = stripUndefined(updates);
+  await docRef.update({ ...sanitized, updatedAt: now });
   const updated = await docRef.get();
   return docToProduct(updated.id, updated.data()!);
 }
