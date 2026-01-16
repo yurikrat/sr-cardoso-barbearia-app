@@ -1041,17 +1041,16 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         }
 
         const slotTime = slotDateTime.toFormat('HH:mm');
-        const [startH, startM] = dayConfig.start.split(':').map(Number);
-        const [endH, endM] = dayConfig.end.split(':').map(Number);
-        const dayStart = slotDateTime.set({ hour: startH, minute: startM });
-        const dayEnd = slotDateTime.set({ hour: endH, minute: endM });
-        const lastSlotStart = dayEnd.minus({ minutes: 30 });
+        
+        // Admin usa janela ampliada (07:30-20:00) para registrar encaixes/atendimentos
+        const ADMIN_START = slotDateTime.set({ hour: 7, minute: 30 });
+        const ADMIN_END = slotDateTime.set({ hour: 20, minute: 0 });
 
-        if (slotDateTime < dayStart || slotDateTime > lastSlotStart) {
+        if (slotDateTime < ADMIN_START || slotDateTime > ADMIN_END) {
           return res.status(400).json({ error: 'Horário fora do expediente configurado' });
         }
 
-        // Verifica pausas
+        // Verifica pausas (mantém a validação de pausas do barbeiro)
         if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
           const isInBreak = dayConfig.breaks.some((brk: any) => {
             return slotTime >= brk.start && slotTime < brk.end;
@@ -1318,16 +1317,16 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         const dayConfig = barberData.schedule[dayKey];
         if (dayConfig && dayConfig.active) {
           const slotTime = newSlot.toFormat('HH:mm');
-          const [startH, startM] = dayConfig.start.split(':').map(Number);
-          const [endH, endM] = dayConfig.end.split(':').map(Number);
-          const dayStart = newSlot.set({ hour: startH, minute: startM });
-          const dayEnd = newSlot.set({ hour: endH, minute: endM });
-          const lastSlotStart = dayEnd.minus({ minutes: 30 });
           
-          if (newSlot < dayStart || newSlot > lastSlotStart) {
+          // Admin usa janela ampliada (07:30-20:00) para reagendar
+          const ADMIN_START = newSlot.set({ hour: 7, minute: 30 });
+          const ADMIN_END = newSlot.set({ hour: 20, minute: 0 });
+          
+          if (newSlot < ADMIN_START || newSlot > ADMIN_END) {
             return res.status(400).json({ error: 'Horário fora do expediente configurado' });
           }
           
+          // Verifica pausas (mantém a validação de pausas do barbeiro)
           if (dayConfig.breaks && Array.isArray(dayConfig.breaks)) {
             const isInBreak = dayConfig.breaks.some((brk: any) => {
               return slotTime >= brk.start && slotTime < brk.end;
