@@ -119,22 +119,8 @@ export function CreateBookingModal({
       return ADMIN_TIME_SLOTS;
     }
 
-    // Admin usa a janela ampliada, mas respeita as pausas configuradas do barbeiro
-    const slots: string[] = [];
-    
-    for (const timeStr of ADMIN_TIME_SLOTS) {
-      // Verifica se está em período de pausa
-      const isInBreak =
-        dayConfig.breaks?.some((brk) => {
-          return timeStr >= brk.start && timeStr < brk.end;
-        }) ?? false;
-      
-      if (!isInBreak) {
-        slots.push(timeStr);
-      }
-    }
-    
-    return slots;
+    // Admin usa a janela ampliada completa (07:30-20:00), sem filtrar pausas
+    return ADMIN_TIME_SLOTS;
   }, [barberSchedule, date]);
 
   const createBookingMutation = useMutation({
