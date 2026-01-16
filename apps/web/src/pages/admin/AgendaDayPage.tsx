@@ -26,6 +26,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import type { PaymentMethod } from '@sr-cardoso/shared';
+import { formatPhoneForDisplay } from '@/utils/phone';
 
 // Tipo local para produtos do checkout (baseado no retorno da API)
 type CheckoutProduct = Awaited<ReturnType<typeof api.admin.listProducts>>[number];
@@ -1051,7 +1052,7 @@ export default function AgendaPage() {
               <div className="space-y-2 text-sm">
                 <p><span className="font-medium">Serviço:</span> {SERVICE_LABELS[selectedBooking.serviceType] || selectedBooking.serviceType}</p>
                 <p><span className="font-medium">Horário:</span> {formatTime(selectedBooking.slotStart)}</p>
-                <p><span className="font-medium">WhatsApp:</span> {selectedBooking.customer.whatsappE164 || '—'}</p>
+                <p><span className="font-medium">WhatsApp:</span> {formatPhoneForDisplay(selectedBooking.customer.whatsappE164)}</p>
                 <p><span className="font-medium">Status:</span> <Badge>{formatBookingStatusPtBr(selectedBooking.status)}</Badge></p>
                 {selectedBooking.isEncaixe && (
                   <p>

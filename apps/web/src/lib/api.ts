@@ -466,7 +466,17 @@ export const api = {
     async getCustomer(customerId: string) {
       return apiFetch<{ item: unknown }>(`/api/admin/customers/${encodeURIComponent(customerId)}`, { admin: true });
     },
-    async updateCustomer(customerId: string, data: { birthdayMmdd?: string | null; notes?: string | null; tags?: string[] }) {
+    async updateCustomer(
+      customerId: string,
+      data: {
+        firstName?: string;
+        lastName?: string;
+        whatsappE164?: string | null;
+        birthdayMmdd?: string | null;
+        notes?: string | null;
+        tags?: string[];
+      }
+    ) {
       return apiFetch<{ success: boolean; item: unknown }>(`/api/admin/customers/${encodeURIComponent(customerId)}`, {
         method: 'PATCH',
         admin: true,

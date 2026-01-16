@@ -46,5 +46,15 @@ export function applyPhoneMask(value: string): string {
 }
 
 /**
+ * Formata número para exibição no padrão (DD) 99999-9999
+ */
+export function formatPhoneForDisplay(phone: string | null | undefined): string {
+  if (!phone) return '—';
+  const digits = phone.replace(/\D/g, '');
+  const withoutCountry = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
+  return applyPhoneMask(withoutCountry);
+}
+
+/**
  * Normaliza número brasileiro para E.164 (usa função do shared)
  */

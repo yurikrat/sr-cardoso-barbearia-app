@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { formatDate } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
+import { formatPhoneForDisplay } from '@/utils/phone';
 import { 
   generateReactivationMessage, 
   generateBirthdayMessage, 
@@ -368,7 +369,7 @@ export default function SmartListsPage() {
                           )}
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <MessageCircle className="h-3 w-3" />
-                            <span>{customer.identity.whatsappE164}</span>
+                            <span>{formatPhoneForDisplay(customer.identity.whatsappE164)}</span>
                           </div>
                         </div>
                         

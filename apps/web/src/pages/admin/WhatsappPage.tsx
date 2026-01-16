@@ -13,6 +13,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { api } from '@/lib/api';
 import { RefreshCw, CheckCircle, XCircle, AlertCircle, MessageSquare, Bell, Save, Send, Users, Image, Cake, Upload, X } from 'lucide-react';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
+import { applyPhoneMask, normalizeToE164 } from '@/utils/phone';
 
 function asDataUrl(base64OrDataUrl: string | null): string | null {
   if (!base64OrDataUrl) return null;
@@ -171,9 +172,31 @@ export default function WhatsappPage() {
   const onConnect = async () => {
     setConnecting(true);
     try {
+      let phoneNumber: string | undefined;
+      if (connectMode === 'pairingCode') {
+        if (!pairingPhone.trim()) {
+          toast({
+            title: 'Preencha o número',
+            description: 'Informe o WhatsApp para gerar o código.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        try {
+          phoneNumber = normalizeToE164(pairingPhone);
+        } catch {
+          toast({
+            title: 'Número inválido',
+            description: 'Informe um WhatsApp válido.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
       const data = await api.admin.whatsappConnect(
         connectMode === 'pairingCode'
-          ? { mode: 'pairingCode', phoneNumber: pairingPhone.trim() }
+          ? { mode: 'pairingCode', phoneNumber }
           : { mode: 'qr' }
       );
       setQrBase64(data.qrcodeBase64 ?? null);
@@ -221,12 +244,23 @@ export default function WhatsappPage() {
       if (!toE164.trim() || !text.trim()) {
         toast({
           title: 'Preencha os campos',
-          description: 'Informe o número (E.164) e o texto.',
+          description: 'Informe o WhatsApp e o texto.',
           variant: 'destructive',
         });
         return;
       }
-      await api.admin.whatsappSendTest({ toE164: toE164.trim(), text: text.trim() });
+      let normalized: string;
+      try {
+        normalized = normalizeToE164(toE164);
+      } catch {
+        toast({
+          title: 'Número inválido',
+          description: 'Informe um WhatsApp válido.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      await api.admin.whatsappSendTest({ toE164: normalized, text: text.trim() });
       toast({ title: 'Enviado', description: 'Mensagem teste enviada.' });
     } catch (e: unknown) {
       toast({
@@ -446,16 +480,16 @@ export default function WhatsappPage() {
 
             {connectMode === 'pairingCode' ? (
               <div className="space-y-2">
-                <Label htmlFor="pairingPhone">Número (E.164)</Label>
+                <Label htmlFor="pairingPhone">Número (WhatsApp)</Label>
                 <Input
                   id="pairingPhone"
                   value={pairingPhone}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPairingPhone(e.target.value)}
-                  placeholder="Ex: +5579999999999"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPairingPhone(applyPhoneMask(e.target.value))}
+                  placeholder="(79) 99919-8695"
                   disabled={claims?.role !== 'master' || !canUseEvolution}
                 />
                 <div className="text-xs text-muted-foreground">
-                  Dica: use o número do WhatsApp com DDI (ex.: +55...).
+                  Dica: digite apenas o número e a máscara será aplicada automaticamente.
                 </div>
               </div>
             ) : null}
@@ -498,12 +532,12 @@ export default function WhatsappPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="toE164">Número (E.164)</Label>
+              <Label htmlFor="toE164">Número (WhatsApp)</Label>
               <Input
                 id="toE164"
                 value={toE164}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setToE164(e.target.value)}
-                placeholder="Ex: +5579999999999"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setToE164(applyPhoneMask(e.target.value))}
+                placeholder="(79) 99919-8695"
                 disabled={claims?.role !== 'master' || !canUseEvolution}
               />
             </div>

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { formatPhoneForDisplay } from '@/utils/phone';
 import {
   Dialog,
   DialogContent,
@@ -338,7 +339,7 @@ export function SaleModal({
                     {filteredCustomers.map((customer) => (
                       <SelectItem key={customer.id} value={customer.id}>
                         {customer.name}
-                        {customer.whatsappE164 ? ` • ${customer.whatsappE164}` : ''}
+                        {customer.whatsappE164 ? ` • ${formatPhoneForDisplay(customer.whatsappE164)}` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>

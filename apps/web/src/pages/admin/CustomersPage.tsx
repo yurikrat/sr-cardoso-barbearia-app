@@ -9,6 +9,7 @@ import { formatDate } from '@/utils/dates';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
+import { formatPhoneForDisplay } from '@/utils/phone';
 import { 
   Search, 
   User, 
@@ -236,7 +237,7 @@ export default function CustomersPage() {
       worksheet.addRow({
         firstName: c.identity.firstName,
         lastName: c.identity.lastName,
-        whatsapp: c.identity.whatsappE164,
+        whatsapp: formatPhoneForDisplay(c.identity.whatsappE164),
         totalBookings: c.stats.totalBookings,
         totalCompleted: c.stats.totalCompleted ?? 0,
         noShowCount: c.stats.noShowCount,
@@ -501,7 +502,7 @@ export default function CustomersPage() {
                               
                               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                                 <Phone className="h-3 w-3" />
-                                <span>{customer.identity.whatsappE164}</span>
+                                <span>{formatPhoneForDisplay(customer.identity.whatsappE164)}</span>
                               </div>
                               
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -581,7 +582,7 @@ export default function CustomersPage() {
                                 <td className="p-4 align-middle">
                                   <div className="flex items-center gap-2">
                                     <Phone className="h-3 w-3 text-muted-foreground" />
-                                    <span>{customer.identity.whatsappE164}</span>
+                                    <span>{formatPhoneForDisplay(customer.identity.whatsappE164)}</span>
                                   </div>
                                 </td>
                                 <td className="p-4 align-middle">
@@ -754,7 +755,7 @@ export default function CustomersPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {customer.identity.whatsappE164}
+                            {formatPhoneForDisplay(customer.identity.whatsappE164)}
                           </p>
                         </div>
                         <div className="text-right shrink-0">

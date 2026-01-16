@@ -2480,17 +2480,78 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     }
   });
 
-  // Endpoint para atualizar dados do cliente (apenas master)
-  app.patch('/api/admin/customers/:customerId', requireAdminMw, requireMaster(), async (req, res) => {
+  // Endpoint para atualizar dados do cliente
+  app.patch('/api/admin/customers/:customerId', requireAdminMw, async (req, res) => {
     try {
+      const admin = getAdminFromReq(req);
       const customerId = req.params.customerId;
       if (!customerId) return res.status(400).json({ error: 'customerId é obrigatório' });
+
+      const scopeBarberId = admin.role === 'barber' ? (admin.barberId as string) : null;
+      if (scopeBarberId) {
+        const hasBooking = await db
+          .collection('bookings')
+          .where('customerId', '==', customerId)
+          .where('barberId', '==', scopeBarberId)
+          .limit(1)
+          .get();
+        if (hasBooking.empty) return res.status(404).json({ error: 'Cliente não encontrado' });
+      }
 
       const customerDoc = await db.collection('customers').doc(customerId).get();
       if (!customerDoc.exists) return res.status(404).json({ error: 'Cliente não encontrado' });
 
-      const { birthdayMmdd, notes, tags } = req.body;
+      const { birthdayMmdd, notes, tags, firstName, lastName, whatsappE164 } = req.body;
       const updateData: Record<string, any> = {};
+      const data = customerDoc.data() as any;
+      const existingIdentity = data?.identity ?? null;
+
+      const identityUpdates: { firstName?: string; lastName?: string; whatsappE164?: string | null } = {};
+
+      if (firstName !== undefined) {
+        if (typeof firstName !== 'string' || !firstName.trim()) {
+          return res.status(400).json({ error: 'Nome inválido' });
+        }
+        identityUpdates.firstName = firstName.trim();
+      }
+
+      if (lastName !== undefined) {
+        if (typeof lastName !== 'string' || !lastName.trim()) {
+          return res.status(400).json({ error: 'Sobrenome inválido' });
+        }
+        identityUpdates.lastName = lastName.trim();
+      }
+
+      if (whatsappE164 !== undefined) {
+        if (whatsappE164 === null || whatsappE164 === '') {
+          identityUpdates.whatsappE164 = null;
+        } else if (typeof whatsappE164 === 'string') {
+          try {
+            identityUpdates.whatsappE164 = normalizeToE164(whatsappE164);
+          } catch {
+            return res.status(400).json({ error: 'WhatsApp inválido' });
+          }
+        } else {
+          return res.status(400).json({ error: 'WhatsApp inválido' });
+        }
+      }
+
+      if (Object.keys(identityUpdates).length > 0) {
+        if (!existingIdentity) {
+          if (!identityUpdates.firstName || !identityUpdates.lastName) {
+            return res.status(400).json({ error: 'Nome e sobrenome são obrigatórios' });
+          }
+          updateData['identity'] = {
+            firstName: identityUpdates.firstName,
+            lastName: identityUpdates.lastName,
+            whatsappE164: identityUpdates.whatsappE164 ?? '',
+          };
+        } else {
+          if (identityUpdates.firstName !== undefined) updateData['identity.firstName'] = identityUpdates.firstName;
+          if (identityUpdates.lastName !== undefined) updateData['identity.lastName'] = identityUpdates.lastName;
+          if (identityUpdates.whatsappE164 !== undefined) updateData['identity.whatsappE164'] = identityUpdates.whatsappE164;
+        }
+      }
 
       // Atualiza data de aniversário (formato MMDD)
       if (birthdayMmdd !== undefined) {

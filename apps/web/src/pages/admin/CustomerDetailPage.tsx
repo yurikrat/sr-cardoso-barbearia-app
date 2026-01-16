@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useToast } from '@/components/ui/use-toast';
 import { SERVICE_LABELS } from '@/utils/constants';
+import { applyPhoneMask, formatPhoneForDisplay, normalizeToE164 } from '@/utils/phone';
 import { 
   ArrowLeft, 
   Calendar, 
@@ -19,17 +20,35 @@ import {
   Clock, 
   Tag, 
   FileText,
-  Scissors
+  Scissors,
+  Edit2
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type FirestoreTimestampLike = { toDate: () => Date };
 
 type Customer = {
   id: string;
   identity?: { firstName?: string; lastName?: string; whatsappE164?: string };
-  profile?: { birthday?: string; notes?: string; tags?: string[] };
+  profile?: { birthday?: string; birthdayMmdd?: string; notes?: string; tags?: string[] };
   stats?: {
     totalBookings?: number;
     totalCompleted?: number;
@@ -72,6 +91,47 @@ function getStatusBadgeVariant(status: string | undefined) {
   return 'outline';
 }
 
+const MONTHS_PT = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+function getBirthdayMmdd(customer: Customer): string | null {
+  if (customer.profile?.birthdayMmdd && /^\d{4}$/.test(customer.profile.birthdayMmdd)) {
+    return customer.profile.birthdayMmdd;
+  }
+  if (customer.profile?.birthday) {
+    try {
+      const d = new Date(customer.profile.birthday);
+      if (!Number.isNaN(d.getTime())) {
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${month}${day}`;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function formatBirthdayDisplay(mmdd: string | null): string {
+  if (!mmdd) return '—';
+  const month = mmdd.slice(0, 2);
+  const day = mmdd.slice(2, 4);
+  return `${day}/${month}`;
+}
+
 export default function CustomerDetailPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -82,6 +142,13 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editWhatsapp, setEditWhatsapp] = useState('');
+  const [editBirthdayDay, setEditBirthdayDay] = useState('');
+  const [editBirthdayMonth, setEditBirthdayMonth] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const barberNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -116,7 +183,83 @@ export default function CustomerDetailPage() {
   }, [customerId, toast, refreshToken]);
 
   const titleName = `${customer?.identity?.firstName ?? ''} ${customer?.identity?.lastName ?? ''}`.trim() || 'Cliente';
-  const whatsapp = customer?.identity?.whatsappE164 || '—';
+  const whatsapp = formatPhoneForDisplay(customer?.identity?.whatsappE164 ?? null);
+  const birthdayMmdd = customer ? getBirthdayMmdd(customer) : null;
+
+  const openEditProfile = () => {
+    if (!customer) return;
+    setEditFirstName(customer.identity?.firstName ?? '');
+    setEditLastName(customer.identity?.lastName ?? '');
+    setEditWhatsapp(customer.identity?.whatsappE164 ? formatPhoneForDisplay(customer.identity.whatsappE164) : '');
+    if (birthdayMmdd) {
+      setEditBirthdayMonth(birthdayMmdd.slice(0, 2));
+      setEditBirthdayDay(birthdayMmdd.slice(2, 4));
+    } else {
+      setEditBirthdayMonth('');
+      setEditBirthdayDay('');
+    }
+    setIsEditing(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!customerId) return;
+    const firstName = editFirstName.trim();
+    const lastName = editLastName.trim();
+
+    if (!firstName || !lastName) {
+      toast({
+        title: 'Atenção',
+        description: 'Nome e sobrenome são obrigatórios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let whatsappE164: string | null = null;
+    if (editWhatsapp.trim()) {
+      try {
+        whatsappE164 = normalizeToE164(editWhatsapp);
+      } catch {
+        toast({
+          title: 'Erro',
+          description: 'WhatsApp inválido. Informe um número válido.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    let birthdayMmddValue: string | null = null;
+    if (editBirthdayMonth && editBirthdayDay) {
+      birthdayMmddValue = `${editBirthdayMonth.padStart(2, '0')}${editBirthdayDay.padStart(2, '0')}`;
+    }
+
+    setSaving(true);
+    try {
+      const res = await api.admin.updateCustomer(customerId, {
+        firstName,
+        lastName,
+        whatsappE164,
+        birthdayMmdd: birthdayMmddValue,
+      });
+
+      setCustomer(res.item as Customer);
+      setIsEditing(false);
+      toast({
+        title: 'Sucesso',
+        description: 'Dados do cliente atualizados.',
+      });
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível atualizar o cliente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <AdminLayout>
@@ -144,11 +287,14 @@ export default function CustomerDetailPage() {
             {/* Left Column: Profile Info */}
             <div className="space-y-6">
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
                     <User className="h-5 w-5" />
                     Perfil
                   </CardTitle>
+                  <Button variant="outline" size="icon" onClick={openEditProfile}>
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
@@ -166,12 +312,12 @@ export default function CustomerDetailPage() {
                     </div>
                   </div>
 
-                  {customer.profile?.birthday && (
+                  {birthdayMmdd && (
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Aniversário</p>
-                        <p>{new Date(customer.profile.birthday).toLocaleDateString('pt-BR')}</p>
+                        <p>{formatBirthdayDisplay(birthdayMmdd)}</p>
                       </div>
                     </div>
                   )}
@@ -301,6 +447,101 @@ export default function CustomerDetailPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="h-5 w-5" />
+              Editar Perfil
+            </DialogTitle>
+            <DialogDescription>
+              Atualize os dados do cliente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-first-name">Nome</Label>
+              <Input
+                id="edit-first-name"
+                value={editFirstName}
+                onChange={(e) => setEditFirstName(e.target.value)}
+                placeholder="Nome"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-last-name">Sobrenome</Label>
+              <Input
+                id="edit-last-name"
+                value={editLastName}
+                onChange={(e) => setEditLastName(e.target.value)}
+                placeholder="Sobrenome"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-whatsapp">WhatsApp</Label>
+              <Input
+                id="edit-whatsapp"
+                value={editWhatsapp}
+                onChange={(e) => setEditWhatsapp(applyPhoneMask(e.target.value))}
+                placeholder="(11) 99999-9999"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Aniversário</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <Select value={editBirthdayDay} onValueChange={setEditBirthdayDay}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Dia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <SelectItem key={d} value={String(d).padStart(2, '0')}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={editBirthdayMonth} onValueChange={setEditBirthdayMonth}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Mês" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MONTHS_PT.map((name, i) => (
+                      <SelectItem key={name} value={String(i + 1).padStart(2, '0')}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(false)}
+              disabled={saving}
+              className="flex-1 sm:flex-none"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveProfile}
+              disabled={saving}
+              className="flex-1 sm:flex-none"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }
