@@ -93,7 +93,7 @@ export default function BookingPage() {
         birthDate: '',
       });
       setIsReturningCustomer(true);
-      setShowBirthDateField(false);
+      setShowBirthDateField(true);
     } else {
       setCustomerForm({ firstName: '', lastName: '', whatsapp: '', birthDate: '' });
       setIsReturningCustomer(false);
@@ -236,7 +236,7 @@ export default function BookingPage() {
   }, [bookingState.barberId, selectedDate, loadAvailableSlots]);
   type CreateBookingResponse = { success: boolean; bookingId: string; cancelCode?: string | null; message?: string };
 
-  const handlePhoneLookup = async (phone: string) => {
+  const handlePhoneLookup = useCallback(async (phone: string) => {
     const normalized = normalizeToE164(phone);
     if (!isValidBrazilianPhone(normalized)) return;
 
@@ -249,6 +249,7 @@ export default function BookingPage() {
           ...prev,
           firstName: result.firstName || '',
           lastName: result.lastNameInitial ? `${result.lastNameInitial}.` : '',
+          birthDate: '',
         }));
         setShowBirthDateField(!result.hasBirthDate);
       } else {
@@ -260,7 +261,14 @@ export default function BookingPage() {
     } finally {
       setLookupLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!rememberedCustomer || isBookingForSomeoneElse) return;
+    if (rememberedCustomer.whatsapp) {
+      handlePhoneLookup(rememberedCustomer.whatsapp);
+    }
+  }, [rememberedCustomer, isBookingForSomeoneElse, handlePhoneLookup]);
 
   const createBookingMutation = useMutation({
     mutationFn: async (data: {
@@ -712,7 +720,10 @@ export default function BookingPage() {
                         birthDate: '',
                       });
                       setIsReturningCustomer(true);
-                      setShowBirthDateField(false);
+                      setShowBirthDateField(true);
+                      if (rememberedCustomer.whatsapp) {
+                        handlePhoneLookup(rememberedCustomer.whatsapp);
+                      }
                     }
                   }}
                 />
@@ -807,7 +818,7 @@ export default function BookingPage() {
 
               {showBirthDateField && (
                 <div className="animate-in fade-in slide-in-from-top-2">
-                  <Label htmlFor="birthDate">Data de Nascimento</Label>
+                  <Label htmlFor="birthDate">Data de Nascimento *</Label>
                   <Input
                     id="birthDate"
                     type="date"

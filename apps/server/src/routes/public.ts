@@ -491,6 +491,13 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
           throw err;
         }
 
+        const existingBirthday = customerDoc.exists ? customerDoc.data()?.profile?.birthday : null;
+        if (!existingBirthday && !validated.customer.birthDate) {
+          const err = new Error('birthdate-required');
+          (err as any).code = 'birthdate-required';
+          throw err;
+        }
+
         const now = Timestamp.now();
 
         tx.set(slotRef, {
@@ -599,6 +606,9 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
     } catch (e: unknown) {
       if (e && typeof e === 'object' && (e as any).code === 'already-exists') {
         return res.status(409).json({ error: 'Este horário já foi reservado. Selecione outro.' });
+      }
+      if (e && typeof e === 'object' && (e as any).code === 'birthdate-required') {
+        return res.status(400).json({ error: 'Informe sua data de nascimento para continuar.' });
       }
       console.error('Error creating booking:', e);
       const msg = e instanceof Error ? e.message : 'Erro desconhecido';
