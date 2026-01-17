@@ -156,15 +156,26 @@ export async function listProducts(
   db: Firestore,
   options?: { categoryId?: string; activeOnly?: boolean }
 ): Promise<Product[]> {
-  let query = db.collection(PRODUCTS_COLLECTION).orderBy('name');
+  let query: FirebaseFirestore.Query = db.collection(PRODUCTS_COLLECTION);
+  
+  // Aplicar filtro por categoria se especificado
   if (options?.categoryId) {
-    query = query.where('categoryId', '==', options.categoryId) as any;
+    query = query.where('categoryId', '==', options.categoryId);
   }
-  if (options?.activeOnly) {
-    query = query.where('active', '==', true) as any;
-  }
+  
+  // Buscar todos os produtos (aplicamos filtro active em memória para evitar necessidade de índice composto)
   const snapshot = await query.get();
-  return snapshot.docs.map((doc) => docToProduct(doc.id, doc.data()));
+  let products = snapshot.docs.map((doc) => docToProduct(doc.id, doc.data()));
+  
+  // Filtrar por active em memória se necessário
+  if (options?.activeOnly) {
+    products = products.filter((p) => p.active);
+  }
+  
+  // Ordenar por nome em memória
+  products.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  
+  return products;
 }
 
 export async function getProduct(db: Firestore, id: string): Promise<Product | null> {
