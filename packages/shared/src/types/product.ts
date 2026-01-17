@@ -151,6 +151,14 @@ export interface ProductsSummary {
     revenueCents: number;
     count: number;
   }[];
+  byBarber: {
+    barberId: string;
+    barberName: string;
+    revenueCents: number;
+    commissionCents: number;
+    salesCount: number;
+    itemsSold: number;
+  }[];
 }
 
 // ============================================================

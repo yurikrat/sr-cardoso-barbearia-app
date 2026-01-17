@@ -6,8 +6,8 @@ export const APP_NAME = 'Sr. Cardoso Barbearia';
 export const APP_SHORT_NAME = 'Sr. Cardoso';
 
 export const BARBERS = [
-  { id: 'sr-cardoso', name: 'Sr Cardoso', image: '/barbers/waldenio.png' },
   { id: 'emanuel-fernandes', name: 'Emanuel Fernandes', image: '/barbers/emanuel.png' },
+  { id: 'sr-cardoso', name: 'Sr Cardoso', image: '/barbers/waldenio.png' },
 ] as const;
 
 export const SERVICE_TYPES = {

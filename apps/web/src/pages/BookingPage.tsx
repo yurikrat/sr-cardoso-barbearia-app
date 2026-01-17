@@ -17,7 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { createBookingFn } from '@/lib/api-compat';
 import { applyPhoneMask, normalizeToE164 } from '@/utils/phone';
 import { generateDaySlots, isSlotPast } from '@/utils/slots';
-import { formatDate, formatTime, isToday, generateSlotsBetween } from '@/utils/dates';
+import { formatDate, formatTime, isToday, generateSlotsBetween, applyBirthDateMask, birthDateToISO, isValidBirthDate } from '@/utils/dates';
 import { isValidName, isValidBrazilianPhone } from '@/utils/validation';
 import { debugLog } from '@/utils/debugLog';
 import { DateTime } from 'luxon';
@@ -411,6 +411,16 @@ export default function BookingPage() {
       return;
     }
 
+    // Validar formato da data de nascimento
+    if (showBirthDateField && customerForm.birthDate && !isValidBirthDate(customerForm.birthDate)) {
+      toast({
+        title: 'Erro',
+        description: 'Data de nascimento inválida. Use o formato DD/MM/AAAA.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       const whatsappE164 = normalizeToE164(customerForm.whatsapp);
       
@@ -440,6 +450,9 @@ export default function BookingPage() {
       });
       // #endregion
       
+      // Converter data de nascimento do formato DD/MM/YYYY para YYYY-MM-DD
+      const birthDateISO = customerForm.birthDate ? birthDateToISO(customerForm.birthDate) : undefined;
+      
       createBookingMutation.mutate({
         barberId: bookingState.barberId,
         serviceType: bookingState.serviceType,
@@ -448,7 +461,7 @@ export default function BookingPage() {
           firstName: customerForm.firstName.trim(),
           lastName: customerForm.lastName.trim(),
           whatsapp: whatsappE164,
-          birthDate: customerForm.birthDate || undefined,
+          birthDate: birthDateISO || undefined,
         },
       });
     } catch (error: unknown) {
@@ -821,16 +834,21 @@ export default function BookingPage() {
                   <Label htmlFor="birthDate">Data de Nascimento *</Label>
                   <Input
                     id="birthDate"
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="bday"
+                    placeholder="DD/MM/AAAA"
                     value={customerForm.birthDate}
-                    onChange={(e) =>
-                      setCustomerForm({ ...customerForm, birthDate: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const masked = applyBirthDateMask(e.target.value);
+                      setCustomerForm({ ...customerForm, birthDate: masked });
+                    }}
                     required
+                    maxLength={10}
                     className="mt-1"
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    Pedimos apenas uma vez.
+                    Digite apenas os números. Ex: 30031999
                   </p>
                 </div>
               )}

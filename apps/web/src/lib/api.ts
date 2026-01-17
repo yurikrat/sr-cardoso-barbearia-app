@@ -438,14 +438,14 @@ export const api = {
     },
 
     async getFinanceConfig() {
-      return apiFetch<{ config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> } }>(
+      return apiFetch<{ config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>; barberServicePrices?: Record<string, Array<{ serviceId: string; priceCents: number }>> } }>(
         `/api/admin/finance/config`,
         { admin: true }
       );
     },
 
-    async saveFinanceConfig(payload: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> }) {
-      return apiFetch<{ success: boolean; config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }> } }>(
+    async saveFinanceConfig(payload: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>; barberServicePrices?: Record<string, Array<{ serviceId: string; priceCents: number }>> }) {
+      return apiFetch<{ success: boolean; config: { commissions: { defaultBarberPct: number; ownerBarberPct: number }; services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>; barberServicePrices?: Record<string, Array<{ serviceId: string; priceCents: number }>> } }>(
         `/api/admin/finance/config`,
         { method: 'PUT', admin: true, body: JSON.stringify(payload) }
       );
@@ -504,7 +504,8 @@ export const api = {
         status: 'confirmed' | 'completed' | 'no_show',
         paymentMethod?: 'credit' | 'debit' | 'cash' | 'pix',
         paymentMethods?: Array<{ method: 'credit' | 'debit' | 'cash' | 'pix'; amountCents: number }>,
-        productsPurchased?: boolean
+        productsPurchased?: boolean,
+        discountPct?: number
       ) {
         const payload = {
           status,
@@ -514,6 +515,7 @@ export const api = {
               ? { paymentMethod }
               : {}),
           ...(typeof productsPurchased === 'boolean' ? { productsPurchased } : {}),
+          ...(typeof discountPct === 'number' && discountPct > 0 ? { discountPct } : {}),
         };
         return apiFetch<{ success: boolean }>(`/api/admin/bookings/${encodeURIComponent(bookingId)}/status`, {
           method: 'POST',
@@ -986,6 +988,14 @@ export const api = {
           method: 'credit' | 'debit' | 'cash' | 'pix';
           revenueCents: number;
           count: number;
+        }>;
+        byBarber: Array<{
+          barberId: string;
+          barberName: string;
+          revenueCents: number;
+          commissionCents: number;
+          salesCount: number;
+          itemsSold: number;
         }>;
       }>(`/api/admin/products/summary${qs ? `?${qs}` : ''}`, { admin: true });
     },

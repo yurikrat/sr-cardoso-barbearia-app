@@ -73,6 +73,7 @@ import {
   broadcastWithMedia,
   sendBarberBirthdayAlerts,
   sendBarberNewBookingNotification,
+  sendStockAlerts,
 } from '../services/whatsappNotifications.js';
 import {
   getProductsConfig,
@@ -2142,16 +2143,26 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
     try {
       const admin = getAdminFromReq(req);
       const bookingId = req.params.bookingId;
-      const body = req.body as { status?: unknown; paymentMethod?: unknown; paymentMethods?: unknown; productsPurchased?: unknown };
+      const body = req.body as { status?: unknown; paymentMethod?: unknown; paymentMethods?: unknown; productsPurchased?: unknown; discountPct?: unknown };
       const nextStatus = body?.status;
       const paymentMethod = body?.paymentMethod;
       const paymentMethods = body?.paymentMethods;
       const productsPurchased = body?.productsPurchased;
+      const discountPct = body?.discountPct;
       
       if (typeof nextStatus !== 'string') return res.status(400).json({ error: 'status é obrigatório' });
 
       const allowed = ['confirmed', 'completed', 'no_show'] as const;
       if (!allowed.includes(nextStatus as any)) return res.status(400).json({ error: 'status inválido' });
+
+      // Validar desconto (opcional, entre 0 e 1)
+      let validatedDiscountPct: number | null = null;
+      if (typeof discountPct === 'number' && discountPct > 0) {
+        if (discountPct > 1) {
+          return res.status(400).json({ error: 'Desconto inválido (deve ser entre 0 e 100%)' });
+        }
+        validatedDiscountPct = discountPct;
+      }
 
       // Validação de forma de pagamento (obrigatória ao concluir)
       const allowedPaymentMethods = ['credit', 'debit', 'cash', 'pix'] as const;
@@ -2225,6 +2236,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           }
           if (typeof productsPurchased === 'boolean') {
             updates.productsPurchased = productsPurchased;
+          }
+          // Salvar desconto se aplicado
+          if (validatedDiscountPct !== null && validatedDiscountPct > 0) {
+            updates.discountPct = validatedDiscountPct;
           }
         }
         if (nextStatus === 'no_show') updates.noShowAt = FieldValue.serverTimestamp();
@@ -3229,6 +3244,18 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         },
         admin.username
       );
+
+      // Verificar e enviar alertas de estoque após a venda (async, não bloqueia resposta)
+      (async () => {
+        try {
+          const alerts = await getStockAlerts(db);
+          if (alerts.length > 0) {
+            await sendStockAlerts(db, env, alerts);
+          }
+        } catch (e) {
+          console.error('[StockAlert] Erro ao verificar alertas após venda:', e);
+        }
+      })();
 
       return res.status(201).json(sale);
     } catch (e: any) {

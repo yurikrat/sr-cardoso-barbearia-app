@@ -12,12 +12,26 @@ export type ServiceCatalogItem = {
   sortOrder: number;
 };
 
+/**
+ * Preço de serviço específico por barbeiro.
+ * Quando não definido, usa-se o preço global do serviço.
+ */
+export type BarberServicePriceOverride = {
+  serviceId: string;
+  priceCents: number;
+};
+
 export type FinanceConfig = {
   commissions: {
     defaultBarberPct: number;
     ownerBarberPct: number;
   };
   services: ServiceCatalogItem[];
+  /** 
+   * Preços específicos por barbeiro. Chave: barberId.
+   * Exemplo: { 'sr-cardoso': [{ serviceId: 'cabelo', priceCents: 5000 }] }
+   */
+  barberServicePrices?: Record<string, BarberServicePriceOverride[]>;
 };
 
 function normalizeServiceId(input: string): string | null {
@@ -138,7 +152,29 @@ export function sanitizeFinanceConfig(input: unknown): FinanceConfig {
     return a.label.localeCompare(b.label, 'pt-BR');
   });
 
-  return { commissions: { defaultBarberPct, ownerBarberPct }, services };
+  // Processar barberServicePrices
+  const barberServicePrices: Record<string, BarberServicePriceOverride[]> = {};
+  const rawBarberPrices = obj.barberServicePrices && typeof obj.barberServicePrices === 'object' ? obj.barberServicePrices : {};
+  
+  for (const barberId of Object.keys(rawBarberPrices)) {
+    const overrides = rawBarberPrices[barberId];
+    if (!Array.isArray(overrides)) continue;
+    
+    const validOverrides: BarberServicePriceOverride[] = [];
+    for (const ov of overrides) {
+      if (!ov || typeof ov !== 'object') continue;
+      const serviceId = normalizeServiceId(typeof ov.serviceId === 'string' ? ov.serviceId : '');
+      if (!serviceId) continue;
+      const priceCents = Math.max(0, Math.round(Number(ov.priceCents ?? 0)));
+      validOverrides.push({ serviceId, priceCents });
+    }
+    
+    if (validOverrides.length > 0) {
+      barberServicePrices[barberId] = validOverrides;
+    }
+  }
+
+  return { commissions: { defaultBarberPct, ownerBarberPct }, services, barberServicePrices };
 }
 
 let financeConfigCache: { value: FinanceConfig; fetchedAtMs: number } | null = null;
@@ -176,6 +212,26 @@ export function getServiceFromConfig(config: FinanceConfig, serviceId: string): 
 export function getServicePriceCentsFromConfig(config: FinanceConfig, serviceId: string): number {
   const s = getServiceFromConfig(config, serviceId);
   return s ? s.priceCents : 0;
+}
+
+/**
+ * Obtém o preço de um serviço para um barbeiro específico.
+ * Primeiro verifica se há override para o barbeiro, senão usa o preço global.
+ */
+export function getServicePriceCentsForBarber(config: FinanceConfig, serviceId: string, barberId: string): number {
+  const normalized = normalizeServiceId(serviceId) ?? serviceId;
+  
+  // Verificar se há preço específico para este barbeiro
+  const barberOverrides = config.barberServicePrices?.[barberId];
+  if (barberOverrides) {
+    const override = barberOverrides.find((o) => o.serviceId === normalized);
+    if (override) {
+      return override.priceCents;
+    }
+  }
+  
+  // Fallback para preço global
+  return getServicePriceCentsFromConfig(config, serviceId);
 }
 
 export function getBarberCommissionPct(config: FinanceConfig, barberId: string): number {

@@ -151,9 +151,15 @@ export default function FinancePage() {
     commissions?: { defaultBarberPct: number; ownerBarberPct: number };
   }>(null);
 
+  type BarberServicePriceOverride = {
+    serviceId: string;
+    priceCents: number;
+  };
+
   type FinanceConfig = {
     commissions: { defaultBarberPct: number; ownerBarberPct: number };
     services: Array<{ id: string; label: string; priceCents: number; active: boolean; sortOrder: number }>;
+    barberServicePrices?: Record<string, BarberServicePriceOverride[]>;
   };
 
   const [configDraft, setConfigDraft] = useState<FinanceConfig | null>(null);
@@ -180,6 +186,14 @@ export default function FinancePage() {
       method: 'credit' | 'debit' | 'cash' | 'pix';
       revenueCents: number;
       count: number;
+    }>;
+    byBarber: Array<{
+      barberId: string;
+      barberName: string;
+      revenueCents: number;
+      commissionCents: number;
+      salesCount: number;
+      itemsSold: number;
     }>;
   };
   const [productsSummary, setProductsSummary] = useState<ProductsSummary | null>(null);
@@ -1130,6 +1144,52 @@ export default function FinancePage() {
               </Card>
               )}
 
+              {/* Comissões de Produtos por Barbeiro (quando visualizando produtos e apenas para master) */}
+              {isMaster && (revenueSource === 'products' || revenueSource === 'all') && productsSummary && productsSummary.byBarber && productsSummary.byBarber.length > 0 && (
+              <Card className="lg:col-span-3">
+                <CardHeader>
+                  <CardTitle className="font-serif flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Comissões de Produtos por Barbeiro
+                  </CardTitle>
+                  <CardDescription>Receita e comissão de cada barbeiro nas vendas de produtos.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {productsSummary.byBarber
+                      .sort((a, b) => b.revenueCents - a.revenueCents)
+                      .map((barber) => {
+                        const shopCents = barber.revenueCents - barber.commissionCents;
+                        return (
+                          <div key={barber.barberId} className="p-3 rounded-lg border bg-card/50 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-medium">{barber.barberName}</span>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-bold">{formatMoneyBRLFromCents(barber.revenueCents)}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {barber.salesCount} venda{barber.salesCount !== 1 ? 's' : ''} · {barber.itemsSold} {barber.itemsSold === 1 ? 'item' : 'itens'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 text-xs">
+                              <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-500/20">
+                                Barbeiro: {formatMoneyBRLFromCents(barber.commissionCents)}
+                              </Badge>
+                              <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                                Barbearia: {formatMoneyBRLFromCents(shopCents)}
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </CardContent>
+              </Card>
+              )}
+
               {/* Formas de Pagamento */}
               <Card className="lg:col-span-3">
                 <CardHeader>
@@ -1413,6 +1473,111 @@ export default function FinancePage() {
                         </div>
                       </div>
 
+                      {/* Preços específicos por barbeiro */}
+                      <div className="space-y-4 pt-4 border-t">
+                        <div>
+                          <h3 className="text-lg font-medium">Preços por Barbeiro</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Defina preços diferentes para cada barbeiro. Se não definido, usa o preço padrão do serviço.
+                          </p>
+                        </div>
+
+                        {barbers.map((barber) => {
+                          const barberOverrides = configDraft.barberServicePrices?.[barber.id] ?? [];
+                          
+                          return (
+                            <div key={barber.id} className="p-4 rounded-lg border bg-background/50 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-medium flex items-center gap-2">
+                                  <User className="h-4 w-4" />
+                                  {barber.name}
+                                </h4>
+                              </div>
+                              
+                              <div className="grid gap-2">
+                                {configDraft.services.filter(s => s.active).map((service) => {
+                                  const override = barberOverrides.find(o => o.serviceId === service.id);
+                                  const hasOverride = override !== undefined;
+                                  const currentPrice = hasOverride ? override.priceCents : service.priceCents;
+                                  
+                                  return (
+                                    <div key={service.id} className="flex items-center gap-3 p-2 rounded border-dashed border">
+                                      <div className="flex-1 min-w-0">
+                                        <span className="text-sm truncate">{service.label}</span>
+                                        <span className="text-xs text-muted-foreground ml-2">
+                                          (padrão: {formatMoneyBRLFromCents(service.priceCents)})
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="relative w-24">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
+                                          <Input
+                                            type="number"
+                                            inputMode="decimal"
+                                            step="0.01"
+                                            className={`pl-7 h-8 text-sm ${hasOverride ? 'border-primary' : ''}`}
+                                            placeholder={(service.priceCents / 100).toFixed(2)}
+                                            value={hasOverride ? (currentPrice / 100).toFixed(2) : ''}
+                                            onChange={(e) => {
+                                              const v = e.target.value;
+                                              const newOverrides = { ...configDraft.barberServicePrices };
+                                              
+                                              if (!v || v === '') {
+                                                // Remove override
+                                                const filtered = (newOverrides[barber.id] ?? []).filter(o => o.serviceId !== service.id);
+                                                if (filtered.length > 0) {
+                                                  newOverrides[barber.id] = filtered;
+                                                } else {
+                                                  delete newOverrides[barber.id];
+                                                }
+                                              } else {
+                                                const priceCents = Math.max(0, Math.round(Number(v) * 100));
+                                                const existingOverrides = newOverrides[barber.id] ?? [];
+                                                const existing = existingOverrides.find(o => o.serviceId === service.id);
+                                                
+                                                if (existing) {
+                                                  newOverrides[barber.id] = existingOverrides.map(o => 
+                                                    o.serviceId === service.id ? { ...o, priceCents } : o
+                                                  );
+                                                } else {
+                                                  newOverrides[barber.id] = [...existingOverrides, { serviceId: service.id, priceCents }];
+                                                }
+                                              }
+                                              
+                                              setConfigDraft({ ...configDraft, barberServicePrices: newOverrides });
+                                            }}
+                                          />
+                                        </div>
+                                        {hasOverride && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                            onClick={() => {
+                                              const newOverrides = { ...configDraft.barberServicePrices };
+                                              const filtered = (newOverrides[barber.id] ?? []).filter(o => o.serviceId !== service.id);
+                                              if (filtered.length > 0) {
+                                                newOverrides[barber.id] = filtered;
+                                              } else {
+                                                delete newOverrides[barber.id];
+                                              }
+                                              setConfigDraft({ ...configDraft, barberServicePrices: newOverrides });
+                                            }}
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
                       <div className="flex gap-2 justify-end pt-4">
                         <Button
                           type="button"
@@ -1469,6 +1634,7 @@ export default function FinancePage() {
                                   ownerBarberPct: configDraft.commissions.ownerBarberPct,
                                 },
                                 services,
+                                barberServicePrices: configDraft.barberServicePrices,
                               };
                               const saved = await api.admin.saveFinanceConfig(payload);
                               setConfigDraft(saved.config);

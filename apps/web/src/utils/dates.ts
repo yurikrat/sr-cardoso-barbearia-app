@@ -113,3 +113,62 @@ export function generateSlotsBetween(
   return slots;
 }
 
+/**
+ * Aplica máscara de data brasileira (DD/MM/YYYY) em input de texto
+ * Aceita entrada tipo "30031999" e formata para "30/03/1999"
+ */
+export function applyBirthDateMask(value: string): string {
+  // Remove tudo que não é dígito
+  const digits = value.replace(/\D/g, '');
+  
+  // Limita a 8 dígitos (DDMMYYYY)
+  const limited = digits.slice(0, 8);
+  
+  // Aplica a máscara DD/MM/YYYY
+  if (limited.length <= 2) {
+    return limited;
+  } else if (limited.length <= 4) {
+    return `${limited.slice(0, 2)}/${limited.slice(2)}`;
+  } else {
+    return `${limited.slice(0, 2)}/${limited.slice(2, 4)}/${limited.slice(4)}`;
+  }
+}
+
+/**
+ * Converte data no formato DD/MM/YYYY para YYYY-MM-DD (formato ISO para input type="date")
+ */
+export function birthDateToISO(maskedDate: string): string {
+  const digits = maskedDate.replace(/\D/g, '');
+  if (digits.length !== 8) return '';
+  
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  
+  // Validação básica
+  const d = parseInt(day, 10);
+  const m = parseInt(month, 10);
+  const y = parseInt(year, 10);
+  
+  if (d < 1 || d > 31 || m < 1 || m > 12 || y < 1900 || y > 2100) {
+    return '';
+  }
+  
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Valida se a data de nascimento mascarada é válida
+ */
+export function isValidBirthDate(maskedDate: string): boolean {
+  const iso = birthDateToISO(maskedDate);
+  if (!iso) return false;
+  
+  const dt = DateTime.fromISO(iso, { zone: TIMEZONE });
+  if (!dt.isValid) return false;
+  
+  // Deve ser no passado e razoável (não antes de 1900)
+  const now = getNow();
+  return dt < now && dt.year >= 1900;
+}
+

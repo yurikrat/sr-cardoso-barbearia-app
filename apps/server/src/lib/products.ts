@@ -651,11 +651,13 @@ export async function getProductsSummary(
     byCategory: [],
     byProduct: [],
     byPaymentMethod: [],
+    byBarber: [],
   };
 
   const categoryStats = new Map<string, { revenueCents: number; itemsSold: number }>();
   const productStats = new Map<string, { productName: string; revenueCents: number; quantitySold: number }>();
   const paymentStats = new Map<string, { revenueCents: number; count: number }>();
+  const barberStats = new Map<string, { barberName: string; revenueCents: number; commissionCents: number; salesCount: number; itemsSold: number }>();
 
   for (const sale of sales) {
     summary.totalRevenueCents += sale.totalCents;
@@ -667,8 +669,22 @@ export async function getProductsSummary(
     pm.count += 1;
     paymentStats.set(sale.paymentMethod, pm);
 
+    // Barber stats
+    const bs = barberStats.get(sale.barberId) ?? { 
+      barberName: sale.barberName ?? sale.barberId, 
+      revenueCents: 0, 
+      commissionCents: 0, 
+      salesCount: 0, 
+      itemsSold: 0 
+    };
+    bs.revenueCents += sale.totalCents;
+    bs.commissionCents += sale.commissionCents;
+    bs.salesCount += 1;
+    
+    let saleItemsCount = 0;
     for (const item of sale.items) {
       summary.totalItemsSold += item.quantity;
+      saleItemsCount += item.quantity;
       const itemRevenue = item.unitPriceCents * item.quantity;
 
       // Product stats
@@ -684,6 +700,9 @@ export async function getProductsSummary(
       cs.itemsSold += item.quantity;
       categoryStats.set(categoryId, cs);
     }
+    
+    bs.itemsSold += saleItemsCount;
+    barberStats.set(sale.barberId, bs);
   }
 
   summary.byCategory = Array.from(categoryStats.entries()).map(([categoryId, stats]) => ({
@@ -699,6 +718,11 @@ export async function getProductsSummary(
 
   summary.byPaymentMethod = Array.from(paymentStats.entries()).map(([method, stats]) => ({
     method: method as Sale['paymentMethod'],
+    ...stats,
+  })).sort((a, b) => b.revenueCents - a.revenueCents);
+
+  summary.byBarber = Array.from(barberStats.entries()).map(([barberId, stats]) => ({
+    barberId,
     ...stats,
   })).sort((a, b) => b.revenueCents - a.revenueCents);
 

@@ -164,6 +164,9 @@ export default function AgendaPage() {
     pix: '',
   });
   const [bookingToComplete, setBookingToComplete] = useState<Booking | null>(null);
+  // Estados para desconto
+  const [discountEnabled, setDiscountEnabled] = useState(false);
+  const [discountPct, setDiscountPct] = useState<string>('');
   // Estados para produtos no checkout
   const [checkoutCart, setCheckoutCart] = useState<Array<{ productId: string; quantity: number }>>([]);
   const [showProductsSection, setShowProductsSection] = useState(false);
@@ -462,8 +465,8 @@ export default function AgendaPage() {
   });
 
   const setStatusMutation = useMutation({
-    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod; paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }>; productsPurchased?: boolean }) => {
-      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod, payload.paymentMethods, payload.productsPurchased);
+    mutationFn: async (payload: { bookingId: string; status: 'confirmed' | 'completed' | 'no_show'; paymentMethod?: PaymentMethod; paymentMethods?: Array<{ method: PaymentMethod; amountCents: number }>; productsPurchased?: boolean; discountPct?: number }) => {
+      return api.admin.setBookingStatus(payload.bookingId, payload.status, payload.paymentMethod, payload.paymentMethods, payload.productsPurchased, payload.discountPct);
     },
     onSuccess: (_data, variables) => {
       loadBookings();
@@ -495,6 +498,8 @@ export default function AgendaPage() {
     setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
     setCheckoutCart([]);
     setShowProductsSection(false);
+    setDiscountEnabled(false);
+    setDiscountPct('');
     setPaymentModalOpen(true);
   };
 
@@ -570,6 +575,14 @@ export default function AgendaPage() {
     return Math.round(value * 100);
   };
 
+  // Calcula desconto em percentual
+  const getDiscountPctValue = (): number => {
+    if (!discountEnabled || !discountPct) return 0;
+    const pct = parseFloat(discountPct.replace(',', '.'));
+    if (isNaN(pct) || pct <= 0 || pct > 100) return 0;
+    return pct / 100;
+  };
+
   // Handler para confirmar conclusão com forma de pagamento
   const handleConfirmComplete = async () => {
     if (!bookingToComplete) return;
@@ -584,18 +597,26 @@ export default function AgendaPage() {
       return;
     }
 
+    // Validar desconto
+    const discountPctValue = getDiscountPctValue();
+    if (discountEnabled && discountPctValue <= 0) {
+      toast({ title: 'Erro', description: 'Informe uma porcentagem de desconto válida (1-100).', variant: 'destructive' });
+      return;
+    }
+
     const primaryMethod = splitMode
       ? paymentSplits[0]?.method
       : (selectedPaymentMethod || undefined);
     
     try {
-      // 1. Atualizar status do booking
+      // 1. Atualizar status do booking (com desconto se aplicável)
       setStatusMutation.mutate({ 
         bookingId: bookingToComplete.id, 
         status: 'completed', 
         paymentMethod: splitMode ? undefined : (selectedPaymentMethod || undefined),
         paymentMethods: splitMode ? paymentSplits : undefined,
         productsPurchased: checkoutCart.length > 0,
+        discountPct: discountEnabled ? discountPctValue : undefined,
       });
       
       // 2. Se há produtos no carrinho, criar a venda
@@ -1190,6 +1211,8 @@ export default function AgendaPage() {
           setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
           setCheckoutCart([]);
           setShowProductsSection(false);
+          setDiscountEnabled(false);
+          setDiscountPct('');
         }
       }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
@@ -1310,6 +1333,38 @@ export default function AgendaPage() {
               )}
             </div>
 
+            {/* Seção de Desconto */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-medium">Aplicar Desconto</span>
+                </div>
+                <Switch
+                  checked={discountEnabled}
+                  onCheckedChange={(checked) => {
+                    setDiscountEnabled(checked);
+                    if (!checked) setDiscountPct('');
+                  }}
+                />
+              </div>
+              {discountEnabled && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ex: 10"
+                    value={discountPct}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9,]/g, '');
+                      setDiscountPct(raw);
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              )}
+            </div>
+
             {/* Seção de Produtos */}
             {availableProducts.length > 0 && (
               <div className="border-t pt-4">
@@ -1414,6 +1469,8 @@ export default function AgendaPage() {
                 setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
                 setCheckoutCart([]);
                 setShowProductsSection(false);
+                setDiscountEnabled(false);
+                setDiscountPct('');
               }}
             >
               Voltar
