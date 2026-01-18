@@ -101,12 +101,18 @@ export default function BookingPage() {
     }
   }, [clearBooking, rememberedCustomer]);
 
+  // Carregar serviços quando barbeiro for selecionado (para obter preços específicos do barbeiro)
   useEffect(() => {
+    if (!bookingState.barberId) {
+      setServices([]);
+      return;
+    }
+    const barberId = bookingState.barberId;
     let cancelled = false;
     void (async () => {
       setLoadingServices(true);
       try {
-        const data = await api.services();
+        const data = await api.services(barberId);
         if (cancelled) return;
         const items = (data.items ?? []).filter((s) => typeof s?.id === 'string' && typeof s?.label === 'string');
         setServices(items);
@@ -119,7 +125,7 @@ export default function BookingPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bookingState.barberId]);
 
   // Carregar slots quando barbeiro e data são selecionados
   const loadAvailableSlots = useCallback(async () => {

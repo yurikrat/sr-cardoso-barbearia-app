@@ -1005,7 +1005,8 @@ export const api = {
     },
   },
 
-  async services() {
+  async services(barberId?: string) {
+    const qs = barberId ? `?barberId=${encodeURIComponent(barberId)}` : '';
     return apiFetch<{
       items: Array<{
         id: string;
@@ -1014,7 +1015,7 @@ export const api = {
         popularLast90DaysCount?: number;
         isMostPopular?: boolean;
       }>;
-    }>(`/api/services`);
+    }>(`/api/services${qs}`);
   },
 
   async getBranding() {

@@ -41,10 +41,16 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
     }
   });
 
-  app.get('/api/services', async (_req, res) => {
+  app.get('/api/services', async (req, res) => {
     try {
       const config = await getFinanceConfig(db);
       const popularity = await computeServicesPopularityLast90Days(db, config);
+
+      // Suporte a preços específicos por barbeiro
+      const barberId = typeof req.query.barberId === 'string' ? req.query.barberId : null;
+      const barberPrices = barberId && config.barberServicePrices?.[barberId]
+        ? new Map(config.barberServicePrices[barberId].map(p => [p.serviceId, p.priceCents]))
+        : null;
 
       const items = config.services
         .filter((s) => s.active)
@@ -55,7 +61,7 @@ export function registerPublicRoutes(app: express.Express, deps: PublicRouteDeps
         .map((s) => ({
           id: s.id,
           label: s.label,
-          priceCents: s.priceCents,
+          priceCents: barberPrices?.get(s.id) ?? s.priceCents,
           popularLast90DaysCount: popularity.countsByServiceType[s.id] ?? 0,
           isMostPopular: popularity.winnerServiceId ? s.id === popularity.winnerServiceId : false,
         }));
