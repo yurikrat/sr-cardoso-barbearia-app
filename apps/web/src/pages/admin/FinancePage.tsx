@@ -1518,13 +1518,13 @@ export default function FinancePage() {
                                             inputMode="decimal"
                                             className={`pl-8 h-9 text-sm text-right ${hasOverride ? 'border-primary' : ''}`}
                                             placeholder={(service.priceCents / 100).toFixed(2).replace('.', ',')}
-                                            value={hasOverride ? (override.priceCents / 100).toFixed(2).replace('.', ',') : ''}
-                                            onChange={(e) => {
-                                              // Aceita apenas números e vírgula/ponto
+                                            defaultValue={hasOverride ? (override.priceCents / 100).toFixed(2).replace('.', ',') : ''}
+                                            key={`${service.id}-${hasOverride ? override.priceCents : 'empty'}`}
+                                            onBlur={(e) => {
                                               const raw = e.target.value.replace(/[^\d,.]/g, '').replace(',', '.');
                                               const newOverrides = { ...configDraft.barberServicePrices };
                                               
-                                              if (!raw || raw === '') {
+                                              if (!raw || raw === '' || parseFloat(raw) === 0) {
                                                 // Remove override
                                                 const filtered = (newOverrides[barber.id] ?? []).filter(o => o.serviceId !== service.id);
                                                 if (filtered.length > 0) {
