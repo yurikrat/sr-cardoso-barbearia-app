@@ -322,20 +322,8 @@ export default function BookingPage() {
     },
   });
 
-  const handleServiceSelect = (service: string) => {
-    bookingState.setBarberId(null);
-    bookingState.setSelectedDate(null);
-    bookingState.setSelectedSlot(null);
-    setSelectedDate(undefined);
-    setAvailableSlots([]);
-    setBookedSlots(new Set());
-    setBlockedSlots(new Set());
-    setBlockReasons({});
-    bookingState.setServiceType(service);
-    setStep(2);
-  };
-
   const handleBarberSelect = (barberId: string) => {
+    bookingState.setServiceType(null);
     bookingState.setSelectedDate(null);
     bookingState.setSelectedSlot(null);
     setSelectedDate(undefined);
@@ -344,6 +332,18 @@ export default function BookingPage() {
     setBlockedSlots(new Set());
     setBlockReasons({});
     bookingState.setBarberId(barberId);
+    setStep(2);
+  };
+
+  const handleServiceSelect = (service: string) => {
+    bookingState.setSelectedDate(null);
+    bookingState.setSelectedSlot(null);
+    setSelectedDate(undefined);
+    setAvailableSlots([]);
+    setBookedSlots(new Set());
+    setBlockedSlots(new Set());
+    setBlockReasons({});
+    bookingState.setServiceType(service);
     setStep(3);
   };
 
@@ -513,8 +513,27 @@ export default function BookingPage() {
           />
         </div>
 
-        {/* Step 1: Serviço */}
+        {/* Step 1: Barbeiro */}
         {step === 1 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Escolha o barbeiro</h2>
+            <div className="space-y-3">
+              {BARBERS.map((barber) => (
+                <BarberCard
+                  key={barber.id}
+                  id={barber.id}
+                  name={barber.name}
+                  image={barber.image}
+                  selected={bookingState.barberId === barber.id}
+                  onClick={() => handleBarberSelect(barber.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Serviço */}
+        {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Escolha o serviço</h2>
             <div className="space-y-3">
@@ -542,25 +561,6 @@ export default function BookingPage() {
                   />
                 ))
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Barbeiro */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Escolha o barbeiro</h2>
-            <div className="space-y-3">
-              {BARBERS.map((barber) => (
-                <BarberCard
-                  key={barber.id}
-                  id={barber.id}
-                  name={barber.name}
-                  image={barber.image}
-                  selected={bookingState.barberId === barber.id}
-                  onClick={() => handleBarberSelect(barber.id)}
-                />
-              ))}
             </div>
           </div>
         )}

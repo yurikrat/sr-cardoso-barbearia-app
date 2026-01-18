@@ -207,6 +207,37 @@ async function addToQueue(
 }
 
 /**
+ * Adiciona mensagem genérica à fila para retry (sem booking)
+ */
+async function addGenericToQueue(
+  db: Firestore,
+  customerId: string,
+  messageType: MessageType,
+  messageText: string,
+  phoneE164: string
+): Promise<string> {
+  const queueRef = db.collection(MESSAGE_QUEUE_COLLECTION).doc();
+  const queueItem: Omit<WhatsAppMessageQueue, 'id'> = {
+    bookingId: `${messageType}_${customerId}`,
+    customerId,
+    phoneE164,
+    messageType,
+    messageText,
+    status: 'pending',
+    attempts: 0,
+    maxAttempts: 3,
+    createdAt: new Date(),
+  };
+  
+  await queueRef.set({
+    ...queueItem,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  
+  return queueRef.id;
+}
+
+/**
  * Tenta enviar mensagem via Evolution API
  */
 async function sendWhatsAppMessage(
@@ -364,6 +395,17 @@ export async function processMessageQueue(
         attempts: FieldValue.increment(1),
         lastAttemptAt: FieldValue.serverTimestamp(),
       });
+      
+      // Se for mensagem de aniversário, atualiza lastBirthdaySentYear
+      if (item.messageType === 'birthday' && item.customerId) {
+        const now = DateTime.now().setZone('America/Sao_Paulo');
+        await db.doc(`customers/${item.customerId}`).update({
+          'stats.lastBirthdaySentYear': now.year,
+          'stats.lastContactAt': FieldValue.serverTimestamp(),
+        });
+        console.log(`[Queue] ✓ Birthday enviado via retry para ${item.customerId}`);
+      }
+      
       sent++;
     } else {
       const newAttempts = (item.attempts || 0) + 1;
@@ -512,7 +554,7 @@ export async function sendBirthdayMessage(
   env: Env,
   customer: { id: string; firstName: string; whatsappE164: string },
   baseUrl: string
-): Promise<{ sent: boolean; error?: string }> {
+): Promise<{ sent: boolean; queued?: boolean; error?: string }> {
   const settings = await getNotificationSettings(db);
   
   if (!settings.birthdayEnabled) {
@@ -533,7 +575,15 @@ export async function sendBirthdayMessage(
     return { sent: true };
   }
   
-  return { sent: false, error: result.error };
+  // Falhou - adiciona à fila de retry
+  try {
+    await addGenericToQueue(db, customer.id, 'birthday', message, customer.whatsappE164);
+    console.log(`[Birthday] Mensagem para ${customer.firstName} adicionada à fila de retry`);
+    return { sent: false, queued: true, error: result.error };
+  } catch (queueError) {
+    console.error(`[Birthday] Falha ao adicionar à fila:`, queueError);
+    return { sent: false, queued: false, error: result.error };
+  }
 }
 
 /**
@@ -866,18 +916,25 @@ export async function getBirthdayCustomersGroupedByBarber(
     }
     
     // Busca o último agendamento completado deste cliente para determinar o barbeiro
-    const lastBookingSnap = await db
+    // Usa query sem índice composto (filtra em memória)
+    const bookingsSnap = await db
       .collection('bookings')
       .where('customerId', '==', customerDoc.id)
-      .where('status', '==', 'completed')
-      .orderBy('completedAt', 'desc')
-      .limit(1)
       .get();
     
     let barberId = 'sr-cardoso'; // Default: Sr. Cardoso recebe todos sem histórico
     
-    if (!lastBookingSnap.empty) {
-      barberId = lastBookingSnap.docs[0].data().barberId || 'sr-cardoso';
+    // Filtra completed e pega o mais recente por completedAt
+    const completedBookings = bookingsSnap.docs
+      .filter(doc => doc.data().status === 'completed' && doc.data().completedAt)
+      .sort((a, b) => {
+        const aTime = a.data().completedAt?.toMillis?.() || a.data().completedAt?.seconds * 1000 || 0;
+        const bTime = b.data().completedAt?.toMillis?.() || b.data().completedAt?.seconds * 1000 || 0;
+        return bTime - aTime; // desc
+      });
+    
+    if (completedBookings.length > 0) {
+      barberId = completedBookings[0].data().barberId || 'sr-cardoso';
     }
     
     const existing = barberCustomers.get(barberId) || [];
