@@ -1473,20 +1473,23 @@ export default function FinancePage() {
                         </div>
                       </div>
 
-                      {/* Preços específicos por barbeiro */}
+                      {/* Preços específicos do Sr. Cardoso */}
                       <div className="space-y-4 pt-4 border-t">
                         <div>
-                          <h3 className="text-lg font-medium">Preços por Barbeiro</h3>
+                          <h3 className="text-lg font-medium">Preços do Sr. Cardoso</h3>
                           <p className="text-sm text-muted-foreground">
-                            Defina preços diferentes para cada barbeiro. Se não definido, usa o preço padrão do serviço.
+                            Defina preços diferenciados para o Sr. Cardoso. Os demais barbeiros usam o preço padrão.
                           </p>
                         </div>
 
-                        {barbers.map((barber) => {
+                        {(() => {
+                          const barber = barbers.find(b => b.id === 'sr-cardoso');
+                          if (!barber) return <p className="text-sm text-muted-foreground">Barbeiro Sr. Cardoso não encontrado.</p>;
+                          
                           const barberOverrides = configDraft.barberServicePrices?.[barber.id] ?? [];
                           
                           return (
-                            <div key={barber.id} className="p-4 rounded-lg border bg-background/50 space-y-3">
+                            <div className="p-4 rounded-lg border bg-background/50 space-y-3">
                               <div className="flex items-center justify-between">
                                 <h4 className="font-medium flex items-center gap-2">
                                   <User className="h-4 w-4" />
@@ -1498,7 +1501,6 @@ export default function FinancePage() {
                                 {configDraft.services.filter(s => s.active).map((service) => {
                                   const override = barberOverrides.find(o => o.serviceId === service.id);
                                   const hasOverride = override !== undefined;
-                                  const currentPrice = hasOverride ? override.priceCents : service.priceCents;
                                   
                                   return (
                                     <div key={service.id} className="flex items-center gap-3 p-2 rounded border-dashed border">
@@ -1509,20 +1511,20 @@ export default function FinancePage() {
                                         </span>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        <div className="relative w-24">
-                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
+                                        <div className="relative w-28">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
                                           <Input
-                                            type="number"
+                                            type="text"
                                             inputMode="decimal"
-                                            step="0.01"
-                                            className={`pl-7 h-8 text-sm ${hasOverride ? 'border-primary' : ''}`}
-                                            placeholder={(service.priceCents / 100).toFixed(2)}
-                                            value={hasOverride ? (currentPrice / 100).toFixed(2) : ''}
+                                            className={`pl-8 h-9 text-sm text-right ${hasOverride ? 'border-primary' : ''}`}
+                                            placeholder={(service.priceCents / 100).toFixed(2).replace('.', ',')}
+                                            value={hasOverride ? (override.priceCents / 100).toFixed(2).replace('.', ',') : ''}
                                             onChange={(e) => {
-                                              const v = e.target.value;
+                                              // Aceita apenas números e vírgula/ponto
+                                              const raw = e.target.value.replace(/[^\d,.]/g, '').replace(',', '.');
                                               const newOverrides = { ...configDraft.barberServicePrices };
                                               
-                                              if (!v || v === '') {
+                                              if (!raw || raw === '') {
                                                 // Remove override
                                                 const filtered = (newOverrides[barber.id] ?? []).filter(o => o.serviceId !== service.id);
                                                 if (filtered.length > 0) {
@@ -1531,7 +1533,9 @@ export default function FinancePage() {
                                                   delete newOverrides[barber.id];
                                                 }
                                               } else {
-                                                const priceCents = Math.max(0, Math.round(Number(v) * 100));
+                                                const priceCents = Math.max(0, Math.round(parseFloat(raw) * 100));
+                                                if (isNaN(priceCents)) return;
+                                                
                                                 const existingOverrides = newOverrides[barber.id] ?? [];
                                                 const existing = existingOverrides.find(o => o.serviceId === service.id);
                                                 
@@ -1554,6 +1558,7 @@ export default function FinancePage() {
                                             variant="ghost"
                                             size="icon"
                                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                            title="Remover preço diferenciado"
                                             onClick={() => {
                                               const newOverrides = { ...configDraft.barberServicePrices };
                                               const filtered = (newOverrides[barber.id] ?? []).filter(o => o.serviceId !== service.id);
@@ -1575,7 +1580,7 @@ export default function FinancePage() {
                               </div>
                             </div>
                           );
-                        })}
+                        })()}
                       </div>
 
                       <div className="flex gap-2 justify-end pt-4">
