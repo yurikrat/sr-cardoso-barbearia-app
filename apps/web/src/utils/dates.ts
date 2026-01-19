@@ -139,11 +139,24 @@ export function applyBirthDateMask(value: string): string {
  */
 export function birthDateToISO(maskedDate: string): string {
   const digits = maskedDate.replace(/\D/g, '');
-  if (digits.length !== 8) return '';
   
-  const day = digits.slice(0, 2);
-  const month = digits.slice(2, 4);
-  const year = digits.slice(4, 8);
+  let day: string, month: string, year: string;
+  
+  if (digits.length === 8) {
+    // Formato DD/MM/YYYY
+    day = digits.slice(0, 2);
+    month = digits.slice(2, 4);
+    year = digits.slice(4, 8);
+  } else if (digits.length === 6) {
+    // Formato DD/MM/YY - converte para 4 dígitos
+    day = digits.slice(0, 2);
+    month = digits.slice(2, 4);
+    const shortYear = parseInt(digits.slice(4, 6), 10);
+    // Anos 00-29 são 2000-2029, anos 30-99 são 1930-1999
+    year = shortYear <= 29 ? `20${digits.slice(4, 6)}` : `19${digits.slice(4, 6)}`;
+  } else {
+    return '';
+  }
   
   // Validação básica
   const d = parseInt(day, 10);
