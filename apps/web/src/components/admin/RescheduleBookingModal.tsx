@@ -11,7 +11,11 @@ import { ADMIN_TIME_SLOTS } from '@/utils/constants';
 interface RescheduleBookingModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  booking: any; // Type 'Booking' from shared if possible
+  booking: {
+    id: string;
+    slotStart: Date;
+    customer: { firstName: string; lastName: string };
+  } | null;
   onSuccess?: () => void;
 }
 
@@ -61,9 +65,9 @@ export function RescheduleBookingModal({
 
       if (onSuccess) onSuccess();
       onOpenChange(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error rescheduling:', err);
-      const msg = err.message || 'Erro ao reagendar.';
+      const msg = err instanceof Error ? err.message : 'Erro ao reagendar.';
       toast({
         title: 'Erro ao reagendar',
         description: msg,
