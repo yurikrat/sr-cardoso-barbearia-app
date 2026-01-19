@@ -10,5 +10,20 @@ dist
 .env*
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 .DS_Store
+
+# Extended development files
+.cursor
+.github
+.codex
+docs
+skills-packages
+scripts
+firebase
+documento.md
+CONTEXTO.md
+README.md
+*.md
+!packages/shared/src
+!apps/server/src
+!apps/web/src

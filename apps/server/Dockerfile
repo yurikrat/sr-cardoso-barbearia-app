@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/app/.npm \
 # Stage 2: Build Shared
 FROM base AS build-shared
 COPY packages/shared ./packages/shared
-RUN npm run build --workspace=packages/shared
+RUN npx tsc -b packages/shared/tsconfig.json
 
 # Stage 3: Build Web (Parallel)
 FROM build-shared AS build-web
@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/app/apps/web/node_modules/.vite \
 # Stage 4: Build Server (Parallel)
 FROM build-shared AS build-server
 COPY apps/server ./apps/server
-RUN npm run build --workspace=apps/server
+RUN npx tsc -b apps/server/tsconfig.json
 
 # Stage 5: Final Image
 FROM node:20-bookworm-slim

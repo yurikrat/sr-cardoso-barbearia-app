@@ -9,12 +9,13 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { BlockSlotsModal } from '@/components/admin/BlockSlotsModal';
 import { CreateBookingModal } from '@/components/admin/CreateBookingModal';
 import { SaleModal } from '@/components/admin/SaleModal';
+import { RescheduleBookingModal } from '@/components/admin/RescheduleBookingModal';
 import { formatTime } from '@/utils/dates';
 import { DateTime } from 'luxon';
 import { useToast } from '@/components/ui/use-toast';
 import { adminCancelBookingFn } from '@/lib/api-compat';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock, Package, Minus, ShoppingCart } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, LayoutGrid, Columns, List, Plus, Lock, Unlock, Package, Minus, ShoppingCart, Search } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useSearchParams } from 'react-router-dom';
 import { SERVICE_LABELS, ADMIN_TIME_SLOTS } from '@/utils/constants';
@@ -150,6 +151,7 @@ export default function AgendaPage() {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [createBookingModalOpen, setCreateBookingModalOpen] = useState(false);
   const [saleModalOpen, setSaleModalOpen] = useState(false);
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [nowTick, setNowTick] = useState(0);
   // Estado para modal de forma de pagamento
@@ -170,6 +172,7 @@ export default function AgendaPage() {
   // Estados para produtos no checkout
   const [checkoutCart, setCheckoutCart] = useState<Array<{ productId: string; quantity: number }>>([]);
   const [showProductsSection, setShowProductsSection] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
 
   const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -183,8 +186,16 @@ export default function AgendaPage() {
   const availableProducts = useMemo((): CheckoutProduct[] => {
     if (!productsData) return [];
     // Filtrar produtos com estoque > 0
-    return productsData.filter(p => p.stockQuantity > 0);
-  }, [productsData]);
+    let list = productsData.filter(p => p.stockQuantity > 0);
+    
+    // Filtro local por nome
+    if (productSearch.trim()) {
+      const search = productSearch.toLowerCase();
+      list = list.filter(p => p.name.toLowerCase().includes(search));
+    }
+    
+    return list;
+  }, [productsData, productSearch]);
 
   // Force re-render every minute to update "now" line
   useEffect(() => {
@@ -609,17 +620,8 @@ export default function AgendaPage() {
       : (selectedPaymentMethod || undefined);
     
     try {
-      // 1. Atualizar status do booking (com desconto se aplicável)
-      setStatusMutation.mutate({ 
-        bookingId: bookingToComplete.id, 
-        status: 'completed', 
-        paymentMethod: splitMode ? undefined : (selectedPaymentMethod || undefined),
-        paymentMethods: splitMode ? paymentSplits : undefined,
-        productsPurchased: checkoutCart.length > 0,
-        discountPct: discountEnabled ? discountPctValue : undefined,
-      });
-      
-      // 2. Se há produtos no carrinho, criar a venda
+      // 1. Se há produtos no carrinho, criar a venda PRIMEIRO
+      // Se a venda falhar (ex: sem estoque), o erro cai no catch e o booking não é concluído
       if (checkoutCart.length > 0 && bookingToComplete.barberId && primaryMethod) {
         const items = checkoutCart.map(item => {
           const product = availableProducts.find(p => p.id === item.productId);
@@ -640,6 +642,7 @@ export default function AgendaPage() {
           paymentMethod: primaryMethod,
           items,
           bookingId: bookingToComplete.id,
+          origin: 'booking', // Identifica que veio de um agendamento
         });
         
         toast({ 
@@ -647,16 +650,30 @@ export default function AgendaPage() {
           description: `${checkoutCart.length} produto(s) vendido(s).` 
         });
       }
+
+      // 2. Atualizar status do booking (com desconto se aplicável)
+      await setStatusMutation.mutateAsync({ 
+        bookingId: bookingToComplete.id, 
+        status: 'completed', 
+        paymentMethod: splitMode ? undefined : (selectedPaymentMethod || undefined),
+        paymentMethods: splitMode ? paymentSplits : undefined,
+        productsPurchased: checkoutCart.length > 0,
+        discountPct: discountEnabled ? discountPctValue : undefined,
+      });
+
+      // Fechar modal apenas se tudo deu certo
+      setPaymentModalOpen(false);
+      setBookingToComplete(null);
+      setSelectedPaymentMethod('');
+      setCheckoutCart([]);
+      setShowProductsSection(false);
+      setProductSearch('');
+      toast({ title: 'Sucesso', description: 'Atendimento concluído com sucesso.' });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Erro ao registrar venda.';
-      toast({ title: 'Erro', description: msg, variant: 'destructive' });
+      console.error('Erro ao concluir atendimento:', e);
+      const msg = e instanceof Error ? e.message : 'Erro ao processar o fechamento. Verifique estoque e conexão.';
+      toast({ title: 'Erro ao concluir', description: msg, variant: 'destructive' });
     }
-    
-    setPaymentModalOpen(false);
-    setBookingToComplete(null);
-    setSelectedPaymentMethod('');
-    setCheckoutCart([]);
-    setShowProductsSection(false);
   };
 
   const handleOpenWhatsApp = (booking: Booking) => {
@@ -1169,6 +1186,14 @@ export default function AgendaPage() {
               <div className="flex gap-2 flex-wrap">
                 <Button onClick={() => handleOpenWhatsApp(selectedBooking)} size="sm" disabled={!selectedBooking.customer.whatsappE164}>WhatsApp</Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status)}
+                  onClick={() => setRescheduleModalOpen(true)}
+                >
+                  Reagendar
+                </Button>
+                <Button
                   variant="secondary"
                   size="sm"
                   disabled={['cancelled', 'completed', 'no_show'].includes(selectedBooking.status) || setStatusMutation.isPending}
@@ -1211,6 +1236,7 @@ export default function AgendaPage() {
           setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
           setCheckoutCart([]);
           setShowProductsSection(false);
+          setProductSearch('');
           setDiscountEnabled(false);
           setDiscountPct('');
         }
@@ -1389,7 +1415,18 @@ export default function AgendaPage() {
                 </button>
 
                 {showProductsSection && (
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="search"
+                        placeholder="Buscar produto..."
+                        className="pl-9"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                      />
+                    </div>
+
                     <ScrollArea className="h-[200px] rounded-md border p-2">
                       <div className="space-y-2">
                         {availableProducts.map((product) => {
@@ -1469,6 +1506,7 @@ export default function AgendaPage() {
                 setPaymentSplitInputs({ credit: '', debit: '', cash: '', pix: '' });
                 setCheckoutCart([]);
                 setShowProductsSection(false);
+                setProductSearch('');
                 setDiscountEnabled(false);
                 setDiscountPct('');
               }}
@@ -1505,6 +1543,16 @@ export default function AgendaPage() {
         selectedBarber={selectedBarber}
         allowEncaixe
         onSuccess={() => loadBookings()}
+      />
+
+      <RescheduleBookingModal
+        open={rescheduleModalOpen}
+        onOpenChange={setRescheduleModalOpen}
+        booking={selectedBooking}
+        onSuccess={() => {
+          setSelectedBooking(null);
+          loadBookings();
+        }}
       />
       
       {/* Sale Modal */}

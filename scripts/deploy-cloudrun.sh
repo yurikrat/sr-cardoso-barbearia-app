@@ -134,19 +134,15 @@ gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet >/dev/null
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:${IMAGE_TAG}"
 CACHE_REF="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:buildcache"
 
-echo "== Preflight checks (lint + build) =="
+echo "== Preflight checks (lint) =="
 echo "== (web) lint =="
 npm -w apps/web run lint
 
-echo "== (web) build =="
-npm -w apps/web run build
+echo "== (server) lint =="
+# Se houver lint no server, rodar aqui. Se não, apenas pular para o docker build.
 
-echo "== (server) build =="
-npm -w apps/server run build
-
-echo "== Build do monorepo (web + server) =="
-# Observação: o Dockerfile também builda em multi-stage.
-# Os checks acima existem para falhar rápido e impedir deploy com repo quebrado.
+echo "== Build do monorepo (via Docker multi-stage) =="
+# Observação: Removemos build local redundante. O Dockerfile já builda tudo.
 
 echo "== Docker build (local) =="
 if ! docker buildx version >/dev/null 2>&1; then

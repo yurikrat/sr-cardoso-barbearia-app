@@ -12,6 +12,9 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
+  "references": [
+    { "path": "../../packages/shared" }
+  ],
   "include": ["src"]
 }
 

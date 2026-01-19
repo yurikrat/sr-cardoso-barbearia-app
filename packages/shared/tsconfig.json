@@ -4,6 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "declaration": true,
+    "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
