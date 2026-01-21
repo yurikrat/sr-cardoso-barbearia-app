@@ -299,20 +299,20 @@ export async function createSale(
   const finalCommissionCents = Math.round(commissionCents * commissionRatio);
   const sale: Sale = {
     id: saleRef.id,
-    customerId: data.customerId,
-    customerName: data.customerName,
     barberId: data.barberId,
-    barberName: data.barberName,
     items: saleItems,
     totalCents: finalTotalCents,
-    discountCents: discountCents > 0 ? discountCents : undefined,
     commissionCents: finalCommissionCents,
     paymentMethod: data.paymentMethod,
     origin: data.origin,
-    bookingId: data.bookingId,
     dateKey: getDateKey(now),
     createdAt: now.toJSDate(),
     completedAt: now.toJSDate(),
+    ...(data.customerId ? { customerId: data.customerId } : {}),
+    ...(data.customerName ? { customerName: data.customerName } : {}),
+    ...(data.barberName ? { barberName: data.barberName } : {}),
+    ...(data.bookingId ? { bookingId: data.bookingId } : {}),
+    ...(discountCents > 0 ? { discountCents } : {}),
   };
 
   const customerRef = data.customerId ? db.collection('customers').doc(data.customerId) : null;
