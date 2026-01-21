@@ -392,7 +392,10 @@ export async function listSales(
     productId?: string;
   }
 ): Promise<Sale[]> {
-  let query = db.collection(SALES_COLLECTION).orderBy('createdAt', 'desc');
+  const usesDateRange = Boolean(options?.dateKey || options?.startDate || options?.endDate);
+  let query = usesDateRange
+    ? db.collection(SALES_COLLECTION).orderBy('dateKey', 'desc')
+    : db.collection(SALES_COLLECTION).orderBy('createdAt', 'desc');
 
   if (options?.barberId) {
     query = query.where('barberId', '==', options.barberId) as any;
