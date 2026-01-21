@@ -3261,7 +3261,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       return res.status(201).json(sale);
     } catch (e: any) {
       console.error('Error creating sale:', e);
-      if (e.message?.includes('não encontrado') || e.message?.includes('inativo') || e.message?.includes('insuficiente')) {
+      if (e instanceof Error && e.message) {
         return res.status(400).json({ error: e.message });
       }
       return res.status(500).json({ error: 'Erro ao criar venda' });
