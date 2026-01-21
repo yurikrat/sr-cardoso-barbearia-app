@@ -451,15 +451,16 @@ export async function deleteSale(
   await db.runTransaction(async (transaction) => {
     const customerDoc = customerRef ? await transaction.get(customerRef) : null;
     const bookingDoc = bookingRef ? await transaction.get(bookingRef) : null;
-    // Remove a venda
-    const saleRef = db.collection(SALES_COLLECTION).doc(saleId);
-    transaction.delete(saleRef);
+    const productSnapshots = await Promise.all(
+      sale.items.map(async (item) => {
+        const productRef = db.collection(PRODUCTS_COLLECTION).doc(item.productId);
+        const productDoc = await transaction.get(productRef);
+        return { item, productRef, productDoc };
+      })
+    );
 
     // Reverte estoque de cada produto
-    for (const item of sale.items) {
-      const productRef = db.collection(PRODUCTS_COLLECTION).doc(item.productId);
-      const productDoc = await transaction.get(productRef);
-
+    for (const { item, productRef, productDoc } of productSnapshots) {
       if (productDoc.exists) {
         const productData = productDoc.data()!;
         const previousQuantity = productData.stockQuantity ?? 0;
@@ -504,6 +505,10 @@ export async function deleteSale(
         updatedAt: now.toJSDate(),
       });
     }
+
+    // Remove a venda
+    const saleRef = db.collection(SALES_COLLECTION).doc(saleId);
+    transaction.delete(saleRef);
   });
 }
 
