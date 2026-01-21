@@ -96,6 +96,7 @@ export const createSaleSchema = z.object({
     })
   ).min(1),
   paymentMethod: paymentMethodSchema,
+  discountCents: z.number().int().min(0).optional(),
   origin: saleOriginSchema.optional().default('standalone'),
   bookingId: z.string().optional(),
 });

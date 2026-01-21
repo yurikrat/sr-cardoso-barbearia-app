@@ -78,6 +78,7 @@ export interface Sale {
   barberName?: string;            // Snapshot para exibição
   items: SaleItem[];
   totalCents: number;             // Soma dos itens
+  discountCents?: number;         // Desconto aplicado na venda
   commissionCents: number;        // Total de comissão da venda
   paymentMethod: PaymentMethod;
   origin: SaleOrigin;             // 'standalone' ou 'booking'

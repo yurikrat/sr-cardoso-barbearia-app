@@ -5,6 +5,7 @@ import {
   Banknote,
   Smartphone,
   Receipt,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -96,6 +97,9 @@ export function SaleModal({
   const [products, setProducts] = useState<Product[]>(propProducts ?? []);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
+  const [productQuery, setProductQuery] = useState('');
+  const [discountEnabled, setDiscountEnabled] = useState(false);
+  const [discountInput, setDiscountInput] = useState('');
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleForm, setSaleForm] = useState({
@@ -114,14 +118,14 @@ export function SaleModal({
       setLoading(true);
       try {
         const results = await Promise.allSettled([
-          propBarbers ? Promise.resolve(null) : api.admin.listBarbers(),
+          api.admin.listBarbers(),
           propProducts ? Promise.resolve(null) : api.admin.listProducts({ activeOnly: true }),
           api.admin.listCustomers(200),
         ]);
 
         const [barbersResult, productsResult, customersResult] = results;
 
-        if (!propBarbers && barbersResult.status === 'fulfilled' && barbersResult.value) {
+        if (barbersResult.status === 'fulfilled' && barbersResult.value) {
           setBarbers(barbersResult.value.items?.map((b) => ({ id: b.id, name: b.name })) ?? []);
         }
 
@@ -169,6 +173,9 @@ export function SaleModal({
         paymentMethod: 'pix',
       });
       setCustomerQuery('');
+      setProductQuery('');
+      setDiscountEnabled(false);
+      setDiscountInput('');
     }
   }, [open, defaultBarberId, user]);
 
@@ -187,6 +194,17 @@ export function SaleModal({
     return cart.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
   }, [cart]);
 
+  const parseDiscountCents = (input: string) => {
+    const cleaned = input.replace(/\s/g, '').replace(/[^0-9,]/g, '').replace(',', '.');
+    if (!cleaned) return 0;
+    const value = Number.parseFloat(cleaned);
+    if (Number.isNaN(value) || value <= 0) return 0;
+    return Math.round(value * 100);
+  };
+
+  const discountCents = discountEnabled ? parseDiscountCents(discountInput) : 0;
+  const finalTotal = Math.max(0, cartTotal - discountCents);
+
   const filteredCustomers = useMemo(() => {
     if (!customerQuery.trim()) return customers;
     const q = customerQuery.toLowerCase();
@@ -194,6 +212,12 @@ export function SaleModal({
       c.name.toLowerCase().includes(q) || (c.whatsappE164 ?? '').toLowerCase().includes(q)
     );
   }, [customers, customerQuery]);
+
+  const filteredProducts = useMemo(() => {
+    if (!productQuery.trim()) return products;
+    const q = productQuery.toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(q));
+  }, [products, productQuery]);
 
   // Add product to cart
   const addToCart = (product: Product) => {
@@ -253,6 +277,7 @@ export function SaleModal({
           quantity: item.quantity,
         })),
         paymentMethod: saleForm.paymentMethod,
+        discountCents: discountCents > 0 ? discountCents : undefined,
         origin: 'standalone',
       });
       toast({ title: 'Sucesso', description: 'Venda registrada com sucesso!' });
@@ -306,6 +331,11 @@ export function SaleModal({
                     ))}
                   </SelectContent>
                 </Select>
+                {!isMaster && saleForm.barberId ? (
+                  <div className="text-xs text-muted-foreground">
+                    Barbeiro definido pela sua conta.
+                  </div>
+                ) : null}
               </div>
               <div className="grid gap-2">
                 <Label>Cliente (opcional)</Label>
@@ -361,13 +391,22 @@ export function SaleModal({
             {/* Products */}
             <div>
               <Label className="mb-2 block">Produtos disponíveis</Label>
+              <div className="mb-2 relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar produto..."
+                  value={productQuery}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                {products.length === 0 ? (
+                {filteredProducts.length === 0 ? (
                   <div className="col-span-full text-center py-4 text-muted-foreground">
-                    Nenhum produto cadastrado
+                    Nenhum produto encontrado
                   </div>
                 ) : (
-                  products.map((product) => (
+                  filteredProducts.map((product) => (
                     <Button
                       key={product.id}
                       variant="outline"
@@ -443,6 +482,35 @@ export function SaleModal({
               )}
             </div>
 
+            {/* Discount */}
+            <div>
+              <Label className="mb-2 block">Desconto</Label>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant={discountEnabled ? 'default' : 'outline'}
+                  onClick={() => setDiscountEnabled((prev) => !prev)}
+                >
+                  {discountEnabled ? 'Com desconto' : 'Aplicar desconto'}
+                </Button>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 10,00"
+                  className="w-32"
+                  value={discountInput}
+                  onChange={(e) => setDiscountInput(e.target.value)}
+                  disabled={!discountEnabled}
+                />
+                <span className="text-sm text-muted-foreground">R$</span>
+              </div>
+              {discountEnabled && discountCents > cartTotal && (
+                <div className="text-xs text-destructive mt-1">
+                  Desconto não pode ser maior que o total.
+                </div>
+              )}
+            </div>
+
             {/* Payment Method */}
             <div>
               <Label className="mb-2 block">Forma de pagamento</Label>
@@ -467,13 +535,13 @@ export function SaleModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleCreateSale} disabled={saving || cart.length === 0 || loading}>
+          <Button onClick={handleCreateSale} disabled={saving || cart.length === 0 || loading || (discountEnabled && discountCents > cartTotal)}>
             {saving ? (
               <LoadingSpinner />
             ) : (
               <>
                 <Receipt className="h-4 w-4 mr-2" />
-                Finalizar Venda ({formatMoney(cartTotal)})
+                Finalizar Venda ({formatMoney(finalTotal)})
               </>
             )}
           </Button>

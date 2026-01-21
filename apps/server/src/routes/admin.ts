@@ -3241,6 +3241,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           paymentMethod: parsed.data.paymentMethod,
           origin: parsed.data.origin ?? 'standalone',
           bookingId: parsed.data.bookingId,
+          discountCents: parsed.data.discountCents,
         },
         admin.username
       );

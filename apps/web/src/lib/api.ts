@@ -891,6 +891,7 @@ export const api = {
       barberId: string;
       items: Array<{ productId: string; quantity: number }>;
       paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+      discountCents?: number;
       origin?: 'standalone' | 'booking';
       bookingId?: string;
     }) {

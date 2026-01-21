@@ -254,6 +254,7 @@ export async function createSale(
     paymentMethod: Sale['paymentMethod'];
     origin: Sale['origin'];
     bookingId?: string;
+    discountCents?: number;
   },
   createdBy: string
 ): Promise<Sale> {
@@ -292,6 +293,10 @@ export async function createSale(
   }
 
   const saleRef = db.collection(SALES_COLLECTION).doc();
+  const discountCents = Math.max(0, data.discountCents ?? 0);
+  const finalTotalCents = Math.max(0, totalCents - discountCents);
+  const commissionRatio = totalCents > 0 ? finalTotalCents / totalCents : 0;
+  const finalCommissionCents = Math.round(commissionCents * commissionRatio);
   const sale: Sale = {
     id: saleRef.id,
     customerId: data.customerId,
@@ -299,8 +304,9 @@ export async function createSale(
     barberId: data.barberId,
     barberName: data.barberName,
     items: saleItems,
-    totalCents,
-    commissionCents,
+    totalCents: finalTotalCents,
+    discountCents: discountCents > 0 ? discountCents : undefined,
+    commissionCents: finalCommissionCents,
     paymentMethod: data.paymentMethod,
     origin: data.origin,
     bookingId: data.bookingId,
