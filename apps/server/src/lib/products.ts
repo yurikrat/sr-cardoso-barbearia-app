@@ -322,12 +322,16 @@ export async function createSale(
   await db.runTransaction(async (transaction) => {
     const customerDoc = customerRef ? await transaction.get(customerRef) : null;
     const bookingDoc = bookingRef ? await transaction.get(bookingRef) : null;
-    transaction.set(saleRef, sale);
+    const productSnapshots = await Promise.all(
+      saleItems.map(async (item) => {
+        const productRef = db.collection(PRODUCTS_COLLECTION).doc(item.productId);
+        const productDoc = await transaction.get(productRef);
+        return { item, productRef, productDoc };
+      })
+    );
 
     // Atualiza estoque de cada produto
-    for (const item of saleItems) {
-      const productRef = db.collection(PRODUCTS_COLLECTION).doc(item.productId);
-      const productDoc = await transaction.get(productRef);
+    for (const { item, productRef, productDoc } of productSnapshots) {
       const productData = productDoc.data()!;
       const previousQuantity = productData.stockQuantity ?? 0;
       const newQuantity = Math.max(0, previousQuantity - item.quantity);
@@ -370,6 +374,8 @@ export async function createSale(
         updatedAt: now.toJSDate(),
       });
     }
+
+    transaction.set(saleRef, sale);
   });
 
   return sale;
@@ -507,6 +513,7 @@ function docToSale(id: string, data: FirebaseFirestore.DocumentData): Sale {
     barberName: data.barberName,
     items: data.items ?? [],
     totalCents: data.totalCents ?? 0,
+    discountCents: data.discountCents,
     commissionCents: data.commissionCents ?? 0,
     paymentMethod: data.paymentMethod ?? 'cash',
     origin: data.origin ?? 'standalone',
