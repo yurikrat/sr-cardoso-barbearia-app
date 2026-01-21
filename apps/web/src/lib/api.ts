@@ -817,6 +817,7 @@ export const api = {
 
     async listSales(options?: {
       barberId?: string;
+      customerId?: string;
       dateKey?: string;
       startDate?: string;
       endDate?: string;
@@ -825,6 +826,7 @@ export const api = {
     }) {
       const params = new URLSearchParams();
       if (options?.barberId) params.set('barberId', options.barberId);
+      if (options?.customerId) params.set('customerId', options.customerId);
       if (options?.dateKey) params.set('dateKey', options.dateKey);
       if (options?.startDate) params.set('startDate', options.startDate);
       if (options?.endDate) params.set('endDate', options.endDate);
@@ -845,6 +847,7 @@ export const api = {
           commissionPct: number;
         }>;
         totalCents: number;
+        discountCents?: number;
         commissionCents: number;
         paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
         origin: 'standalone' | 'booking';
@@ -876,6 +879,7 @@ export const api = {
           unitPriceCents: number;
         }>;
         totalCents: number;
+        discountCents?: number;
         commissionCents: number;
         paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
         origin: 'standalone' | 'booking';

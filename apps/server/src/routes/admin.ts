@@ -3181,13 +3181,14 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           : typeof req.query.barberId === 'string'
           ? req.query.barberId
           : undefined;
+      const customerId = typeof req.query.customerId === 'string' ? req.query.customerId : undefined;
       const dateKey = typeof req.query.dateKey === 'string' ? req.query.dateKey : undefined;
       const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
       const origin = req.query.origin === 'standalone' || req.query.origin === 'booking' ? req.query.origin : undefined;
       const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
 
-      const sales = await listSales(db, { barberId, dateKey, startDate, endDate, origin, productId });
+      const sales = await listSales(db, { barberId, customerId, dateKey, startDate, endDate, origin, productId });
       return res.json(sales);
     } catch (e: any) {
       console.error('Error listing sales:', e);

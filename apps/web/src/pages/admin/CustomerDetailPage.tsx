@@ -21,7 +21,8 @@ import {
   Tag, 
   FileText,
   Scissors,
-  Edit2
+  Edit2,
+  ShoppingBag
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useAdminAutoRefreshToken } from '@/contexts/AdminAutoRefreshContext';
@@ -42,6 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type FirestoreTimestampLike = { toDate: () => Date };
 
@@ -67,6 +69,41 @@ type Booking = {
   status?: string;
   customer?: { firstName?: string; lastName?: string; whatsappE164?: string };
 };
+
+type Sale = {
+  id: string;
+  customerId?: string;
+  customerName?: string;
+  barberId: string;
+  barberName?: string;
+  items: Array<{ productId: string; productName: string; quantity: number; unitPriceCents: number }>;
+  totalCents: number;
+  discountCents?: number;
+  commissionCents: number;
+  paymentMethod: 'credit' | 'debit' | 'cash' | 'pix';
+  origin: 'standalone' | 'booking';
+  dateKey: string;
+  createdAt: string;
+};
+
+function formatMoney(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatPaymentMethod(method: Sale['paymentMethod']) {
+  switch (method) {
+    case 'credit':
+      return 'Crédito';
+    case 'debit':
+      return 'Débito';
+    case 'cash':
+      return 'Dinheiro';
+    case 'pix':
+      return 'Pix';
+    default:
+      return method;
+  }
+}
 
 function formatServiceLabel(serviceType: string | undefined) {
   if (!serviceType) return '—';
@@ -141,6 +178,8 @@ export default function CustomerDetailPage() {
   const [loading, setLoading] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
   const [barbers, setBarbers] = useState<Array<{ id: string; name: string }>>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editFirstName, setEditFirstName] = useState('');
@@ -149,6 +188,7 @@ export default function CustomerDetailPage() {
   const [editBirthdayDay, setEditBirthdayDay] = useState('');
   const [editBirthdayMonth, setEditBirthdayMonth] = useState('');
   const [saving, setSaving] = useState(false);
+  const [historyTab, setHistoryTab] = useState<'services' | 'products'>('services');
 
   const barberNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -161,14 +201,17 @@ export default function CustomerDetailPage() {
     setLoading(true);
     void (async () => {
       try {
-        const [customerRes, bookingsRes, barbersRes] = await Promise.all([
+        setLoadingSales(true);
+        const [customerRes, bookingsRes, barbersRes, salesRes] = await Promise.all([
           api.admin.getCustomer(customerId),
           api.admin.listCustomerBookings(customerId, 50),
           api.admin.listBarbers(),
+          api.admin.listSales({ customerId }),
         ]);
         setCustomer(customerRes.item as Customer);
         setBookings((bookingsRes.items ?? []) as Booking[]);
         setBarbers((barbersRes.items ?? []).map((b) => ({ id: b.id, name: b.name })));
+        setSales((salesRes ?? []) as Sale[]);
       } catch (error) {
         console.error('Error loading customer detail:', error);
         toast({
@@ -176,8 +219,10 @@ export default function CustomerDetailPage() {
           description: 'Não foi possível carregar o cliente.',
           variant: 'destructive',
         });
+        setSales([]);
       } finally {
         setLoading(false);
+        setLoadingSales(false);
       }
     })();
   }, [customerId, toast, refreshToken]);
@@ -382,65 +427,141 @@ export default function CustomerDetailPage() {
                 </Card>
               </div>
 
-              {/* History Table */}
+              {/* History Tabs */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5" />
-                    Histórico de Agendamentos
+                    Histórico do Cliente
                   </CardTitle>
                   <CardDescription>
-                    Últimos 50 agendamentos registrados.
+                    Filtre por serviços ou produtos vendidos.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="rounded-md border">
-                    <div className="relative w-full overflow-auto">
-                      <table className="w-full caption-bottom text-sm">
-                        <thead className="[&_tr]:border-b">
-                          <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Data/Hora</th>
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Serviço</th>
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Profissional</th>
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="[&_tr:last-child]:border-0">
-                          {bookings.length === 0 ? (
-                            <tr>
-                              <td colSpan={4} className="p-4 text-center text-muted-foreground">
-                                Nenhum histórico encontrado.
-                              </td>
-                            </tr>
-                          ) : (
-                            bookings.map((b) => {
-                              const dt = b.slotStart ? DateTime.fromISO(b.slotStart, { zone: 'America/Sao_Paulo' }) : null;
-                              const when = dt && dt.isValid ? dt.toFormat('dd/LL/yyyy HH:mm') : '—';
-                              const barberName = b.barberId ? barberNameById.get(b.barberId) || b.barberId : '—';
-                              
-                              return (
-                                <tr key={b.id} className="border-b transition-colors hover:bg-muted/50">
-                                  <td className="p-4 align-middle font-medium">{when}</td>
-                                  <td className="p-4 align-middle">
-                                    <div className="flex items-center gap-2">
-                                      <Scissors className="h-3 w-3 text-muted-foreground" />
-                                      {formatServiceLabel(b.serviceType)}
-                                    </div>
-                                  </td>
-                                  <td className="p-4 align-middle">{barberName}</td>
-                                  <td className="p-4 align-middle">
-                                    <Badge variant={getStatusBadgeVariant(b.status)}>
-                                      {formatStatusLabel(b.status)}
-                                    </Badge>
+                  <Tabs value={historyTab} onValueChange={(v) => setHistoryTab(v as 'services' | 'products')}>
+                    <TabsList>
+                      <TabsTrigger value="services">Serviços</TabsTrigger>
+                      <TabsTrigger value="products">Produtos</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="services" className="mt-4">
+                      <div className="rounded-md border">
+                        <div className="relative w-full overflow-auto">
+                          <table className="w-full caption-bottom text-sm">
+                            <thead className="[&_tr]:border-b">
+                              <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Data/Hora</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Serviço</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Profissional</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="[&_tr:last-child]:border-0">
+                              {bookings.length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="p-4 text-center text-muted-foreground">
+                                    Nenhum histórico encontrado.
                                   </td>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                              ) : (
+                                bookings.map((b) => {
+                                  const dt = b.slotStart ? DateTime.fromISO(b.slotStart, { zone: 'America/Sao_Paulo' }) : null;
+                                  const when = dt && dt.isValid ? dt.toFormat('dd/LL/yyyy HH:mm') : '—';
+                                  const barberName = b.barberId ? barberNameById.get(b.barberId) || b.barberId : '—';
+                                  
+                                  return (
+                                    <tr key={b.id} className="border-b transition-colors hover:bg-muted/50">
+                                      <td className="p-4 align-middle font-medium">{when}</td>
+                                      <td className="p-4 align-middle">
+                                        <div className="flex items-center gap-2">
+                                          <Scissors className="h-3 w-3 text-muted-foreground" />
+                                          {formatServiceLabel(b.serviceType)}
+                                        </div>
+                                      </td>
+                                      <td className="p-4 align-middle">{barberName}</td>
+                                      <td className="p-4 align-middle">
+                                        <Badge variant={getStatusBadgeVariant(b.status)}>
+                                          {formatStatusLabel(b.status)}
+                                        </Badge>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="products" className="mt-4">
+                      <div className="rounded-md border">
+                        <div className="relative w-full overflow-auto">
+                          <table className="w-full caption-bottom text-sm">
+                            <thead className="[&_tr]:border-b">
+                              <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Data/Hora</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Produtos</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Pagamento</th>
+                                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Profissional</th>
+                                <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="[&_tr:last-child]:border-0">
+                              {loadingSales ? (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                                    Carregando vendas...
+                                  </td>
+                                </tr>
+                              ) : sales.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                                    Nenhuma venda registrada.
+                                  </td>
+                                </tr>
+                              ) : (
+                                sales.map((sale) => {
+                                  const dt = sale.createdAt ? DateTime.fromISO(sale.createdAt, { zone: 'America/Sao_Paulo' }) : null;
+                                  const when = dt && dt.isValid ? dt.toFormat('dd/LL/yyyy HH:mm') : sale.dateKey;
+                                  const itemsLabel = sale.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ');
+                                  const totalOriginal = sale.discountCents ? sale.totalCents + sale.discountCents : sale.totalCents;
+                                  return (
+                                    <tr key={sale.id} className="border-b transition-colors hover:bg-muted/50">
+                                      <td className="p-4 align-middle font-medium">{when}</td>
+                                      <td className="p-4 align-middle">
+                                        <div className="flex items-center gap-2">
+                                          <ShoppingBag className="h-3 w-3 text-muted-foreground" />
+                                          <span className="truncate">{itemsLabel || '—'}</span>
+                                        </div>
+                                      </td>
+                                      <td className="p-4 align-middle">{formatPaymentMethod(sale.paymentMethod)}</td>
+                                      <td className="p-4 align-middle">{sale.barberName || '—'}</td>
+                                      <td className="p-4 align-middle text-right">
+                                        {sale.discountCents ? (
+                                          <div className="text-right">
+                                            <div className="text-xs text-muted-foreground line-through">
+                                              {formatMoney(totalOriginal)}
+                                            </div>
+                                            <div className="font-medium text-green-600">
+                                              {formatMoney(sale.totalCents)}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span className="font-medium text-green-600">{formatMoney(sale.totalCents)}</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 </CardContent>
               </Card>
             </div>

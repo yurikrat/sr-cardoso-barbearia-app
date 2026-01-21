@@ -385,6 +385,7 @@ export async function listSales(
   db: Firestore,
   options?: {
     barberId?: string;
+    customerId?: string;
     dateKey?: string;
     startDate?: string;
     endDate?: string;
@@ -399,6 +400,9 @@ export async function listSales(
 
   if (options?.barberId) {
     query = query.where('barberId', '==', options.barberId) as any;
+  }
+  if (options?.customerId) {
+    query = query.where('customerId', '==', options.customerId) as any;
   }
   if (options?.dateKey) {
     query = query.where('dateKey', '==', options.dateKey) as any;

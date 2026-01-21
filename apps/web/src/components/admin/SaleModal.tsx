@@ -100,6 +100,7 @@ export function SaleModal({
   const [productQuery, setProductQuery] = useState('');
   const [discountEnabled, setDiscountEnabled] = useState(false);
   const [discountInput, setDiscountInput] = useState('');
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [saleForm, setSaleForm] = useState({
@@ -176,6 +177,7 @@ export function SaleModal({
       setProductQuery('');
       setDiscountEnabled(false);
       setDiscountInput('');
+      setDiscountMode('amount');
     }
   }, [open, defaultBarberId, user]);
 
@@ -194,15 +196,24 @@ export function SaleModal({
     return cart.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
   }, [cart]);
 
-  const parseDiscountCents = (input: string) => {
+  const parseDiscountValue = (input: string) => {
     const cleaned = input.replace(/\s/g, '').replace(/[^0-9,]/g, '').replace(',', '.');
     if (!cleaned) return 0;
     const value = Number.parseFloat(cleaned);
     if (Number.isNaN(value) || value <= 0) return 0;
-    return Math.round(value * 100);
+    return value;
   };
 
-  const discountCents = discountEnabled ? parseDiscountCents(discountInput) : 0;
+  const discountValue = discountEnabled ? parseDiscountValue(discountInput) : 0;
+  const discountCents = discountEnabled
+    ? discountMode === 'percent'
+      ? Math.round(cartTotal * Math.min(100, discountValue) / 100)
+      : Math.round(discountValue * 100)
+    : 0;
+  const isDiscountInvalid = discountEnabled && (
+    (discountMode === 'percent' && (discountValue <= 0 || discountValue > 100)) ||
+    (discountMode === 'amount' && discountCents > cartTotal)
+  );
   const finalTotal = Math.max(0, cartTotal - discountCents);
 
   const filteredCustomers = useMemo(() => {
@@ -297,7 +308,7 @@ export function SaleModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nova Venda</DialogTitle>
           <DialogDescription>
@@ -312,7 +323,7 @@ export function SaleModal({
         ) : (
           <div className="grid gap-6 py-4">
             {/* Barber and Customer */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Barbeiro *</Label>
                 <Select
@@ -320,7 +331,7 @@ export function SaleModal({
                   onValueChange={(val) => setSaleForm({ ...saleForm, barberId: val })}
                   disabled={!isMaster}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
@@ -354,7 +365,7 @@ export function SaleModal({
                     });
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue placeholder="Selecionar cliente" />
                   </SelectTrigger>
                   <SelectContent>
@@ -363,6 +374,7 @@ export function SaleModal({
                         placeholder="Buscar cliente..."
                         value={customerQuery}
                         onChange={(e) => setCustomerQuery(e.target.value)}
+                        className="h-11"
                       />
                     </div>
                     <SelectItem value="none">Sem cliente</SelectItem>
@@ -384,6 +396,7 @@ export function SaleModal({
                     })
                   }
                   placeholder="Nome do cliente"
+                  className="h-11"
                 />
               </div>
             </div>
@@ -400,7 +413,7 @@ export function SaleModal({
                   className="pl-9"
                 />
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
                 {filteredProducts.length === 0 ? (
                   <div className="col-span-full text-center py-4 text-muted-foreground">
                     Nenhum produto encontrado
@@ -444,18 +457,19 @@ export function SaleModal({
                   {cart.map((item) => (
                     <div
                       key={item.productId}
-                      className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded"
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2 px-3 bg-muted/50 rounded gap-3"
                     >
-                      <div>
+                      <div className="min-w-0">
                         <div className="font-medium">{item.productName}</div>
                         <div className="text-sm text-muted-foreground">
                           {formatMoney(item.unitPriceCents)} cada
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 justify-between sm:justify-end w-full sm:w-auto">
                         <Button
                           variant="outline"
                           size="sm"
+                          className="h-9 w-9"
                           onClick={() => updateCartQuantity(item.productId, item.quantity - 1)}
                         >
                           -
@@ -464,6 +478,7 @@ export function SaleModal({
                         <Button
                           variant="outline"
                           size="sm"
+                          className="h-9 w-9"
                           onClick={() => updateCartQuantity(item.productId, item.quantity + 1)}
                         >
                           +
@@ -476,7 +491,14 @@ export function SaleModal({
                   ))}
                   <div className="flex justify-between pt-2 border-t font-bold">
                     <span>Total</span>
-                    <span className="text-green-600">{formatMoney(cartTotal)}</span>
+                    <div className="text-right">
+                      {discountCents > 0 && (
+                        <div className="text-xs text-muted-foreground line-through">
+                          {formatMoney(cartTotal)}
+                        </div>
+                      )}
+                      <div className="text-green-600">{formatMoney(finalTotal)}</div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -485,26 +507,54 @@ export function SaleModal({
             {/* Discount */}
             <div>
               <Label className="mb-2 block">Desconto</Label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                 <Button
                   type="button"
                   variant={discountEnabled ? 'default' : 'outline'}
                   onClick={() => setDiscountEnabled((prev) => !prev)}
+                  className="h-11"
                 >
                   {discountEnabled ? 'Com desconto' : 'Aplicar desconto'}
                 </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant={discountMode === 'amount' ? 'default' : 'outline'}
+                    onClick={() => setDiscountMode('amount')}
+                    className="h-11"
+                    disabled={!discountEnabled}
+                  >
+                    R$
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={discountMode === 'percent' ? 'default' : 'outline'}
+                    onClick={() => setDiscountMode('percent')}
+                    className="h-11"
+                    disabled={!discountEnabled}
+                  >
+                    %
+                  </Button>
+                </div>
                 <Input
                   type="text"
                   inputMode="decimal"
-                  placeholder="Ex: 10,00"
-                  className="w-32"
+                  placeholder={discountMode === 'percent' ? 'Ex: 10' : 'Ex: 10,00'}
+                  className="w-32 h-11"
                   value={discountInput}
                   onChange={(e) => setDiscountInput(e.target.value)}
                   disabled={!discountEnabled}
                 />
-                <span className="text-sm text-muted-foreground">R$</span>
+                <span className="text-sm text-muted-foreground">
+                  {discountMode === 'percent' ? '%' : 'R$'}
+                </span>
               </div>
-              {discountEnabled && discountCents > cartTotal && (
+              {discountEnabled && discountMode === 'percent' && (discountValue <= 0 || discountValue > 100) && (
+                <div className="text-xs text-destructive mt-1">
+                  Percentual deve estar entre 1 e 100.
+                </div>
+              )}
+              {discountEnabled && discountMode === 'amount' && discountCents > cartTotal && (
                 <div className="text-xs text-destructive mt-1">
                   Desconto não pode ser maior que o total.
                 </div>
@@ -514,12 +564,12 @@ export function SaleModal({
             {/* Payment Method */}
             <div>
               <Label className="mb-2 block">Forma de pagamento</Label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => (
                   <Button
                     key={value}
                     variant={saleForm.paymentMethod === value ? 'default' : 'outline'}
-                    className="flex flex-col h-auto py-3"
+                    className="flex flex-col h-auto py-3 sm:py-4"
                     onClick={() => setSaleForm({ ...saleForm, paymentMethod: value })}
                   >
                     <Icon className="h-5 w-5 mb-1" />
@@ -535,7 +585,7 @@ export function SaleModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleCreateSale} disabled={saving || cart.length === 0 || loading || (discountEnabled && discountCents > cartTotal)}>
+          <Button onClick={handleCreateSale} disabled={saving || cart.length === 0 || loading || isDiscountInvalid}>
             {saving ? (
               <LoadingSpinner />
             ) : (
