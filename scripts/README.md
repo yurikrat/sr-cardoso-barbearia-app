@@ -52,9 +52,4 @@ Isso mantém o `--cache-from` (aproveita o cache existente), mas evita o custo d
 
 ## Obsoletos
 
-Os seguintes scripts são obsoletos (projeto migrou de Firebase para Cloud Run):
-- `setup-firebase.sh.obsolete`
-- `get-firebase-config.sh.obsolete`
-- `setup-firebase-cli.sh.obsolete`
-
-Mantidos apenas para referência histórica.
+O projeto migrou de Firebase para Cloud Run. Se você encontrar referências a scripts antigos de setup Firebase, trate como documentação legada.

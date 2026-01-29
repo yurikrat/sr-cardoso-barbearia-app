@@ -55,3 +55,7 @@ coverage/
 # Misc
 *.pem
 .cache/
+
+# Scratch / quarantine (repo hygiene)
+_scratch/
+_quarantine/
