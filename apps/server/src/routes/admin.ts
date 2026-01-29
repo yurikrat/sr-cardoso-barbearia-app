@@ -36,16 +36,6 @@ import {
   type EvolutionRequestError,
 } from '../lib/evolutionApi.js';
 import {
-  OWNER_BARBER_ID,
-  FINANCE_CONFIG_DOC_PATH,
-  getBarberCommissionPct,
-  getFinanceConfig,
-  getServiceFromConfig,
-  getServicePriceCentsFromConfig,
-  sanitizeFinanceConfig,
-  setFinanceConfigCache,
-} from '../lib/finance.js';
-import {
   BRANDING_CONFIG_DOC_PATH,
   getBrandingConfig,
   setBrandingConfigCache,
@@ -96,6 +86,343 @@ import {
   getStockAlerts,
   getProductsSummary,
 } from '../lib/products.js';
+import {
+  OWNER_BARBER_ID,
+  FINANCE_CONFIG_DOC_PATH,
+  getBarberCommissionPct,
+  getFinanceConfig,
+  getServiceFromConfig,
+  getServicePriceCentsFromConfig,
+  sanitizeFinanceConfig,
+  setFinanceConfigCache,
+} from '../lib/finance.js';
+import type { FinanceConfig } from '../lib/finance.js';
+
+// ============================================
+// Projeção financeira - tipos auxiliares
+// (mantidos inline aqui para evitar complexidade)
+// ============================================
+
+type SeasonalAnalysis = {
+  monthlyIndices: Record<number, number>; // 1 = jan, 12 = dez
+  baseAnnualAverage: number;
+  confidence: number; // 0–1
+  yearsAnalyzed: number;
+};
+
+type TrendAnalysis = {
+  trendValue: number;
+  monthlyGrowthRate: number; // ex: 0.02 = 2% ao mês
+  confidence: number; // 0–1
+  periodsAnalyzed: number;
+};
+
+type HistoryAvailability = {
+  totalMonths: number;
+  completeYears: number;
+  firstMonthKey: string | null;
+  monthsByYear: Record<number, number[]>;
+  confidence: 'high' | 'medium' | 'low';
+};
+
+// ============================================
+// Helpers simples de projeção financeira
+// ============================================
+
+async function detectAvailableHistory(
+  db: Firestore,
+  barberId: string | null
+): Promise<HistoryAvailability> {
+  // Descobre o primeiro dateKey existente para este barbeiro (ou geral)
+  let q: FirebaseFirestore.Query = db.collection('bookings');
+  if (barberId) {
+    q = q.where('barberId', '==', barberId);
+  }
+  q = q.orderBy('dateKey', 'asc').limit(1);
+
+  const firstSnap = await q.get();
+  if (firstSnap.empty) {
+    return {
+      totalMonths: 0,
+      completeYears: 0,
+      firstMonthKey: null,
+      monthsByYear: {},
+      confidence: 'low',
+    };
+  }
+
+  const firstDoc = firstSnap.docs[0];
+  const dk = (firstDoc.data() as any).dateKey;
+  const firstKey = typeof dk === 'string' ? dk : null;
+
+  if (!firstKey) {
+    return {
+      totalMonths: 0,
+      completeYears: 0,
+      firstMonthKey: null,
+      monthsByYear: {},
+      confidence: 'low',
+    };
+  }
+
+  const firstMonth = DateTime.fromFormat(firstKey, 'yyyy-MM-dd', { zone: 'America/Sao_Paulo' }).startOf('month');
+  const nowSP = DateTime.now().setZone('America/Sao_Paulo').startOf('month');
+
+  if (!firstMonth.isValid || firstMonth > nowSP) {
+    return {
+      totalMonths: 0,
+      completeYears: 0,
+      firstMonthKey: null,
+      monthsByYear: {},
+      confidence: 'low',
+    };
+  }
+
+  const diff = nowSP.diff(firstMonth, 'months').months ?? 0;
+  const totalMonths = Math.floor(diff) + 1;
+  const completeYears = Math.floor(totalMonths / 12);
+
+  const monthsByYear: Record<number, number[]> = {};
+  let cursor = firstMonth;
+  for (let i = 0; i < totalMonths; i++) {
+    const year = cursor.year;
+    const month = cursor.month;
+    if (!monthsByYear[year]) monthsByYear[year] = [];
+    monthsByYear[year].push(month);
+    cursor = cursor.plus({ months: 1 });
+  }
+
+  let confidence: HistoryAvailability['confidence'] = 'low';
+  if (totalMonths >= 24) confidence = 'high';
+  else if (totalMonths >= 12) confidence = 'medium';
+
+  return {
+    totalMonths,
+    completeYears,
+    firstMonthKey: firstMonth.toFormat('yyyy-MM'),
+    monthsByYear,
+    confidence,
+  };
+}
+
+async function sumCompletedRevenueForMonth(
+  db: Firestore,
+  barberId: string | null,
+  financeConfig: FinanceConfig,
+  year: number,
+  month: number
+): Promise<number> {
+  const start = DateTime.fromObject({ year, month, day: 1 }, { zone: 'America/Sao_Paulo' }).startOf('month');
+  const end = start.endOf('month');
+  const startKey = start.toFormat('yyyy-MM-dd');
+  const endKey = end.toFormat('yyyy-MM-dd');
+
+  let q: FirebaseFirestore.Query = db.collection('bookings').where('dateKey', '>=', startKey).where('dateKey', '<=', endKey);
+  if (barberId) {
+    q = q.where('barberId', '==', barberId);
+  }
+
+  const snap = await q.get();
+  let total = 0;
+  snap.forEach((doc) => {
+    const data = doc.data() as any;
+    const status = typeof data.status === 'string' ? data.status : 'unknown';
+    if (status !== 'completed') return;
+    const serviceType = typeof data.serviceType === 'string' ? data.serviceType : 'unknown';
+    const price = getServicePriceCentsFromConfig(financeConfig, serviceType);
+    total += price;
+  });
+
+  return total;
+}
+
+async function computeMonthlySeasonalIndices(
+  db: Firestore,
+  barberId: string | null,
+  financeConfig: FinanceConfig,
+  history: HistoryAvailability
+): Promise<SeasonalAnalysis> {
+  const monthlyIndices: Record<number, number> = {};
+
+  // Pouco histórico: sem sazonalidade, usa apenas tendência.
+  if (history.totalMonths < 6) {
+    for (let m = 1; m <= 12; m++) monthlyIndices[m] = 1;
+    return {
+      monthlyIndices,
+      baseAnnualAverage: 0,
+      confidence: 0,
+      yearsAnalyzed: 0,
+    };
+  }
+
+  const years = Object.keys(history.monthsByYear)
+    .map((y) => Number(y))
+    .filter((y) => Number.isFinite(y))
+    .sort((a, b) => a - b);
+
+  // Usa no máximo os últimos 3 anos para manter simples.
+  const useYears = years.slice(-3);
+
+  const perYear: { year: number; monthly: number[]; annualAvg: number }[] = [];
+
+  for (const year of useYears) {
+    const months = history.monthsByYear[year] ?? [];
+    if (!months.length) continue;
+
+    const monthlyTotals: number[] = Array(12).fill(0);
+    for (const m of months) {
+      if (m < 1 || m > 12) continue;
+      const total = await sumCompletedRevenueForMonth(db, barberId, financeConfig, year, m);
+      monthlyTotals[m - 1] = total;
+    }
+
+    const annualTotal = monthlyTotals.reduce((a, b) => a + b, 0);
+    if (annualTotal <= 0) continue;
+    const annualAvg = annualTotal / months.length;
+    perYear.push({ year, monthly: monthlyTotals, annualAvg });
+  }
+
+  if (!perYear.length) {
+    for (let m = 1; m <= 12; m++) monthlyIndices[m] = 1;
+    return {
+      monthlyIndices,
+      baseAnnualAverage: 0,
+      confidence: 0,
+      yearsAnalyzed: 0,
+    };
+  }
+
+  for (let m = 1; m <= 12; m++) {
+    const indices: number[] = [];
+    for (const y of perYear) {
+      const value = y.monthly[m - 1];
+      if (value > 0 && y.annualAvg > 0) {
+        indices.push(value / y.annualAvg);
+      }
+    }
+    monthlyIndices[m] = indices.length ? indices.reduce((a, b) => a + b, 0) / indices.length : 1;
+  }
+
+  // Normaliza para média 1.
+  const avgIndex = Object.values(monthlyIndices).reduce((a, b) => a + b, 0) / 12;
+  if (avgIndex > 0) {
+    for (let m = 1; m <= 12; m++) {
+      monthlyIndices[m] = monthlyIndices[m] / avgIndex;
+    }
+  }
+
+  const baseAnnualAverage =
+    perYear.reduce((acc, y) => acc + y.annualAvg, 0) / Math.max(1, perYear.length);
+
+  // Confiança cresce com mais meses; máximo em ~36 meses.
+  const seasonalConfidence = Math.max(0, Math.min(1, history.totalMonths / 36));
+
+  return {
+    monthlyIndices,
+    baseAnnualAverage,
+    confidence: seasonalConfidence,
+    yearsAnalyzed: perYear.length,
+  };
+}
+
+async function computeTrendWithGrowth(
+  db: Firestore,
+  barberId: string | null,
+  financeConfig: FinanceConfig,
+  referenceMonth: DateTime
+): Promise<TrendAnalysis> {
+  const periodsToAnalyze = 12;
+  const monthlyTotals: number[] = [];
+
+  for (let i = periodsToAnalyze; i >= 1; i--) {
+    const mStart = referenceMonth.minus({ months: i }).startOf('month');
+    const total = await sumCompletedRevenueForMonth(
+      db,
+      barberId,
+      financeConfig,
+      mStart.year,
+      mStart.month
+    );
+    monthlyTotals.push(total);
+  }
+
+  // Regressão linear simples para crescimento.
+  let growthRate = 0;
+  if (monthlyTotals.filter((v) => v > 0).length >= 3) {
+    const n = monthlyTotals.length;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
+
+    for (let i = 0; i < n; i++) {
+      const x = i;
+      const y = monthlyTotals[i];
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
+    }
+
+    const denom = n * sumX2 - sumX * sumX;
+    if (denom !== 0) {
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const avgY = sumY / n;
+      growthRate = avgY > 0 ? slope / avgY : 0;
+      // Limita para evitar projeções absurdas.
+      growthRate = Math.max(-0.1, Math.min(0.1, growthRate));
+    }
+  }
+
+  // EWMA com 12 períodos.
+  let ewma = monthlyTotals.length ? monthlyTotals[0] : 0;
+  const alpha = 0.2;
+  for (let i = 1; i < monthlyTotals.length; i++) {
+    ewma = alpha * monthlyTotals[i] + (1 - alpha) * ewma;
+  }
+
+  const trendValue = Math.round(ewma * (1 + growthRate));
+
+  const confidence =
+    monthlyTotals.filter((v) => v > 0).length >= 6
+      ? 1
+      : monthlyTotals.filter((v) => v > 0).length / 6;
+
+  return {
+    trendValue: Math.max(0, trendValue),
+    monthlyGrowthRate: growthRate,
+    confidence: Math.max(0, Math.min(1, confidence)),
+    periodsAnalyzed: monthlyTotals.length,
+  };
+}
+
+async function projectFutureMonthRevenue(
+  db: Firestore,
+  barberId: string | null,
+  financeConfig: FinanceConfig,
+  targetMonth: DateTime
+): Promise<number> {
+  const history = await detectAvailableHistory(db, barberId);
+
+  // Pouquíssimos dados: só usa tendência simples.
+  if (history.totalMonths < 3) {
+    const trend = await computeTrendWithGrowth(db, barberId, financeConfig, targetMonth);
+    return trend.trendValue;
+  }
+
+  const seasonal = await computeMonthlySeasonalIndices(db, barberId, financeConfig, history);
+  const trend = await computeTrendWithGrowth(db, barberId, financeConfig, targetMonth);
+
+  const monthIndex = seasonal.monthlyIndices[targetMonth.month] ?? 1;
+  const base = trend.trendValue;
+  const seasonalAdjusted = Math.round(base * monthIndex);
+
+  const seasonalWeight = seasonal.confidence;
+  const trendWeight = 1 - seasonalWeight;
+
+  const combined = seasonalWeight * seasonalAdjusted + trendWeight * base;
+  return Math.max(0, Math.round(combined));
+}
 
 export type AdminRouteDeps = {
   env: Env;
@@ -140,6 +467,51 @@ async function generateUniqueBarberIdFromName(db: Firestore, name: string) {
     if (candidate.length > 31) continue;
     if (!(await exists(candidate))) return candidate;
   }
+  return null;
+}
+
+/**
+ * Converte slotStart de qualquer formato possível para Date
+ * Trata: Timestamp do Firestore, Date, string ISO, DateTime do Luxon
+ */
+function convertSlotStartToDate(slotStart: unknown): Date | null {
+  if (!slotStart) return null;
+
+  // Timestamp do Firestore (tem método toDate)
+  if (typeof slotStart === 'object' && slotStart !== null && 'toDate' in slotStart && typeof (slotStart as any).toDate === 'function') {
+    try {
+      return (slotStart as any).toDate();
+    } catch {
+      return null;
+    }
+  }
+
+  // Date (já é Date)
+  if (slotStart instanceof Date) {
+    return slotStart;
+  }
+
+  // DateTime do Luxon (tem método toJSDate)
+  if (typeof slotStart === 'object' && slotStart !== null && 'toJSDate' in slotStart && typeof (slotStart as any).toJSDate === 'function') {
+    try {
+      return (slotStart as any).toJSDate();
+    } catch {
+      return null;
+    }
+  }
+
+  // string ISO
+  if (typeof slotStart === 'string') {
+    try {
+      const dt = DateTime.fromISO(slotStart, { zone: 'America/Sao_Paulo' });
+      if (dt.isValid) {
+        return dt.toJSDate();
+      }
+    } catch {
+      return null;
+    }
+  }
+
   return null;
 }
 
@@ -831,6 +1203,11 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
 
       let projectionRevenueCents: number | null = null;
       if (selectedMonthKey && selectedMonthKey === currentMonthKey) {
+        // Mês atual:
+        // Mantemos a heurística original, que já considera:
+        // - realizado até hoje,
+        // - agendamentos futuros ponderados pela taxa de comparecimento dos últimos 90 dias,
+        // - e um "restante do mês" estimado a partir dos 3 meses anteriores.
         const showUpRate = await computeShowUpRate90d();
 
         let realizedToDate = 0;
@@ -880,35 +1257,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         if (selectedMonthIsPast) {
           projectionRevenueCents = realizedRevenueCents;
         } else {
-          const totals: number[] = [];
-          for (let i = 6; i >= 1; i--) {
-            const mStart = selectedStart.minus({ months: i }).startOf('month');
-            const mEnd = mStart.endOf('month');
-            const hist = await sumCompletedRevenueByDateKeyRange({
-              startKey: mStart.toFormat('yyyy-MM-dd'),
-              endKey: mEnd.toFormat('yyyy-MM-dd'),
-            });
-            totals.push(hist.total);
-          }
-
-          let ewma = totals.length ? totals[0] : 0;
-          const alpha = 0.35;
-          for (let i = 1; i < totals.length; i++) ewma = Math.round(alpha * totals[i] + (1 - alpha) * ewma);
-
-          const lastYearStart = selectedStart.minus({ years: 1 }).startOf('month');
-          const lastYearEnd = lastYearStart.endOf('month');
-          const seasonal = await sumCompletedRevenueByDateKeyRange({
-            startKey: lastYearStart.toFormat('yyyy-MM-dd'),
-            endKey: lastYearEnd.toFormat('yyyy-MM-dd'),
-          });
-
-          const seasonalValue = seasonal.total;
-          const avg3 = totals.slice(-3).reduce((a, b) => a + b, 0) / Math.max(1, totals.slice(-3).length);
-
-          const trendForecast = ewma || Math.round(avg3);
-          const seasonalForecast = seasonalValue || Math.round(avg3);
-
-          projectionRevenueCents = Math.round(0.6 * trendForecast + 0.4 * seasonalForecast);
+          // Mês futuro: usar helpers de tendência + sazonalidade adaptativa.
+          const targetMonth = selectedStart.startOf('month');
+          const futureProjection = await projectFutureMonthRevenue(db, barberId ?? null, financeConfig, targetMonth);
+          projectionRevenueCents = futureProjection;
         }
       }
 
@@ -1250,8 +1602,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       if (admin.role === 'barber' && booking.barberId !== admin.barberId) {
         return res.status(403).json({ error: 'Acesso restrito' });
       }
-      const slotStartDate: Date | null = booking.slotStart?.toDate ? booking.slotStart.toDate() : null;
-      if (!slotStartDate) return res.status(400).json({ error: 'slotStart inválido' });
+      const slotStartDate = convertSlotStartToDate(booking.slotStart);
+      if (!slotStartDate) {
+        return res.status(400).json({ error: 'Não foi possível converter o horário do agendamento. Formato inválido.' });
+      }
 
       const barberId = booking.barberId as string;
       const oldSlotId = generateSlotId(slotStartDate);
@@ -1284,8 +1638,9 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
         });
       });
       return res.json({ success: true });
-    } catch {
-      return res.status(500).json({ error: 'Erro ao cancelar' });
+    } catch (e: unknown) {
+      console.error('Erro ao cancelar agendamento:', e);
+      return res.status(500).json({ error: 'Erro interno ao cancelar. Tente novamente ou entre em contato com o suporte.' });
     }
   });
 
@@ -1342,19 +1697,29 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       }
       const newSlotId = generateSlotId(newSlot);
       const newDateKey = getDateKey(newSlot);
-      const oldSlotDate: Date | null = booking.slotStart?.toDate ? booking.slotStart.toDate() : null;
-      if (!oldSlotDate) return res.status(400).json({ error: 'slotStart inválido' });
+      const oldSlotDate = convertSlotStartToDate(booking.slotStart);
+      if (!oldSlotDate) {
+        return res.status(400).json({ error: 'Não foi possível converter o horário original do agendamento. Formato inválido.' });
+      }
       const oldSlotId = generateSlotId(oldSlotDate);
 
       await db.runTransaction(async (tx) => {
         const newSlotRef = db.collection('barbers').doc(barberId).collection('slots').doc(newSlotId);
-        const exists = await tx.get(newSlotRef);
-        if (exists.exists) {
+        const oldSlotRef = db.collection('barbers').doc(barberId).collection('slots').doc(oldSlotId);
+
+        // LEITURAS (Devem vir antes das escritas!)
+        const [newSlotSnap, oldSlotDoc] = await Promise.all([
+          tx.get(newSlotRef),
+          tx.get(oldSlotRef)
+        ]);
+
+        if (newSlotSnap.exists) {
           const err = new Error('already-exists');
           (err as any).code = 'already-exists';
           throw err;
         }
 
+        // ESCRITAS
         tx.set(newSlotRef, {
           slotStart: Timestamp.fromDate(newSlot.toJSDate()),
           dateKey: newDateKey,
@@ -1364,8 +1729,7 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
-        const oldSlotRef = db.collection('barbers').doc(barberId).collection('slots').doc(oldSlotId);
-        const oldSlotDoc = await tx.get(oldSlotRef);
+
         if (oldSlotDoc.exists) {
           const slotData = oldSlotDoc.data() as { bookingId?: string; bookingIds?: string[] } | undefined;
           const existingIds = Array.isArray(slotData?.bookingIds)
@@ -1394,9 +1758,10 @@ export function registerAdminRoutes(app: express.Express, deps: AdminRouteDeps) 
       return res.json({ success: true });
     } catch (e: unknown) {
       if (e && typeof e === 'object' && (e as any).code === 'already-exists') {
-        return res.status(409).json({ error: 'Este horário já está ocupado' });
+        return res.status(409).json({ error: 'Este horário já está ocupado. Escolha outro horário disponível.' });
       }
-      return res.status(500).json({ error: 'Erro ao reagendar' });
+      console.error('Erro ao reagendar agendamento:', e);
+      return res.status(500).json({ error: 'Erro interno ao reagendar. Tente novamente ou entre em contato com o suporte.' });
     }
   });
 
